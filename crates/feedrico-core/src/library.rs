@@ -365,6 +365,48 @@ mod tests {
     }
 
     #[test]
+    fn v1_libraries_upgrade_and_backfill_lead_images() {
+        let root = tmp();
+        let dir = root.path().join(DIR_NAME);
+        let v1 = Library::create_with(&dir, &MIGRATIONS[..1]).unwrap();
+        v1.conn()
+            .execute_batch(
+                "INSERT INTO feed (url, title) VALUES ('u', 'F');
+                 INSERT INTO article (feed_id, identity, first_seen_at, article_date) VALUES (1, 'a', 0, 0);
+                 INSERT INTO article (feed_id, identity, first_seen_at, article_date) VALUES (1, 'b', 0, 0);
+                 INSERT INTO article_media (article_id, source_url) VALUES (1, 'https://x/first.png');
+                 INSERT INTO article_media (article_id, source_url) VALUES (1, 'https://x/second.png');",
+            )
+            .unwrap();
+        v1.close().unwrap();
+
+        let upgraded = Library::open(
+            &dir,
+            OpenOptions {
+                allow_upgrade: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let lead: Vec<Option<String>> = upgraded
+            .conn()
+            .prepare("SELECT lead_image FROM article ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            lead,
+            vec![
+                Some(crate::sanitize::media_key("https://x/first.png")),
+                None
+            ]
+        );
+        upgraded.close().unwrap();
+    }
+
+    #[test]
     fn newer_library_is_never_touched() {
         let root = tmp();
         let dir = root.path().join(DIR_NAME);

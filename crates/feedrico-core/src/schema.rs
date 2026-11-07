@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use crate::Result;
 
-pub(crate) const MIGRATIONS: &[&str] = &[V1];
+pub(crate) const MIGRATIONS: &[&str] = &[V1, V2];
 
 const V1: &str = r#"
 CREATE TABLE folder (
@@ -108,6 +108,31 @@ CREATE TRIGGER article_fts_update AFTER UPDATE OF title, content_text ON article
 END;
 "#;
 
+/// Lead Image per Article (see GLOSSARY.md), stored as its media key.
+const V2: &str = r#"
+ALTER TABLE article ADD COLUMN lead_image TEXT;
+CREATE INDEX article_lead_date ON article(article_date DESC) WHERE lead_image IS NOT NULL;
+"#;
+
+/// Existing Articles get the first image of their content as Lead Image.
+fn backfill_lead_images(conn: &Connection) -> Result<()> {
+    let firsts: Vec<(i64, String)> = conn
+        .prepare(
+            "SELECT article_id, source_url FROM article_media
+             WHERE rowid IN (SELECT min(rowid) FROM article_media GROUP BY article_id)",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut update = conn.prepare("UPDATE article SET lead_image = ?2 WHERE id = ?1")?;
+    for (article_id, url) in firsts {
+        update.execute(rusqlite::params![
+            article_id,
+            crate::sanitize::media_key(&url)
+        ])?;
+    }
+    Ok(())
+}
+
 pub(crate) fn version(conn: &Connection) -> Result<u32> {
     Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)
 }
@@ -118,6 +143,9 @@ pub(crate) fn migrate(conn: &mut Connection, migrations: &[&str]) -> Result<u32>
     for (index, sql) in migrations.iter().enumerate().skip(current) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
+        if *sql == V2 {
+            backfill_lead_images(&tx)?;
+        }
         tx.pragma_update(None, "user_version", (index + 1) as u32)?;
         tx.commit()?;
     }

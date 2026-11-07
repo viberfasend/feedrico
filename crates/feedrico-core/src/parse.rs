@@ -26,6 +26,8 @@ pub struct ParsedEntry {
     /// Unix seconds, as claimed by the feed. Plausibility is checked when storing.
     pub published_at: Option<i64>,
     pub images: Vec<String>,
+    /// Source URL of the Lead Image (see GLOSSARY.md), if any. Also listed in `images`.
+    pub lead_image: Option<String>,
     pub enclosures: Vec<ParsedEnclosure>,
 }
 
@@ -74,8 +76,29 @@ pub fn parse(bytes: &[u8], feed_url: &str, media_prefix: &str) -> Result<ParsedF
                 .filter(|b| !b.trim().is_empty())
                 .or_else(|| entry.summary.as_ref().map(text_to_html))
                 .unwrap_or_default();
-            let Sanitized { html, images } =
+            let Sanitized { html, mut images } =
                 sanitize::sanitize(&raw_html, base.as_ref(), media_prefix);
+
+            // Lead Image: the feed's own thumbnail first, then the first content image.
+            let thumbnail = entry
+                .media
+                .iter()
+                .flat_map(|m| m.thumbnails.iter().map(|t| t.image.uri.clone()))
+                .chain(
+                    entry
+                        .media
+                        .iter()
+                        .flat_map(|m| &m.content)
+                        .filter(|c| is_image(c))
+                        .filter_map(|c| c.url.as_ref().map(|u| u.to_string())),
+                )
+                .find_map(|u| resolve(base.as_ref(), &u));
+            if let Some(thumb) = &thumbnail
+                && !images.contains(thumb)
+            {
+                images.push(thumb.clone());
+            }
+            let lead_image = thumbnail.or_else(|| images.first().cloned());
             let content_text = sanitize::plain_text(&html);
 
             let title = entry
@@ -89,6 +112,7 @@ pub fn parse(bytes: &[u8], feed_url: &str, media_prefix: &str) -> Result<ParsedF
                 .media
                 .iter()
                 .flat_map(|m| &m.content)
+                .filter(|c| !is_image(c))
                 .filter_map(|c| {
                     let url = c.url.as_ref()?.to_string();
                     Some(ParsedEnclosure {
@@ -121,6 +145,7 @@ pub fn parse(bytes: &[u8], feed_url: &str, media_prefix: &str) -> Result<ParsedF
                 content_text,
                 published_at: entry.published.or(entry.updated).map(|d| d.timestamp()),
                 images,
+                lead_image,
                 enclosures,
             }
         })
@@ -135,6 +160,19 @@ pub fn parse(bytes: &[u8], feed_url: &str, media_prefix: &str) -> Result<ParsedF
         site_url,
         entries,
     })
+}
+
+/// MediaRSS images often come without a MIME type; fall back to the file extension.
+fn is_image(content: &feed_rs::model::MediaContent) -> bool {
+    match &content.content_type {
+        Some(t) => t.to_string().starts_with("image/"),
+        None => content.url.as_ref().is_some_and(|u| {
+            let path = u.path().to_ascii_lowercase();
+            [".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"]
+                .iter()
+                .any(|ext| path.ends_with(ext))
+        }),
+    }
 }
 
 /// Titles are plain text unless the feed says otherwise; `<World>` in a plain title is text.
@@ -205,6 +243,7 @@ mod tests {
         assert_eq!(e.url.as_deref(), Some("https://example.org/posts/hello"));
         assert_eq!(e.published_at, Some(1762509600));
         assert_eq!(e.images, vec!["https://example.org/a.png"]);
+        assert_eq!(e.lead_image.as_deref(), Some("https://example.org/a.png"));
         assert!(!e.content_html.contains("script"));
         assert_eq!(e.content_text, "Hi there");
         assert_eq!(e.enclosures.len(), 1);
@@ -233,6 +272,31 @@ mod tests {
             "untitled entries fall back to their text"
         );
         assert_eq!(feed.entries[0].published_at, None);
+    }
+
+    #[test]
+    fn feed_thumbnail_wins_as_lead_image() {
+        let rss = br#"<?xml version="1.0"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title>
+  <item><title>Photo</title><guid>p1</guid><link>https://p.example/1</link>
+    <media:content url="https://p.example/thumb.jpg" medium="image"/>
+    <description><![CDATA[<p><img src="https://p.example/inline.jpg"></p>]]></description>
+  </item>
+  <item><title>Text only</title><guid>p2</guid><description>words</description></item>
+</channel></rss>"#;
+        let feed = parse(rss, "https://p.example/feed", PREFIX).unwrap();
+        let photo = &feed.entries[0];
+        assert_eq!(
+            photo.lead_image.as_deref(),
+            Some("https://p.example/thumb.jpg")
+        );
+        assert!(
+            photo
+                .images
+                .contains(&"https://p.example/thumb.jpg".to_owned()),
+            "thumbnail gets cached"
+        );
+        assert_eq!(feed.entries[1].lead_image, None);
     }
 
     #[test]
