@@ -36,6 +36,18 @@ _Avoid_: Seen, viewed, opened
 A built-in list of Articles drawn from all Feeds by a fixed rule: All Unread, Starred, Today (Article Date since local midnight).
 _Avoid_: Filter, saved search, virtual folder
 
+**View**:
+Which Articles are shown: a Smart View, a Feed, a Folder or search results.
+_Avoid_: Filter, selection, scope
+
+**Layout**:
+How the Articles of a View are presented: List, Cards, Magazine or Gallery. Each View remembers its own Layout.
+_Avoid_: View mode, display, style, view (for presentation)
+
+**Lead Image**:
+The one image that represents an Article in the Cards, Magazine and Gallery Layouts. An Article may have none.
+_Avoid_: Thumbnail, hero, cover
+
 **Portable Mode**:
 Running the app from the same place as its Library, such as a USB stick, so nothing needs to be installed on the host machine.
 _Avoid_: Stick mode, USB mode
