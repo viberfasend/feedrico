@@ -1,0 +1,40 @@
+{
+  "sidebar": {
+    "$type": "dimension",
+    "width": {
+      "$value": "260px"
+    },
+    "minWidth": {
+      "$value": "200px"
+    },
+    "maxWidth": {
+      "$value": "420px"
+    }
+  },
+  "articleList": {
+    "$type": "dimension",
+    "width": {
+      "$value": "380px"
+    },
+    "minWidth": {
+      "$value": "280px"
+    },
+    "maxWidth": {
+      "$value": "640px"
+    }
+  },
+  "reader": {
+    "measure": {
+      "$type": "dimension",
+      "$value": "66ch"
+    },
+    "paddingInline": {
+      "$type": "dimension",
+      "$value": "{space.inset.2xl}"
+    },
+    "paddingBlock": {
+      "$type": "dimension",
+      "$value": "{space.inset.xl}"
+    }
+  }
+}

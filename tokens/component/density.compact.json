@@ -1,0 +1,33 @@
+{
+  "articleList": {
+    "row": {
+      "$type": "dimension",
+      "height": {
+        "$value": "56px"
+      },
+      "paddingBlock": {
+        "$value": "{space.inset.sm}"
+      },
+      "paddingInline": {
+        "$value": "{space.inset.lg}"
+      }
+    }
+  },
+  "sidebar": {
+    "row": {
+      "$type": "dimension",
+      "height": {
+        "$value": "26px"
+      },
+      "paddingInline": {
+        "$value": "{space.inset.sm}"
+      }
+    }
+  },
+  "control": {
+    "$type": "dimension",
+    "height": {
+      "$value": "28px"
+    }
+  }
+}

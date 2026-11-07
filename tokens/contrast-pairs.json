@@ -1,0 +1,160 @@
+{
+  "$description": "Text/background pairs the token build checks against WCAG 2.2 AA in every theme. Text needs 4.5:1, non-text UI 3:1.",
+  "pairs": [
+    {
+      "fg": "color.text.default",
+      "bg": "color.surface.base",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.muted",
+      "bg": "color.surface.base",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.default",
+      "bg": "color.surface.sunken",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.muted",
+      "bg": "color.surface.sunken",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.default",
+      "bg": "color.surface.raised",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.muted",
+      "bg": "color.surface.raised",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.default",
+      "bg": "color.surface.hover",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.muted",
+      "bg": "color.surface.hover",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.default",
+      "bg": "color.surface.selected",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.muted",
+      "bg": "color.surface.selected",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.accent",
+      "bg": "color.surface.base",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.link",
+      "bg": "color.surface.base",
+      "min": 4.5
+    },
+    {
+      "fg": "color.border.focus",
+      "bg": "color.surface.base",
+      "min": 3
+    },
+    {
+      "fg": "color.unread.indicator",
+      "bg": "color.surface.base",
+      "min": 3
+    },
+    {
+      "fg": "color.text.accent",
+      "bg": "color.surface.raised",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.link",
+      "bg": "color.surface.raised",
+      "min": 4.5
+    },
+    {
+      "fg": "color.border.focus",
+      "bg": "color.surface.raised",
+      "min": 3
+    },
+    {
+      "fg": "color.unread.indicator",
+      "bg": "color.surface.raised",
+      "min": 3
+    },
+    {
+      "fg": "color.text.accent",
+      "bg": "color.surface.sunken",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.link",
+      "bg": "color.surface.sunken",
+      "min": 4.5
+    },
+    {
+      "fg": "color.border.focus",
+      "bg": "color.surface.sunken",
+      "min": 3
+    },
+    {
+      "fg": "color.unread.indicator",
+      "bg": "color.surface.sunken",
+      "min": 3
+    },
+    {
+      "fg": "color.text.onAccent",
+      "bg": "color.accent.default",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.onAccent",
+      "bg": "color.accent.hover",
+      "min": 4.5
+    },
+    {
+      "fg": "color.text.default",
+      "bg": "color.accent.subtle",
+      "min": 4.5
+    },
+    {
+      "fg": "color.status.danger.text",
+      "bg": "color.status.danger.surface",
+      "min": 4.5
+    },
+    {
+      "fg": "color.status.danger.text",
+      "bg": "color.surface.base",
+      "min": 4.5
+    },
+    {
+      "fg": "color.status.success.text",
+      "bg": "color.status.success.surface",
+      "min": 4.5
+    },
+    {
+      "fg": "color.status.success.text",
+      "bg": "color.surface.base",
+      "min": 4.5
+    },
+    {
+      "fg": "color.status.warning.text",
+      "bg": "color.status.warning.surface",
+      "min": 4.5
+    },
+    {
+      "fg": "color.status.warning.text",
+      "bg": "color.surface.base",
+      "min": 4.5
+    }
+  ]
+}

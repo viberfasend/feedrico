@@ -1,0 +1,127 @@
+{
+  "color": {
+    "$type": "color",
+    "surface": {
+      "base": {
+        "$value": "{palette.dusk.900}"
+      },
+      "sunken": {
+        "$value": "{palette.dusk.950}"
+      },
+      "raised": {
+        "$value": "{palette.dusk.800}"
+      },
+      "overlay": {
+        "$value": "{palette.dusk.800}"
+      },
+      "hover": {
+        "$value": "{palette.dusk.800}"
+      },
+      "selected": {
+        "$value": "{palette.dusk.700}"
+      }
+    },
+    "text": {
+      "default": {
+        "$value": "{palette.paper.100}"
+      },
+      "muted": {
+        "$value": "{palette.dusk.200}"
+      },
+      "disabled": {
+        "$value": "{palette.dusk.500}"
+      },
+      "accent": {
+        "$value": "{palette.amber.300}"
+      },
+      "link": {
+        "$value": "{palette.amber.300}"
+      },
+      "onAccent": {
+        "$value": "{palette.paper.950}"
+      }
+    },
+    "border": {
+      "subtle": {
+        "$value": "{palette.dusk.800}"
+      },
+      "default": {
+        "$value": "{palette.dusk.700}"
+      },
+      "strong": {
+        "$value": "{palette.dusk.500}"
+      },
+      "focus": {
+        "$value": "{palette.amber.300}"
+      }
+    },
+    "accent": {
+      "default": {
+        "$value": "{palette.amber.300}"
+      },
+      "hover": {
+        "$value": "{palette.amber.200}"
+      },
+      "subtle": {
+        "$value": "{palette.dusk.700}"
+      }
+    },
+    "status": {
+      "danger": {
+        "text": {
+          "$value": "{palette.rust.300}"
+        },
+        "surface": {
+          "$value": "{palette.dusk.950}"
+        }
+      },
+      "success": {
+        "text": {
+          "$value": "{palette.moss.300}"
+        },
+        "surface": {
+          "$value": "{palette.dusk.950}"
+        }
+      },
+      "warning": {
+        "text": {
+          "$value": "{palette.amber.200}"
+        },
+        "surface": {
+          "$value": "{palette.dusk.950}"
+        }
+      }
+    },
+    "unread": {
+      "indicator": {
+        "$value": "{palette.amber.300}"
+      }
+    },
+    "motif": {
+      "gossamer": {
+        "$value": "{palette.dusk.600}"
+      }
+    }
+  },
+  "shadow": {
+    "$type": "shadow",
+    "raised": {
+      "$value": {
+        "color": "#00000052",
+        "offsetX": "0px",
+        "offsetY": "1px",
+        "blur": "3px",
+        "spread": "0px"
+      }
+    },
+    "overlay": {
+      "$value": {
+        "color": "#00000080",
+        "offsetX": "0px",
+        "offsetY": "16px",
+        "blur": "40px",
+        "spread": "-8px"
+      }
+    }
+  }
+}
