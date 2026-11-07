@@ -4,8 +4,8 @@
 mod machine;
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use feedrico_core::feeds::ImportSummary;
 use feedrico_core::{
@@ -80,7 +80,7 @@ fn with_library<T>(
     state: &AppState,
     f: impl FnOnce(&Library) -> feedrico_core::Result<T>,
 ) -> CommandResult<T> {
-    let guard = state.library.lock().expect("library mutex poisoned");
+    let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
     let library = guard
         .as_ref()
         .ok_or_else(|| CommandError::new("noLibrary", "no Library is open"))?;
@@ -114,7 +114,7 @@ fn info(library: &Library) -> CommandResult<LibraryInfo> {
 /// Opens or creates a Library, replacing the current one, and remembers it on this machine.
 fn install(app: &AppHandle, state: &AppState, library: Library) -> CommandResult<LibraryInfo> {
     let result = info(&library)?;
-    let mut slot = state.library.lock().expect("library mutex poisoned");
+    let mut slot = state.library.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(previous) = slot.take() {
         previous.close()?;
     }
@@ -213,7 +213,7 @@ fn library_open(
 
 #[tauri::command]
 fn library_info(state: State<'_, AppState>) -> CommandResult<LibraryInfo> {
-    let guard = state.library.lock().expect("library mutex poisoned");
+    let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
     let library = guard
         .as_ref()
         .ok_or_else(|| CommandError::new("noLibrary", "no Library is open"))?;
@@ -222,7 +222,12 @@ fn library_info(state: State<'_, AppState>) -> CommandResult<LibraryInfo> {
 
 #[tauri::command]
 fn library_close(state: State<'_, AppState>) -> CommandResult<()> {
-    if let Some(library) = state.library.lock().expect("library mutex poisoned").take() {
+    if let Some(library) = state
+        .library
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+    {
         library.close()?;
     }
     Ok(())
@@ -319,10 +324,18 @@ fn refresh(force: bool, app: AppHandle, state: State<'_, AppState>) -> bool {
         return false;
     }
     tauri::async_runtime::spawn(async move {
+        // Clears the flag even if the refresh panics, so refreshing never gets stuck.
+        struct Done(AppHandle);
+        impl Drop for Done {
+            fn drop(&mut self) {
+                self.0
+                    .state::<AppState>()
+                    .refreshing
+                    .store(false, Ordering::SeqCst);
+            }
+        }
+        let _done = Done(app.clone());
         run_refresh(&app, force).await;
-        app.state::<AppState>()
-            .refreshing
-            .store(false, Ordering::SeqCst);
     });
     true
 }
@@ -332,7 +345,7 @@ fn refresh(force: bool, app: AppHandle, state: State<'_, AppState>) -> bool {
 async fn run_refresh(app: &AppHandle, force: bool) {
     let state = app.state::<AppState>();
     let started = {
-        let guard = state.library.lock().expect("library mutex poisoned");
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
         guard
             .as_ref()
             .and_then(|l| Some((l.dir().to_path_buf(), l.feeds_to_fetch(force).ok()?)))
@@ -359,7 +372,7 @@ async fn run_refresh(app: &AppHandle, force: bool) {
     let mut images = Vec::new();
     while let Some((feed_id, result)) = results.next().await {
         let applied = {
-            let guard = state.library.lock().expect("library mutex poisoned");
+            let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
             match guard.as_ref() {
                 Some(l) if l.dir() == dir => l.apply_fetch(feed_id, result).ok(),
                 _ => return,
@@ -396,7 +409,7 @@ async fn cache_images(app: &AppHandle, dir: &Path, images: Vec<(i64, String)>) {
         .buffer_unordered(IMAGE_CONCURRENCY);
     while let Some((url, result)) = downloads.next().await {
         let Ok((bytes, mime)) = result else { continue };
-        let guard = state.library.lock().expect("library mutex poisoned");
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
         match guard.as_ref() {
             Some(l) if l.dir() == dir => {
                 let _ = l.store_media(&url, &bytes, &mime);
@@ -412,7 +425,7 @@ fn serve_media(app: &AppHandle, path: &str) -> Response<Vec<u8>> {
     let key = path.trim_start_matches('/');
     let state = app.state::<AppState>();
     let file = {
-        let guard = state.library.lock().expect("library mutex poisoned");
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
         guard
             .as_ref()
             .and_then(|l| l.media_file(key).ok().flatten())
