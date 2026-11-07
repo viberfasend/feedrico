@@ -42,7 +42,6 @@
               <img
                 src={mediaUrl(article.leadImage)}
                 alt=""
-                loading="lazy"
                 decoding="async"
                 onerror={() => failedImages.add(article.leadImage!)}
               />

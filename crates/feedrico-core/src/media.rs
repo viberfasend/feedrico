@@ -36,6 +36,31 @@ impl Library {
         Ok(())
     }
 
+    /// Lead Images referenced by Articles but not cached yet (download failed or happened before
+    /// Lead Images existed), newest Articles first.
+    pub fn missing_lead_images(&self, limit: usize) -> Result<Vec<String>> {
+        // Keys can't be computed in SQL, so match source URLs to Lead Image keys here.
+        let mut stmt = self.conn().prepare(
+            "SELECT a.lead_image, am.source_url FROM article a
+             JOIN article_media am ON am.article_id = a.id
+             WHERE a.lead_image IS NOT NULL AND am.hash IS NULL
+               AND NOT EXISTS (SELECT 1 FROM media m WHERE m.hash = a.lead_image)
+             ORDER BY a.article_date DESC",
+        )?;
+        let mut seen = std::collections::HashSet::new();
+        let mut urls = Vec::new();
+        for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+            let (key, url) = row?;
+            if media_key(&url) == key && seen.insert(key) {
+                urls.push(url);
+                if urls.len() == limit {
+                    break;
+                }
+            }
+        }
+        Ok(urls)
+    }
+
     /// Path and MIME type of a cached file, if present.
     pub fn media_file(&self, key: &str) -> Result<Option<(PathBuf, String)>> {
         if !is_valid_key(key) {
@@ -66,6 +91,27 @@ mod tests {
         assert_eq!(fs::read(path).unwrap(), b"\x89PNG");
         assert_eq!(mime, "image/png");
         assert!(library.media_file("../library.db").unwrap().is_none());
+
+        // A Lead Image that failed to download shows up as missing until it's stored.
+        library
+            .conn()
+            .execute_batch(&format!(
+                "INSERT INTO feed (url, title) VALUES ('u', 'F');
+                 INSERT INTO article (feed_id, identity, first_seen_at, article_date, lead_image)
+                   VALUES (1, 'a', 0, 0, '{}');
+                 INSERT INTO article_media (article_id, source_url) VALUES (1, 'https://x.example/b.png');
+                 INSERT INTO article_media (article_id, source_url) VALUES (1, 'https://x.example/c.png');",
+                media_key("https://x.example/b.png")
+            ))
+            .unwrap();
+        assert_eq!(
+            library.missing_lead_images(10).unwrap(),
+            vec!["https://x.example/b.png"]
+        );
+        library
+            .store_media("https://x.example/b.png", b"GIF8", "image/gif")
+            .unwrap();
+        assert!(library.missing_lead_images(10).unwrap().is_empty());
         assert!(library.media_file(&"0".repeat(32)).unwrap().is_none());
         library.close().unwrap();
     }

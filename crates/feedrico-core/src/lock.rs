@@ -41,8 +41,32 @@ impl LockInfo {
     }
 }
 
+/// A lock left by a process on this machine that no longer runs (crash, kill, dev restart) is
+/// provably stale and can be taken over without asking. Locks from other machines always ask.
+pub fn is_stale_here(info: &LockInfo) -> bool {
+    info.machine == LockInfo::current().machine
+        && info.pid != std::process::id()
+        && !process_alive(info.pid)
+}
+
+#[cfg(target_os = "linux")]
+fn process_alive(pid: u32) -> bool {
+    Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// Without a cheap, dependency-free check, assume it's alive and let the user decide.
+#[cfg(not(target_os = "linux"))]
+fn process_alive(_pid: u32) -> bool {
+    true
+}
+
 /// Reads the lock of a Library, if any. An unreadable lock still counts as a lock.
+/// Provably stale locks from this machine are ignored (see `is_stale_here`).
 pub fn read(library_dir: &Path) -> Result<Option<LockInfo>> {
+    Ok(read_raw(library_dir)?.filter(|info| !is_stale_here(info)))
+}
+
+fn read_raw(library_dir: &Path) -> Result<Option<LockInfo>> {
     match fs::read(library_dir.join(FILE_NAME)) {
         Ok(bytes) => Ok(Some(
             serde_json::from_slice(&bytes).unwrap_or_else(|_| LockInfo::unknown()),
@@ -64,6 +88,7 @@ impl LockGuard {
         let json = serde_json::to_vec(&LockInfo::current())?;
         let mut options = OpenOptions::new();
         options.write(true);
+        let take_over = take_over || (path.exists() && read(library_dir)?.is_none());
         if take_over {
             options.create(true).truncate(true);
         } else {
@@ -97,4 +122,29 @@ pub(crate) fn now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dead_local_locks_are_stale_but_foreign_ones_are_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let here = LockInfo::current().machine;
+        // PIDs this high don't exist on Linux (pid_max is at most 2^22).
+        let dead = format!(r#"{{"machine":"{here}","pid":4000000000,"openedAt":1}}"#);
+        fs::write(dir.path().join(FILE_NAME), dead).unwrap();
+        assert!(read(dir.path()).unwrap().is_none());
+        let guard = LockGuard::acquire(dir.path(), false).unwrap();
+        drop(guard);
+
+        let foreign = r#"{"machine":"friend-laptop","pid":4000000000,"openedAt":1}"#;
+        fs::write(dir.path().join(FILE_NAME), foreign).unwrap();
+        assert!(read(dir.path()).unwrap().is_some());
+        assert!(matches!(
+            LockGuard::acquire(dir.path(), false),
+            Err(Error::Locked(_))
+        ));
+    }
 }
