@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 28" fill="none" aria-hidden="true">
+<!-- Gossamer: dew on a strand, for dividers and small accents -->
+<path style="fill:none;stroke:var(--color-motif-gossamer,#D6C7AE);stroke-linecap:round;stroke-width:0.9" d="M2 6 C28 18 68 18 94 6"/>
+<circle style="fill:var(--color-unread-indicator,#AB6510)" cx="28.4" cy="14.8" r="1.6"/>
+<circle style="fill:var(--color-unread-indicator,#AB6510)" cx="48" cy="16.8" r="2.6"/>
+<circle style="fill:var(--color-unread-indicator,#AB6510)" cx="67.6" cy="14.8" r="1.6"/>
+</svg>
