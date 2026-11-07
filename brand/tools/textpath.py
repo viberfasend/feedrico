@@ -8,7 +8,8 @@ from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.boundsPen import BoundsPen
 
-FONTS = '/home/andreas/dev/altviberssommer/node_modules/@fontsource-variable/'
+import os
+FONTS = os.path.join(os.path.dirname(__file__), '..', '..', 'node_modules', '@fontsource-variable') + os.sep
 PATHS = {
     'literata': FONTS + 'literata/files/literata-latin-opsz-normal.woff2',
     'literata-italic': FONTS + 'literata/files/literata-latin-opsz-italic.woff2',
