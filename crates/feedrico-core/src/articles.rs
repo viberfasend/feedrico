@@ -1,0 +1,503 @@
+//! Articles: storing fetched entries, listing them per view, Read and Starred state, Pruning.
+
+use rusqlite::{Connection, OptionalExtension, params};
+use serde::{Deserialize, Serialize};
+
+use crate::parse::ParsedEntry;
+use crate::{Error, Library, Result};
+
+/// Anything before this is treated as a missing or bogus date (1995-01-01).
+const EARLIEST_PLAUSIBLE: i64 = 788_918_400;
+
+/// See "Article Date" in GLOSSARY.md.
+pub fn article_date(published_at: Option<i64>, first_seen_at: i64) -> i64 {
+    match published_at {
+        Some(t) if (EARLIEST_PLAUSIBLE..=first_seen_at).contains(&t) => t,
+        _ => first_seen_at,
+    }
+}
+
+/// Inserts a new Article or updates an edited one. Returns the id if the Article is new.
+pub(crate) fn upsert(
+    conn: &Connection,
+    feed_id: i64,
+    e: &ParsedEntry,
+    now: i64,
+) -> Result<Option<i64>> {
+    let existing: Option<(i64, String, String)> = conn
+        .query_row(
+            "SELECT id, title, content_html FROM article WHERE feed_id = ?1 AND identity = ?2",
+            params![feed_id, e.identity],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+
+    match existing {
+        // Edited upstream: refresh the content, keep Read/Starred and the Article Date.
+        Some((id, title, html)) => {
+            if title != e.title || html != e.content_html {
+                conn.execute(
+                    "UPDATE article SET title = ?2, content_html = ?3, content_text = ?4, excerpt = ?5,
+                            url = ?6, author = ?7
+                     WHERE id = ?1",
+                    params![id, e.title, e.content_html, e.content_text, e.excerpt, e.url, e.author],
+                )?;
+            }
+            Ok(None)
+        }
+        None => {
+            conn.execute(
+                "INSERT INTO article (feed_id, identity, url, title, author, content_html, content_text,
+                                      excerpt, published_at, first_seen_at, article_date)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    feed_id,
+                    e.identity,
+                    e.url,
+                    e.title,
+                    e.author,
+                    e.content_html,
+                    e.content_text,
+                    e.excerpt,
+                    e.published_at,
+                    now,
+                    article_date(e.published_at, now),
+                ],
+            )?;
+            let id = conn.last_insert_rowid();
+            for enc in &e.enclosures {
+                conn.execute(
+                    "INSERT INTO enclosure (article_id, url, mime_type, length) VALUES (?1, ?2, ?3, ?4)",
+                    params![id, enc.url, enc.mime_type, enc.length],
+                )?;
+            }
+            for url in &e.images {
+                conn.execute(
+                    "INSERT OR IGNORE INTO article_media (article_id, source_url) VALUES (?1, ?2)",
+                    params![id, url],
+                )?;
+            }
+            Ok(Some(id))
+        }
+    }
+}
+
+/// Which Articles a list shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum View {
+    AllUnread,
+    Starred,
+    /// `since` is local midnight in unix seconds; the UI knows the user's time zone.
+    Today {
+        since: i64,
+    },
+    Feed {
+        id: i64,
+    },
+    Folder {
+        id: i64,
+    },
+    /// Full-text search, optionally scoped. The query lives in `ListQuery::search`.
+    Search,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Sort {
+    #[default]
+    NewestFirst,
+    OldestFirst,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListQuery {
+    pub view: View,
+    #[serde(default)]
+    pub sort: Sort,
+    #[serde(default)]
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArticleRow {
+    pub id: i64,
+    pub feed_id: i64,
+    pub feed_title: String,
+    pub title: String,
+    pub excerpt: String,
+    pub article_date: i64,
+    pub is_read: bool,
+    pub is_starred: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArticleDetail {
+    pub id: i64,
+    pub feed_id: i64,
+    pub feed_title: String,
+    pub feed_site_url: Option<String>,
+    pub title: String,
+    pub url: Option<String>,
+    pub author: Option<String>,
+    pub content_html: String,
+    pub article_date: i64,
+    pub is_read: bool,
+    pub is_starred: bool,
+    pub enclosures: Vec<Enclosure>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Enclosure {
+    pub url: String,
+    pub mime_type: Option<String>,
+    pub length: Option<i64>,
+}
+
+/// SQL `WHERE` clause and parameters for a query. Columns refer to `article a`.
+fn filter(q: &ListQuery) -> (String, Vec<rusqlite::types::Value>) {
+    use rusqlite::types::Value;
+    match q.view {
+        View::AllUnread => ("a.is_read = 0".into(), vec![]),
+        View::Starred => ("a.is_starred = 1".into(), vec![]),
+        View::Today { since } => ("a.article_date >= ?".into(), vec![Value::Integer(since)]),
+        View::Feed { id } => ("a.feed_id = ?".into(), vec![Value::Integer(id)]),
+        View::Folder { id } => (
+            "a.feed_id IN (SELECT id FROM feed WHERE folder_id = ?)".into(),
+            vec![Value::Integer(id)],
+        ),
+        View::Search => {
+            let query = fts_query(q.search.as_deref().unwrap_or(""));
+            (
+                "a.id IN (SELECT rowid FROM article_fts WHERE article_fts MATCH ?)".into(),
+                vec![Value::Text(query)],
+            )
+        }
+    }
+}
+
+/// Turns user input into a safe FTS5 prefix query: every word must match, as a prefix.
+fn fts_query(input: &str) -> String {
+    let terms: Vec<String> = input
+        .split_whitespace()
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        })
+        .filter(|w| !w.is_empty())
+        .map(|w| format!("\"{w}\"*"))
+        .collect();
+    if terms.is_empty() {
+        "\"\"".into()
+    } else {
+        terms.join(" ")
+    }
+}
+
+impl Library {
+    pub fn count_articles(&self, q: &ListQuery) -> Result<i64> {
+        let (clause, args) = filter(q);
+        Ok(self.conn().query_row(
+            &format!("SELECT count(*) FROM article a WHERE {clause}"),
+            rusqlite::params_from_iter(args),
+            |r| r.get(0),
+        )?)
+    }
+
+    pub fn list_articles(&self, q: &ListQuery, offset: i64, limit: i64) -> Result<Vec<ArticleRow>> {
+        let (clause, mut args) = filter(q);
+        let order = match q.sort {
+            Sort::NewestFirst => "a.article_date DESC, a.id DESC",
+            Sort::OldestFirst => "a.article_date ASC, a.id ASC",
+        };
+        args.push(limit.into());
+        args.push(offset.into());
+        let mut stmt = self.conn().prepare_cached(&format!(
+            "SELECT a.id, a.feed_id, f.title, a.title, a.excerpt, a.article_date, a.is_read, a.is_starred
+             FROM article a JOIN feed f ON f.id = a.feed_id
+             WHERE {clause} ORDER BY {order} LIMIT ? OFFSET ?"
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(args), |r| {
+                Ok(ArticleRow {
+                    id: r.get(0)?,
+                    feed_id: r.get(1)?,
+                    feed_title: r.get(2)?,
+                    title: r.get(3)?,
+                    excerpt: r.get(4)?,
+                    article_date: r.get(5)?,
+                    is_read: r.get(6)?,
+                    is_starred: r.get(7)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(rows)
+    }
+
+    pub fn article(&self, id: i64) -> Result<ArticleDetail> {
+        let conn = self.conn();
+        let mut detail = conn
+            .query_row(
+                "SELECT a.id, a.feed_id, f.title, f.site_url, a.title, a.url, a.author, a.content_html,
+                        a.article_date, a.is_read, a.is_starred
+                 FROM article a JOIN feed f ON f.id = a.feed_id WHERE a.id = ?1",
+                [id],
+                |r| {
+                    Ok(ArticleDetail {
+                        id: r.get(0)?,
+                        feed_id: r.get(1)?,
+                        feed_title: r.get(2)?,
+                        feed_site_url: r.get(3)?,
+                        title: r.get(4)?,
+                        url: r.get(5)?,
+                        author: r.get(6)?,
+                        content_html: r.get(7)?,
+                        article_date: r.get(8)?,
+                        is_read: r.get(9)?,
+                        is_starred: r.get(10)?,
+                        enclosures: Vec::new(),
+                    })
+                },
+            )
+            .optional()?
+            .ok_or(Error::NotFound)?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT url, mime_type, length FROM enclosure WHERE article_id = ?1 ORDER BY id",
+        )?;
+        detail.enclosures = stmt
+            .query_map([id], |r| {
+                Ok(Enclosure {
+                    url: r.get(0)?,
+                    mime_type: r.get(1)?,
+                    length: r.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(detail)
+    }
+
+    pub fn set_read(&self, id: i64, read: bool) -> Result<()> {
+        self.conn().execute(
+            "UPDATE article SET is_read = ?2 WHERE id = ?1",
+            params![id, read],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_starred(&self, id: i64, starred: bool) -> Result<()> {
+        self.conn().execute(
+            "UPDATE article SET is_starred = ?2 WHERE id = ?1",
+            params![id, starred],
+        )?;
+        Ok(())
+    }
+
+    /// Marks every Article in the view as Read. Returns their ids so the action can be undone.
+    pub fn mark_all_read(&self, q: &ListQuery) -> Result<Vec<i64>> {
+        let (clause, args) = filter(q);
+        let tx = self.conn().unchecked_transaction()?;
+        let ids: Vec<i64> = tx
+            .prepare(&format!(
+                "SELECT a.id FROM article a WHERE a.is_read = 0 AND {clause}"
+            ))?
+            .query_map(rusqlite::params_from_iter(args), |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        {
+            let mut stmt = tx.prepare("UPDATE article SET is_read = 1 WHERE id = ?1")?;
+            for id in &ids {
+                stmt.execute([id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(ids)
+    }
+
+    /// Undo for `mark_all_read`.
+    pub fn mark_unread(&self, ids: &[i64]) -> Result<()> {
+        let tx = self.conn().unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare("UPDATE article SET is_read = 0 WHERE id = ?1")?;
+            for id in ids {
+                stmt.execute([id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::feeds::FetchResult;
+    use crate::library::DIR_NAME;
+    use crate::opml::OpmlFeed;
+    use crate::parse::{ParsedEntry, ParsedFeed};
+
+    fn entry(identity: &str, title: &str, published_at: Option<i64>) -> ParsedEntry {
+        ParsedEntry {
+            identity: identity.into(),
+            url: Some(format!("https://x.example/{identity}")),
+            title: title.into(),
+            author: None,
+            content_html: format!("<p>{title} body</p>"),
+            content_text: format!("{title} body"),
+            excerpt: format!("{title} body"),
+            published_at,
+            images: vec![],
+            enclosures: vec![],
+        }
+    }
+
+    fn fetched(entries: Vec<ParsedEntry>) -> FetchResult {
+        FetchResult::Fetched {
+            feed: ParsedFeed {
+                title: None,
+                site_url: None,
+                entries,
+            },
+            etag: None,
+            last_modified: None,
+        }
+    }
+
+    fn library_with_feed() -> (tempfile::TempDir, Library) {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[OpmlFeed {
+                url: "https://x.example/feed".into(),
+                title: "X".into(),
+                site_url: None,
+                folder: Some("F".into()),
+            }])
+            .unwrap();
+        (root, library)
+    }
+
+    #[test]
+    fn article_date_rules() {
+        let now = 1_800_000_000;
+        assert_eq!(article_date(Some(1_700_000_000), now), 1_700_000_000);
+        assert_eq!(article_date(None, now), now, "missing → first seen");
+        assert_eq!(article_date(Some(now + 3600), now), now, "future → clamped");
+        assert_eq!(article_date(Some(0), now), now, "epoch zero is bogus");
+    }
+
+    #[test]
+    fn edits_keep_state_and_views_filter() {
+        let (_root, library) = library_with_feed();
+        let outcome = library
+            .apply_fetch(
+                1,
+                fetched(vec![
+                    entry("a", "Alpha", Some(1_700_000_000)),
+                    entry("b", "Beta", Some(1_700_000_100)),
+                ]),
+            )
+            .unwrap();
+        assert_eq!(outcome.new_articles, 2);
+
+        let all = ListQuery {
+            view: View::AllUnread,
+            sort: Sort::NewestFirst,
+            search: None,
+        };
+        let rows = library.list_articles(&all, 0, 50).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(),
+            ["Beta", "Alpha"]
+        );
+
+        library.set_read(rows[1].id, true).unwrap();
+        library.set_starred(rows[1].id, true).unwrap();
+
+        // Re-fetch with an edited title: no new Article, state kept.
+        let outcome = library
+            .apply_fetch(
+                1,
+                fetched(vec![entry("a", "Alpha (updated)", Some(1_700_000_000))]),
+            )
+            .unwrap();
+        assert_eq!(outcome.new_articles, 0);
+        let detail = library.article(rows[1].id).unwrap();
+        assert_eq!(detail.title, "Alpha (updated)");
+        assert!(detail.is_read && detail.is_starred);
+
+        assert_eq!(library.count_articles(&all).unwrap(), 1);
+        let starred = ListQuery {
+            view: View::Starred,
+            ..all.clone()
+        };
+        assert_eq!(library.count_articles(&starred).unwrap(), 1);
+        let folder = ListQuery {
+            view: View::Folder { id: 1 },
+            ..all.clone()
+        };
+        assert_eq!(library.count_articles(&folder).unwrap(), 2);
+        let oldest = ListQuery {
+            sort: Sort::OldestFirst,
+            ..folder
+        };
+        assert_eq!(
+            library.list_articles(&oldest, 0, 1).unwrap()[0].title,
+            "Alpha (updated)"
+        );
+
+        let sidebar = library.sidebar(0).unwrap();
+        assert_eq!((sidebar.all_unread, sidebar.starred), (1, 1));
+        assert_eq!(sidebar.folders[0].unread, 1);
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn mark_all_read_is_undoable_and_search_works() {
+        let (_root, library) = library_with_feed();
+        library
+            .apply_fetch(
+                1,
+                fetched(vec![
+                    entry("a", "Spinnfäden", None),
+                    entry("b", "Honey", None),
+                ]),
+            )
+            .unwrap();
+        let all = ListQuery {
+            view: View::AllUnread,
+            sort: Sort::NewestFirst,
+            search: None,
+        };
+        let ids = library.mark_all_read(&all).unwrap();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(library.count_articles(&all).unwrap(), 0);
+        library.mark_unread(&ids).unwrap();
+        assert_eq!(library.count_articles(&all).unwrap(), 2);
+
+        let search = |s: &str| ListQuery {
+            view: View::Search,
+            sort: Sort::NewestFirst,
+            search: Some(s.into()),
+        };
+        assert_eq!(
+            library.count_articles(&search("spinn")).unwrap(),
+            1,
+            "prefix + diacritics"
+        );
+        assert_eq!(
+            library.count_articles(&search("hon bod")).unwrap(),
+            1,
+            "all terms"
+        );
+        assert_eq!(
+            library.count_articles(&search("\"); DROP")).unwrap(),
+            0,
+            "input is escaped"
+        );
+        library.close().unwrap();
+    }
+}

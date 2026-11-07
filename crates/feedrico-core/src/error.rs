@@ -23,6 +23,18 @@ pub enum Error {
     #[error("this Library is open on {} since {}", .0.machine, .0.opened_at)]
     Locked(LockInfo),
 
+    #[error("not a valid OPML file: {0}")]
+    Opml(String),
+
+    #[error("not a valid feed: {0}")]
+    Feed(String),
+
+    #[error("network error: {0}")]
+    Network(String),
+
+    #[error("not found")]
+    NotFound,
+
     #[error("invalid manifest: {0}")]
     Manifest(#[from] serde_json::Error),
 
