@@ -1,16 +1,37 @@
-//! The Tauri shell: a thin layer that exposes `feedrico-core` to the UI as commands.
-//! No domain logic lives here.
+//! The Tauri shell: a thin layer that exposes `feedrico-core` to the UI as commands, runs the
+//! background refresh, and serves cached media. No domain logic lives here.
 
-use std::path::PathBuf;
+mod machine;
+
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use feedrico_core::{Library, OpenOptions, Status};
+use feedrico_core::feeds::ImportSummary;
+use feedrico_core::{
+    ArticleDetail, ArticleRow, Fetcher, Library, ListQuery, OpenOptions, Sidebar, Status, opml,
+};
+use futures::StreamExt;
 use serde::Serialize;
-use tauri::State;
+use tauri::http::{Response, StatusCode, header};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
-/// The one open Library (ADR 0001: exactly one at a time).
-#[derive(Default)]
-struct OpenLibrary(Mutex<Option<Library>>);
+/// Where cached images are served. Baked into sanitized HTML by the core.
+const MEDIA_PREFIX: &str = if cfg!(windows) {
+    "http://media.localhost/"
+} else {
+    "media://localhost/"
+};
+const FETCH_CONCURRENCY: usize = 8;
+const IMAGE_CONCURRENCY: usize = 6;
+
+struct AppState {
+    /// The one open Library (ADR 0001: exactly one at a time).
+    library: Mutex<Option<Library>>,
+    fetcher: Fetcher,
+    refreshing: AtomicBool,
+}
 
 /// Errors cross the IPC boundary as a kind the UI can branch on plus a readable message.
 #[derive(Debug, Serialize)]
@@ -18,6 +39,15 @@ struct OpenLibrary(Mutex<Option<Library>>);
 struct CommandError {
     kind: &'static str,
     message: String,
+}
+
+impl CommandError {
+    fn new(kind: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
 }
 
 impl From<feedrico_core::Error> for CommandError {
@@ -29,29 +59,123 @@ impl From<feedrico_core::Error> for CommandError {
             TooNew { .. } => "tooNew",
             NeedsUpgrade { .. } => "needsUpgrade",
             Locked(_) => "locked",
-            Manifest(_) | Database(_) | Io(_) => "internal",
+            Opml(_) => "invalidOpml",
+            NotFound => "notFound",
+            Feed(_) | Network(_) | Manifest(_) | Database(_) | Io(_) => "internal",
         };
-        Self {
-            kind,
-            message: error.to_string(),
-        }
+        Self::new(kind, error.to_string())
+    }
+}
+
+impl From<std::io::Error> for CommandError {
+    fn from(error: std::io::Error) -> Self {
+        Self::new("io", error.to_string())
     }
 }
 
 type CommandResult<T> = Result<T, CommandError>;
 
+/// Runs `f` against the open Library.
+fn with_library<T>(
+    state: &AppState,
+    f: impl FnOnce(&Library) -> feedrico_core::Result<T>,
+) -> CommandResult<T> {
+    let guard = state.library.lock().expect("library mutex poisoned");
+    let library = guard
+        .as_ref()
+        .ok_or_else(|| CommandError::new("noLibrary", "no Library is open"))?;
+    Ok(f(library)?)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LibraryInfo {
     path: PathBuf,
+    name: String,
     format_version: u32,
+    feed_count: i64,
+    portable: bool,
 }
 
 fn info(library: &Library) -> CommandResult<LibraryInfo> {
     Ok(LibraryInfo {
         path: library.dir().to_path_buf(),
+        name: library
+            .dir()
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
         format_version: library.format_version()?,
+        feed_count: library.feed_count()?,
+        portable: machine::portable_library().as_deref() == Some(library.dir()),
     })
+}
+
+/// Opens or creates a Library, replacing the current one, and remembers it on this machine.
+fn install(app: &AppHandle, state: &AppState, library: Library) -> CommandResult<LibraryInfo> {
+    let result = info(&library)?;
+    let mut slot = state.library.lock().expect("library mutex poisoned");
+    if let Some(previous) = slot.take() {
+        previous.close()?;
+    }
+    machine::remember(app, library.dir());
+    *slot = Some(library);
+    Ok(result)
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum Startup {
+    Opened {
+        library: LibraryInfo,
+    },
+    /// The candidate Library needs the user's decision (lock, upgrade, too new).
+    Attention {
+        path: PathBuf,
+        status: Status,
+    },
+    Welcome {
+        default_path: PathBuf,
+    },
+}
+
+/// Spec "Finding a Library on startup": Portable Mode, then the most recent Library, then the
+/// welcome screen.
+#[tauri::command]
+fn startup(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Startup> {
+    if let Some(library) = state
+        .library
+        .lock()
+        .expect("library mutex poisoned")
+        .as_ref()
+    {
+        return Ok(Startup::Opened {
+            library: info(library)?,
+        });
+    }
+    let candidates = machine::portable_library()
+        .into_iter()
+        .chain(machine::recent(&app));
+    for path in candidates {
+        match feedrico_core::library::inspect(&path)? {
+            Status::Ready => {
+                let library = Library::open(&path, OpenOptions::default())?;
+                return Ok(Startup::Opened {
+                    library: install(&app, &state, library)?,
+                });
+            }
+            Status::NotALibrary => machine::forget(&app, &path),
+            status => return Ok(Startup::Attention { path, status }),
+        }
+    }
+    Ok(Startup::Welcome {
+        default_path: machine::default_library_path(&app)?,
+    })
+}
+
+#[tauri::command]
+fn recent_libraries(app: AppHandle) -> Vec<PathBuf> {
+    machine::recent(&app)
 }
 
 #[tauri::command]
@@ -60,15 +184,13 @@ fn library_inspect(path: PathBuf) -> CommandResult<Status> {
 }
 
 #[tauri::command]
-fn library_create(path: PathBuf, state: State<'_, OpenLibrary>) -> CommandResult<LibraryInfo> {
-    let mut slot = state.0.lock().expect("library mutex poisoned");
-    if let Some(previous) = slot.take() {
-        previous.close()?;
-    }
+fn library_create(
+    path: PathBuf,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<LibraryInfo> {
     let library = Library::create(&path)?;
-    let result = info(&library);
-    *slot = Some(library);
-    result
+    install(&app, &state, library)
 }
 
 #[tauri::command]
@@ -76,12 +198,9 @@ fn library_open(
     path: PathBuf,
     allow_upgrade: bool,
     take_over_lock: bool,
-    state: State<'_, OpenLibrary>,
+    app: AppHandle,
+    state: State<'_, AppState>,
 ) -> CommandResult<LibraryInfo> {
-    let mut slot = state.0.lock().expect("library mutex poisoned");
-    if let Some(previous) = slot.take() {
-        previous.close()?;
-    }
     let library = Library::open(
         &path,
         OpenOptions {
@@ -89,44 +208,287 @@ fn library_open(
             take_over_lock,
         },
     )?;
-    let result = info(&library);
-    *slot = Some(library);
-    result
+    install(&app, &state, library)
 }
 
 #[tauri::command]
-fn library_close(state: State<'_, OpenLibrary>) -> CommandResult<()> {
-    if let Some(library) = state.0.lock().expect("library mutex poisoned").take() {
+fn library_info(state: State<'_, AppState>) -> CommandResult<LibraryInfo> {
+    let guard = state.library.lock().expect("library mutex poisoned");
+    let library = guard
+        .as_ref()
+        .ok_or_else(|| CommandError::new("noLibrary", "no Library is open"))?;
+    info(library)
+}
+
+#[tauri::command]
+fn library_close(state: State<'_, AppState>) -> CommandResult<()> {
+    if let Some(library) = state.library.lock().expect("library mutex poisoned").take() {
         library.close()?;
     }
     Ok(())
 }
 
+#[tauri::command]
+fn import_opml(path: PathBuf, state: State<'_, AppState>) -> CommandResult<ImportSummary> {
+    let bytes = std::fs::read(&path)?;
+    let text = String::from_utf8_lossy(&bytes);
+    let feeds = opml::parse(&text)?;
+    with_library(&state, |l| l.import_opml(&feeds))
+}
+
+#[tauri::command]
+fn export_opml(path: PathBuf, state: State<'_, AppState>) -> CommandResult<()> {
+    let xml = with_library(&state, |l| l.export_opml())?;
+    std::fs::write(path, xml)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn sidebar(today_since: i64, state: State<'_, AppState>) -> CommandResult<Sidebar> {
+    with_library(&state, |l| l.sidebar(today_since))
+}
+
+#[tauri::command]
+fn count_articles(query: ListQuery, state: State<'_, AppState>) -> CommandResult<i64> {
+    with_library(&state, |l| l.count_articles(&query))
+}
+
+#[tauri::command]
+fn list_articles(
+    query: ListQuery,
+    offset: i64,
+    limit: i64,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<ArticleRow>> {
+    with_library(&state, |l| l.list_articles(&query, offset, limit))
+}
+
+#[tauri::command]
+fn get_article(id: i64, state: State<'_, AppState>) -> CommandResult<ArticleDetail> {
+    with_library(&state, |l| l.article(id))
+}
+
+#[tauri::command]
+fn set_read(id: i64, read: bool, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.set_read(id, read))
+}
+
+#[tauri::command]
+fn set_starred(id: i64, starred: bool, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.set_starred(id, starred))
+}
+
+#[tauri::command]
+fn mark_all_read(query: ListQuery, state: State<'_, AppState>) -> CommandResult<Vec<i64>> {
+    with_library(&state, |l| l.mark_all_read(&query))
+}
+
+#[tauri::command]
+fn mark_unread(ids: Vec<i64>, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.mark_unread(&ids))
+}
+
+/// Opens an http(s) link in the system browser. Nothing else is allowed through.
+#[tauri::command]
+fn open_external(url: String, app: AppHandle) -> CommandResult<()> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(CommandError::new(
+            "invalidUrl",
+            "only web links can be opened",
+        ));
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| CommandError::new("io", e.to_string()))
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RefreshProgress {
+    done: usize,
+    total: usize,
+    new_articles: usize,
+    failed: usize,
+    finished: bool,
+}
+
+/// Starts a background refresh. Returns `false` if one is already running.
+#[tauri::command]
+fn refresh(force: bool, app: AppHandle, state: State<'_, AppState>) -> bool {
+    if state.refreshing.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    tauri::async_runtime::spawn(async move {
+        run_refresh(&app, force).await;
+        app.state::<AppState>()
+            .refreshing
+            .store(false, Ordering::SeqCst);
+    });
+    true
+}
+
+/// Fetching and parsing happen without the database lock; only storing each result takes it,
+/// briefly. Results are dropped if the user switched Libraries meanwhile.
+async fn run_refresh(app: &AppHandle, force: bool) {
+    let state = app.state::<AppState>();
+    let started = {
+        let guard = state.library.lock().expect("library mutex poisoned");
+        guard
+            .as_ref()
+            .and_then(|l| Some((l.dir().to_path_buf(), l.feeds_to_fetch(force).ok()?)))
+    };
+    let Some((dir, feeds)) = started else { return };
+
+    let mut progress = RefreshProgress {
+        done: 0,
+        total: feeds.len(),
+        new_articles: 0,
+        failed: 0,
+        finished: false,
+    };
+    let _ = app.emit("refresh-progress", progress.clone());
+
+    let fetcher = state.fetcher.clone();
+    let mut results = futures::stream::iter(feeds)
+        .map(|feed| {
+            let fetcher = fetcher.clone();
+            async move { (feed.id, fetcher.fetch(&feed).await) }
+        })
+        .buffer_unordered(FETCH_CONCURRENCY);
+
+    let mut images = Vec::new();
+    while let Some((feed_id, result)) = results.next().await {
+        let applied = {
+            let guard = state.library.lock().expect("library mutex poisoned");
+            match guard.as_ref() {
+                Some(l) if l.dir() == dir => l.apply_fetch(feed_id, result).ok(),
+                _ => return,
+            }
+        };
+        progress.done += 1;
+        if let Some(outcome) = applied {
+            progress.new_articles += outcome.new_articles;
+            progress.failed += usize::from(outcome.failed);
+            images.extend(outcome.images);
+        }
+        let _ = app.emit("refresh-progress", progress.clone());
+    }
+    progress.finished = true;
+    let _ = app.emit("refresh-progress", progress);
+
+    cache_images(app, &dir, images).await;
+}
+
+async fn cache_images(app: &AppHandle, dir: &Path, images: Vec<(i64, String)>) {
+    let state = app.state::<AppState>();
+    let mut urls: Vec<String> = images.into_iter().map(|(_, url)| url).collect();
+    urls.sort();
+    urls.dedup();
+    let fetcher = state.fetcher.clone();
+    let mut downloads = futures::stream::iter(urls)
+        .map(|url| {
+            let fetcher = fetcher.clone();
+            async move {
+                let result = fetcher.download_image(&url).await;
+                (url, result)
+            }
+        })
+        .buffer_unordered(IMAGE_CONCURRENCY);
+    while let Some((url, result)) = downloads.next().await {
+        let Ok((bytes, mime)) = result else { continue };
+        let guard = state.library.lock().expect("library mutex poisoned");
+        match guard.as_ref() {
+            Some(l) if l.dir() == dir => {
+                let _ = l.store_media(&url, &bytes, &mime);
+            }
+            _ => return,
+        }
+    }
+    let _ = app.emit("media-cached", ());
+}
+
+/// Serves `media://localhost/<key>` from the open Library's cache. Nothing else.
+fn serve_media(app: &AppHandle, path: &str) -> Response<Vec<u8>> {
+    let key = path.trim_start_matches('/');
+    let state = app.state::<AppState>();
+    let file = {
+        let guard = state.library.lock().expect("library mutex poisoned");
+        guard
+            .as_ref()
+            .and_then(|l| l.media_file(key).ok().flatten())
+    };
+    let found = file.and_then(|(path, mime)| Some((std::fs::read(path).ok()?, mime)));
+    match found {
+        Some((bytes, mime)) => Response::builder()
+            .header(header::CONTENT_TYPE, mime)
+            .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
+            .body(bytes),
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Vec::new()),
+    }
+    .expect("static response parts are valid")
+}
+
+/// Keeps the webview on the app: feed content can never navigate it away.
+fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("navigation-guard")
+        .on_navigation(|_, url| {
+            matches!(url.scheme(), "tauri")
+                || matches!(url.host_str(), Some("tauri.localhost") | Some("localhost"))
+        })
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let fetcher = Fetcher::new(MEDIA_PREFIX).expect("HTTP client");
     tauri::Builder::default()
-        .manage(OpenLibrary::default())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(navigation_guard())
+        .manage(AppState {
+            library: Mutex::new(None),
+            fetcher,
+            refreshing: AtomicBool::new(false),
+        })
+        .register_uri_scheme_protocol("media", |ctx, request| {
+            serve_media(ctx.app_handle(), request.uri().path())
+        })
         .invoke_handler(tauri::generate_handler![
+            startup,
+            recent_libraries,
             library_inspect,
             library_create,
             library_open,
-            library_close
+            library_info,
+            library_close,
+            import_opml,
+            export_opml,
+            sidebar,
+            count_articles,
+            list_articles,
+            get_article,
+            set_read,
+            set_starred,
+            mark_all_read,
+            mark_unread,
+            open_external,
+            refresh,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Feedrico")
         .run(|app, event| {
             // Release the lock and checkpoint the database on every way out.
-            if let tauri::RunEvent::Exit = event {
-                use tauri::Manager;
-                if let Some(library) = app
-                    .state::<OpenLibrary>()
-                    .0
+            if let tauri::RunEvent::Exit = event
+                && let Some(library) = app
+                    .state::<AppState>()
+                    .library
                     .lock()
                     .ok()
                     .and_then(|mut s| s.take())
-                {
-                    let _ = library.close();
-                }
+            {
+                let _ = library.close();
             }
         });
 }
