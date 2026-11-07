@@ -39,7 +39,7 @@ BREAKING CHANGE: what breaks and what to do      (or `type!:` in the header)
 - **Types:** `feat` (new capability, minor bump), `fix` (bug fix, patch), `perf`, `refactor`,
   `test`, `docs`, `build`, `ci`, `chore`, `style`, `revert`.
 - **Scopes (optional):** `core`, `shell`, `ui`, `tokens`, `library`, `feeds`, `layouts`, `spec`,
-  `ci`, `deps`, `release`.
+  `ci`, `deps`, `release`, `site` (the public website in `site/`).
 - A change to the Library format is breaking for older apps: mark it `feat(library)!` with a
   `BREAKING CHANGE:` footer and walk the persona version matrix A–E.
 - GitHub merges by rebase only, so every commit lands on `main` as written. Keep each commit
