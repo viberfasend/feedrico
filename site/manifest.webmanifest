@@ -1,0 +1,14 @@
+{
+  "name": "Feedrico",
+  "short_name": "Feedrico",
+  "description": "A calm reader for the Feeds you follow.",
+  "start_url": "./",
+  "display": "browser",
+  "background_color": "#FBF7EF",
+  "theme_color": "#FBF7EF",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -9,3 +9,5 @@ target/
 .env.*
 src/lib/tokens/generated/
 src-tauri/gen/
+site-dist/
+.shots/

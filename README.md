@@ -39,6 +39,19 @@ Layout:
 - `src`: Svelte 5 UI.
 - `tokens`: design tokens (W3C DTCG JSON). `npm run tokens` builds CSS variables and a typed accessor, and fails if any colour pair misses WCAG 2.2 AA.
 
+## Website
+
+The public site lives in `site/` (plain HTML, CSS and a little JavaScript, no framework) and is
+deployed to GitHub Pages by `.github/workflows/pages.yml`.
+
+```sh
+npm run site:build    # tokens + site, brand assets and fonts into site-dist/
+npm run site:preview  # http://localhost:4173/feedrico/
+```
+
+Testing aids: `?hour=19` sets the clock, `?light=paper` or `?light=dusk` picks a theme, and
+`?layout=cards` opens the window mock-up in a Layout.
+
 ## Licence
 
 [GPL-3.0](LICENSE)

@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Feedrico: a calm reader for the Feeds you follow</title>
+<meta name="description" content="Feedrico is a fast desktop feed reader for Linux, Windows and macOS. Everything lives in one Library folder on your machine. No account, no sync, nothing phones home.">
+<link rel="canonical" href="https://viberfasend.github.io/feedrico/">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#FBF7EF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1E1A2F" media="(prefers-color-scheme: dark)">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Feedrico">
+<meta property="og:title" content="Feedrico: a calm reader for the Feeds you follow">
+<meta property="og:description" content="Everything lives in one Library folder on your machine. No account, no sync, nothing phones home.">
+<meta property="og:url" content="https://viberfasend.github.io/feedrico/">
+<meta property="og:image" content="https://viberfasend.github.io/feedrico/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Feedrico: a calm reader for the Feeds you follow.">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="preload" href="fonts/literata-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/tokens/base.css">
+<link rel="stylesheet" href="css/tokens/palette.css">
+<link rel="stylesheet" href="css/tokens/theme-light.css">
+<link rel="stylesheet" href="css/tokens/theme-dark.css">
+<link rel="stylesheet" href="css/site.css">
+<!-- Sets the light from the visitor's clock before the first paint. Reads the clock, nothing else. -->
+<script src="js/light.js"></script>
+<script src="js/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="masthead">
+  <div class="wrap masthead__inner">
+    <a class="masthead__logo" href="./" aria-label="Feedrico, home">
+      <!-- include:brand/logo/feedrico-lockup-horizontal.svg logo -->
+    </a>
+    <nav class="masthead__nav" aria-label="On this page">
+      <ul>
+        <li><a href="#window">The window</a></li>
+        <li><a href="#library">The Library</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+        <li><a href="#keys">Keys</a></li>
+        <li><a class="masthead__get" href="#get">Get Feedrico</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero" id="top" data-section aria-labelledby="hero-title">
+  <div class="wrap hero__inner">
+    <div class="hero__text">
+      <h1 id="hero-title" tabindex="-1">A calm reader for the Feeds you follow.</h1>
+      <p class="hero__lede">Feedrico is a desktop app for Linux, Windows and macOS. Everything lives in one Library folder on your machine. No account, no sync, nothing phones home.</p>
+      <p class="hero__actions">
+        <a class="button button--primary" href="https://github.com/viberfasend/feedrico">Follow along on GitHub</a>
+        <a class="button" href="#keys">See the keyboard shortcuts</a>
+      </p>
+      <p class="hero__status">Not released yet. You can build it from source today; <a href="#get">here is how</a>.</p>
+    </div>
+
+    <figure class="sky" aria-describedby="clock-note">
+      <svg class="sky__svg" viewBox="0 -110 640 530" aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id="halo">
+            <stop offset="0" stop-color="var(--color-accent-default)" stop-opacity="0.55"/>
+            <stop offset="0.35" stop-color="var(--color-accent-default)" stop-opacity="0.18"/>
+            <stop offset="1" stop-color="var(--color-accent-default)" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <!-- The sun's path through the day, drawn as one strand of silk: thick in the middle,
+             needle-thin at the ends, a loose end curling off to the right. -->
+        <path class="sky__path" d="M40 420C100 -240 540 -240 600 420C540 -231 100 -231 40 420Z"/>
+        <path class="sky__loose" d="M600 420c10-18 26-24 34-14"/>
+        <circle class="sky__dew" cx="115.5" cy="109.8" r="3"/>
+        <circle class="sky__dew" cx="394.2" cy="-48.6" r="2.2"/>
+        <circle class="sky__dew" cx="450.6" cy="-4" r="3.4"/>
+        <g class="sky__sun" data-sun transform="translate(513.3 80.2)">
+          <circle class="sky__halo" r="150" fill="url(#halo)"/>
+          <circle class="sky__drop" r="17"/>
+          <text class="sky__time" data-sun-time x="26" y="-26" text-anchor="start">17:30</text>
+        </g>
+      </svg>
+    </figure>
+  </div>
+
+  <div class="wrap">
+    <div class="clock">
+      <p class="clock__note" id="clock-note" data-clock-note>The light on this page follows your clock when JavaScript is on. It reads the time in your browser and sends nothing anywhere.</p>
+      <fieldset class="light" data-light hidden>
+        <legend>Light</legend>
+        <span class="light__options">
+          <label><input type="radio" name="light" value="clock" checked> Your clock</label>
+          <label><input type="radio" name="light" value="paper"> Paper</label>
+          <label><input type="radio" name="light" value="dusk"> Dusk</label>
+        </span>
+      </fieldset>
+    </div>
+  </div>
+</section>
+
+<section class="chapter chapter--window" id="window" data-section aria-labelledby="window-title">
+  <div class="wrap">
+    <div class="prose-grid">
+      <div class="prose">
+        <h2 id="window-title" tabindex="-1">One window, four Layouts.</h2>
+        <p>On the left, your Smart Views, Folders and Feeds. In the middle, the Articles of whatever you picked. On the right, the reader: the Feed’s own text, set in Literata at a comfortable measure, with its images already on your disk.</p>
+        <p>Each View keeps its own Layout. Your news Folder can stay a quick List while a photo Feed opens as a Gallery and Today reads like a Magazine. Feedrico never guesses for you.</p>
+      </div>
+      <aside class="margin" aria-label="Note">
+        <p class="note note--keys" data-js-only hidden>Press <kbd>v</kbd> to change the Layout of the window below, the way you would in Feedrico.</p>
+        <p class="note">This window is drawn in HTML and filled with placeholder text. We don’t show real Feeds.</p>
+      </aside>
+    </div>
+  </div>
+
+  <div class="wrap wrap--wide">
+    <figure class="app-figure">
+      <div class="app" data-app>
+        <div class="app__titlebar" aria-hidden="true">
+          <span class="app__lights"><i></i><i></i><i></i></span>
+          <span class="app__title">Today, in Feedrico</span>
+        </div>
+
+        <div class="app__sidebar" aria-hidden="true">
+          <ul class="side">
+            <li class="side__row side__row--current"><span class="side__icon side__icon--today"></span>Today<b>23</b></li>
+            <li class="side__row"><span class="side__icon side__icon--inbox"></span>All Unread<b>128</b></li>
+            <li class="side__row"><span class="side__icon side__icon--star"></span>Starred<b>9</b></li>
+          </ul>
+          <p class="side__label">Reading</p>
+          <ul class="side">
+            <li class="side__row"><span class="tile tile--a">L</span>Lorem Ipsum Weekly<b>12</b></li>
+            <li class="side__row"><span class="tile tile--b">D</span>The Dolor Review<b>4</b></li>
+            <li class="side__row"><span class="tile tile--c">C</span>Consectetur Notes<b>7</b></li>
+          </ul>
+          <p class="side__label">Field notes</p>
+          <ul class="side">
+            <li class="side__row"><span class="tile tile--d">A</span>Amet Field Journal<b>3</b></li>
+            <li class="side__row side__row--broken"><span class="tile tile--e">S</span>Sed Tempor Quarterly<span class="side__warn" title="Couldn’t reach this Feed"></span></li>
+          </ul>
+          <ul class="side">
+            <li class="side__row"><span class="tile tile--f">M</span>Magna Aliqua Post<b>2</b></li>
+            <li class="side__row side__row--read"><span class="tile tile--g">V</span>Veniam Letters</li>
+          </ul>
+        </div>
+
+        <div class="app__list">
+          <div class="app__listhead">
+            <span class="app__view" aria-hidden="true">Today <b>23</b></span>
+            <fieldset class="seg">
+              <legend class="visually-hidden">Layout of the window</legend>
+              <label><input type="radio" name="layout" value="list" checked><span>List</span></label>
+              <label><input type="radio" name="layout" value="cards"><span>Cards</span></label>
+              <label><input type="radio" name="layout" value="magazine"><span>Magazine</span></label>
+              <label><input type="radio" name="layout" value="gallery"><span>Gallery</span></label>
+            </fieldset>
+          </div>
+          <ol class="articles" aria-hidden="true">
+            <li class="a a--unread a--current"><span class="plate plate--dusk"></span><span class="a__feed">Lorem Ipsum Weekly</span><time class="a__date">09:14</time><span class="a__title">Sed do eiusmod tempor incididunt</span><span class="a__excerpt">Ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.</span></li>
+            <li class="a a--unread"><span class="plate plate--honey"></span><span class="a__feed">The Dolor Review</span><time class="a__date">08:52</time><span class="a__title">Ut enim ad minim veniam, quis nostrud</span><span class="a__excerpt">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</span></li>
+            <li class="a a--unread a--noimg"><span class="a__feed">Consectetur Notes</span><time class="a__date">08:30</time><span class="a__title">Duis aute irure dolor in reprehenderit</span><span class="a__excerpt">Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error.</span><span class="a__motif"><!-- include:brand/motif/gossamer-dew.svg --></span></li>
+            <li class="a a--starred"><span class="plate plate--field"></span><span class="a__feed">Amet Field Journal</span><time class="a__date">07:45</time><span class="a__title">Excepteur sint occaecat cupidatat</span><span class="a__excerpt">Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium.</span></li>
+            <li class="a a--unread"><span class="plate plate--paper"></span><span class="a__feed">Magna Aliqua Post</span><time class="a__date">07:02</time><span class="a__title">Nemo enim ipsam voluptatem quia voluptas</span><span class="a__excerpt">Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit.</span></li>
+            <li class="a a--noimg"><span class="a__feed">Veniam Letters</span><time class="a__date">Yesterday</time><span class="a__title">Quis autem vel eum iure reprehenderit</span><span class="a__excerpt">Qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur.</span><span class="a__motif"><!-- include:brand/motif/gossamer-dew.svg --></span></li>
+            <li class="a"><span class="plate plate--violet"></span><span class="a__feed">The Dolor Review</span><time class="a__date">Yesterday</time><span class="a__title">At vero eos et accusamus et iusto odio</span><span class="a__excerpt">Dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores.</span></li>
+            <li class="a"><span class="plate plate--moss"></span><span class="a__feed">Lorem Ipsum Weekly</span><time class="a__date">Yesterday</time><span class="a__title">Nam libero tempore, cum soluta nobis</span><span class="a__excerpt">Est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus.</span></li>
+            <li class="a"><span class="plate plate--ember"></span><span class="a__feed">Amet Field Journal</span><time class="a__date">Yesterday</time><span class="a__title">Temporibus autem quibusdam et aut officiis</span><span class="a__excerpt">Debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae.</span></li>
+            <li class="a"><span class="plate plate--linen"></span><span class="a__feed">Magna Aliqua Post</span><time class="a__date">Yesterday</time><span class="a__title">Itaque earum rerum hic tenetur a sapiente</span><span class="a__excerpt">Ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.</span></li>
+          </ol>
+          <p class="app__hidden-note" aria-hidden="true">2 Articles without images not shown</p>
+        </div>
+
+        <article class="app__reader" aria-hidden="true">
+          <div class="reader__bar">
+            <span class="reader__btn reader__btn--star">Star</span>
+            <span class="reader__btn">Open in browser</span>
+          </div>
+          <div class="reader__body">
+            <p class="reader__meta">Lorem Ipsum Weekly, today at 09:14</p>
+            <h3 class="reader__title">Sed do eiusmod tempor incididunt</h3>
+            <p class="reader__byline">By Aurelia Vestibulum</p>
+            <span class="plate plate--dusk reader__image"></span>
+            <p>Ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore.</p>
+            <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam.</p>
+            <p>Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.</p>
+          </div>
+        </article>
+      </div>
+      <figcaption class="app-figure__caption">The Feedrico window with placeholder Feeds and Articles, in the <span data-layout-name>List</span> Layout.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="chapter chapter--story" id="library" data-section aria-labelledby="story-title">
+  <div class="wrap">
+    <div class="prose-grid">
+      <div class="prose">
+        <h2 id="story-title" tabindex="-1">A Library goes to a friend’s house.</h2>
+        <p>Everything you read in Feedrico lives in one folder, the Library: your Feeds and Folders, every Article, what you’ve Read and Starred, the images, your settings. Folders can be copied. So your reading can travel.</p>
+      </div>
+      <aside class="margin" aria-label="Note">
+        <p class="note">Portable Mode runs the app from the stick itself. It works with the Linux AppImage and the portable Windows app; macOS doesn’t allow apps to run from removable drives.</p>
+      </aside>
+    </div>
+
+    <ol class="story">
+      <li class="story__step">
+        <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
+          <rect class="ink" x="140" y="16" width="80" height="92" rx="2"/>
+          <path class="ink" d="M180 16v92M140 62h80"/>
+          <circle class="honey" cx="200" cy="44" r="9"/>
+          <path class="ink" d="M8 128h224"/>
+          <path class="ink" d="M44 124l6-50h64l6 50z"/>
+          <path class="ink" d="M36 124h92"/>
+          <path class="ink faint" d="M60 84h40M60 92h32M60 100h36"/>
+          <rect class="ink" x="128" y="114" width="16" height="7" rx="1.5"/>
+          <path class="ink thread" d="M144 117c10 2 14 8 16 15"/>
+          <rect class="ink tag" x="149" y="131" width="46" height="18" rx="2" transform="rotate(8 150 132)"/>
+          <text class="tag-text" x="156" y="145" transform="rotate(8 150 132)">Library</text>
+        </svg>
+        <h3>At home</h3>
+        <p>150 Feeds in 8 Folders, a few thousand Articles and one Starred essay, all inside a folder called <i>Feedrico Library</i>.</p>
+      </li>
+      <li class="story__step">
+        <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
+          <path class="ink" d="M64 52h112l-6 76c-1 10-8 16-18 16H88c-10 0-17-6-18-16z"/>
+          <path class="ink faint" d="M70 64h100" stroke-dasharray="3 4"/>
+          <rect class="ink" x="104" y="20" width="18" height="40" rx="3"/>
+          <rect class="ink" x="108" y="12" width="10" height="9" rx="1"/>
+          <path class="ink thread" d="M122 30c14 0 22 4 28 14"/>
+          <circle class="honey" cx="138" cy="34.6" r="2.6"/>
+          <rect class="ink tag" x="139" y="43" width="48" height="19" rx="2" transform="rotate(-6 140 44)"/>
+          <text class="tag-text" x="147" y="57" transform="rotate(-6 140 44)">Library</text>
+        </svg>
+        <h3>In a pocket</h3>
+        <p>The Library is ordinary files. Copy the folder to a USB stick with any file manager; there is no export step and no account to sign out of.</p>
+      </li>
+      <li class="story__step">
+        <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
+          <rect class="ink" x="20" y="14" width="200" height="96" rx="22"/>
+          <path class="ink faint" d="M20 82c30-14 52-16 80-6s56 8 120-12"/>
+          <path class="ink faint" d="M52 62v28M150 56v26"/>
+          <path class="ink faint" d="M52 64c34 6 64 4 98-6"/>
+          <circle class="honey" cx="178" cy="66" r="10"/>
+          <path class="ink" d="M8 136h224"/>
+          <path class="ink" d="M76 132l4-26h56l4 26z"/>
+          <path class="ink faint" d="M88 114h30M88 120h22"/>
+        </svg>
+        <h3>On the train</h3>
+        <p>No signal, and nothing missing. Images were saved when the Feeds last refreshed, and opening an Article makes no network request at all.</p>
+      </li>
+      <li class="story__step">
+        <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
+          <path class="ink" d="M8 130h224"/>
+          <path class="ink" d="M58 126l8-66h96l8 66z"/>
+          <path class="ink" d="M46 126h136"/>
+          <rect class="ink" x="182" y="118" width="16" height="7" rx="1.5"/>
+          <circle class="honey" cx="194" cy="121.5" r="2.2"/>
+          <path class="ink" d="M24 104h22v20c0 4-3 6-6 6H30c-3 0-6-2-6-6z"/>
+          <path class="ink" d="M46 110c6 0 6 10 0 10"/>
+          <path class="ink faint" d="M31 96c-3-5 3-7 0-12M39 96c-3-5 3-7 0-12"/>
+          <path class="ink faint" d="M80 76h52M80 84h40M80 92h46"/>
+        </svg>
+        <h3>At a friend’s</h3>
+        <p>Plug the stick in and run Feedrico from it. Nothing gets installed, and your friend’s own Library stays exactly as it was.</p>
+      </li>
+      <li class="story__step">
+        <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
+          <rect class="ink" x="30" y="18" width="180" height="116" rx="6"/>
+          <path class="ink" d="M30 36h180"/>
+          <path class="ink" d="M84 36v98"/>
+          <path class="ink faint" d="M40 50h32M40 60h26M40 70h30M40 80h22"/>
+          <path class="ink" d="M98 56h70"/>
+          <path class="ink faint" d="M98 70h96M98 78h90M98 86h96M98 94h70M98 108h96M98 116h84"/>
+          <path class="honey" d="M190 48l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>
+        </svg>
+        <h3>As you left it</h3>
+        <p>The same Article, still Starred, still Read, in the Layout you chose for it. Your settings travel too. Back home, the folder goes back where it came from.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="chapter chapter--folder" id="folder" data-section aria-labelledby="folder-title">
+  <div class="wrap">
+    <div class="prose-grid">
+      <div class="prose">
+        <h2 id="folder-title" tabindex="-1">What’s inside the folder.</h2>
+        <p>Four things, and none of them is hidden away in a system directory. No absolute paths are stored, so the Library opens the same on Linux, Windows and macOS, and on FAT32 or exFAT sticks.</p>
+      </div>
+    </div>
+
+    <div class="folder">
+      <ul class="tree" aria-label="The Feedrico Library folder">
+        <li class="tree__root"><span class="tree__name tree__name--dir">Feedrico Library</span>
+          <ul>
+            <li><span class="tree__name">library.json</span><span class="tree__what">Which version of the Library format this is. It lets an older Feedrico say “This Library needs a newer Feedrico” instead of guessing.</span></li>
+            <li><span class="tree__name">library.db</span><span class="tree__what">Feeds, Folders, Articles, Read and Starred state, settings and the search index, in one SQLite file. Writes are transactional: pull the stick mid-session and you lose at most your last action.</span></li>
+            <li><span class="tree__name tree__name--dir">media</span><span class="tree__what">Images and favicons, saved when Feeds refresh, so every Article reads offline.</span></li>
+            <li><span class="tree__name">.lock</span><span class="tree__what">There while the Library is open, with the machine’s name and the time. If a Library wasn’t closed cleanly, Feedrico tells you where and when it was last open.</span></li>
+          </ul>
+        </li>
+      </ul>
+
+      <div class="travels">
+        <div>
+          <h3>Travels with the Library</h3>
+          <p>Feeds, Folders, Articles, Read and Starred state, cached images, theme, density, reader typography, refresh interval and how long old Articles are kept.</p>
+        </div>
+        <div>
+          <h3>Stays on each machine</h3>
+          <p>Window size and position, the list of recent Libraries, and whether Feedrico starts with your computer.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="chapter chapter--privacy" id="privacy" data-section aria-labelledby="privacy-title">
+  <div class="wrap">
+    <div class="prose-grid">
+      <div class="prose">
+        <h2 id="privacy-title" tabindex="-1">Who Feedrico talks to.</h2>
+        <p>Here is the complete list.</p>
+      </div>
+    </div>
+
+    <div class="ledger">
+      <dl class="ledger__list">
+        <div class="ledger__row">
+          <dt>The Feeds you follow, and the websites they point to</dt>
+          <dd>When Feeds refresh: as Feedrico starts, every 30 minutes while it’s open (you can change that), and when you press <kbd>r</kbd>. It asks politely, names itself honestly, and saves the Articles’ images while it’s there.</dd>
+        </div>
+        <div class="ledger__row">
+          <dt>GitHub Releases</dt>
+          <dd>Only when you click <i>Check for updates</i>. Feedrico never updates itself.</dd>
+        </div>
+      </dl>
+      <p class="ledger__end">That’s everyone.</p>
+    </div>
+
+    <div class="prose-grid">
+      <div class="prose">
+        <p>Reading makes no requests. When you open an Article, its images come from your Library, so a tracking pixel never learns that you read it. Scripts, forms and embedded frames are stripped from Feed content before it reaches the reader; a video becomes a plain link you can open in your browser. Links open only when you click them.</p>
+        <p>There is no account, no telemetry, no crash reporting and no font or script fetched from anywhere else. This page plays by the same rule, and <a href="#requests">counts its own requests</a> at the bottom.</p>
+      </div>
+      <aside class="margin" aria-label="Note">
+        <p class="note">If you watch your network traffic while you read, you’ll see nothing. We’d like you to check.</p>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="chapter chapter--keys" id="keys" data-section aria-labelledby="keys-title">
+  <div class="wrap">
+    <div class="prose-grid">
+      <div class="prose">
+        <h2 id="keys-title" tabindex="-1">Your hands stay on the keyboard.</h2>
+        <p>Every Layout answers to the same keys. Feedrico is built to move to the next Article within a single frame, in a Library of a thousand Feeds.</p>
+      </div>
+      <aside class="margin" aria-label="Note">
+        <p class="note note--keys" data-js-only hidden>This page answers to <kbd>j</kbd>, <kbd>k</kbd>, <kbd>v</kbd> and <kbd>s</kbd> too. Try them; the box in the corner turns them off.</p>
+      </aside>
+    </div>
+
+    <dl class="keys">
+      <div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next and previous Article</dd></div>
+      <div><dt><kbd>s</kbd></dt><dd>Star or unstar</dd></div>
+      <div><dt><kbd>m</kbd></dt><dd>Mark as Read or unread</dd></div>
+      <div><dt><kbd>v</kbd></dt><dd>Next Layout</dd></div>
+      <div><dt><kbd>o</kbd></dt><dd>Open in your browser</dd></div>
+      <div><dt><kbd>r</kbd></dt><dd>Refresh Feeds</dd></div>
+      <div><dt><kbd>/</kbd></dt><dd>Search every Article</dd></div>
+      <div><dt><kbd>Enter</kbd> <kbd>Esc</kbd></dt><dd>Open and close the reader in Cards, Magazine and Gallery</dd></div>
+      <div><dt><kbd>Ctrl</kbd> <kbd>K</kbd></dt><dd>Command palette: jump to any Feed or Folder, import OPML, switch theme</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section class="chapter chapter--who" id="who" data-section aria-labelledby="who-title">
+  <div class="wrap">
+    <div class="prose-grid">
+      <div class="prose">
+        <h2 id="who-title" tabindex="-1">Where to start, depending on who you are.</h2>
+      </div>
+    </div>
+
+    <dl class="who">
+      <div class="who__entry">
+        <dt>“I’ve never used a feed reader.”</dt>
+        <dd>Create a Library, then import the OPML file from your old app, or paste the address of a website you like; Feedrico finds its Feed. Every empty screen says what to do next.</dd>
+      </div>
+      <div class="who__entry">
+        <dt>“I follow over a thousand Feeds, and half of them are dead.”</dt>
+        <dd>Every Layout scrolls a virtualized list, search covers every Article, and Starred Articles are never pruned. Broken Feeds get a quiet badge and try again later, at longer and longer intervals.</dd>
+      </div>
+      <div class="who__entry">
+        <dt>“I have fifteen minutes and a coffee.”</dt>
+        <dd>Open Today in the Magazine Layout. There are no streaks and no badges asking for attention. When you’re through, it says so and lets you go.</dd>
+      </div>
+      <div class="who__entry">
+        <dt>“My reading goes where I go.”</dt>
+        <dd>Carry the Library on a stick and run Feedrico from it. See <a href="#library">a Library goes to a friend’s house</a>.</dd>
+      </div>
+      <div class="who__entry">
+        <dt>“A friend wants to plug in their stick.”</dt>
+        <dd>Your own Library isn’t touched; switch back from <i>Recent Libraries</i>. If your Feedrico is older than their Library, it says so and writes nothing to the stick.</dd>
+      </div>
+      <div class="who__entry">
+        <dt>“If it makes a request I didn’t ask for, I’ll notice.”</dt>
+        <dd>Good. Here is <a href="#privacy">everyone Feedrico talks to</a>, and the source is <span class="nowrap">GPL-3.0</span> for you to read.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<section class="chapter chapter--get band" id="get" data-theme="dark" data-section aria-labelledby="get-title">
+  <div class="wrap">
+    <div class="get">
+      <div class="prose">
+        <h2 id="get-title" tabindex="-1">Get Feedrico.</h2>
+        <p><strong>Feedrico isn’t released yet.</strong> There is nothing to download today, and no waiting list to join. We’d rather say so plainly.</p>
+        <p>When version 1 is ready, it will be on GitHub as an AppImage and a <code>.deb</code> for Linux, an installer and a portable app for Windows, and a <code>.dmg</code> for macOS. Watch the repository to hear about it; there is no newsletter.</p>
+        <p class="get__actions">
+          <a class="button button--primary" href="https://github.com/viberfasend/feedrico">Watch the repository on GitHub</a>
+        </p>
+      </div>
+      <div class="get__source">
+        <h3>Build it from source</h3>
+        <p>You need Rust, Node 24 and, on Linux, the WebKitGTK packages that Tauri uses.</p>
+<pre><code>git clone https://github.com/viberfasend/feedrico
+cd feedrico
+npm install
+npm run tauri build</code></pre>
+        <p>That builds the app for the system you’re on. The <a href="https://github.com/viberfasend/feedrico#development">development notes</a> list the Linux packages.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer band" id="end" data-theme="dark" data-section aria-label="About this site">
+  <div class="wrap">
+   <div class="footer__inner">
+    <div class="footer__brand">
+      <span class="footer__logo"><!-- include:brand/logo/feedrico-lockup-stacked.svg logo --></span>
+    </div>
+    <div class="footer__text">
+      <p>Feedrico is named after a friend: Feed, plus Federico. Its colours come from the <i lang="de">Altweibersommer</i>, the warm weeks at the end of summer when the light turns golden and fine threads of silk drift through the air.</p>
+      <p>Free software under the <span class="nowrap">GPL-3.0</span>. The source, the design tokens and this page are <a href="https://github.com/viberfasend/feedrico">on GitHub</a>.</p>
+      <p class="footer__requests" id="requests" data-requests>This page loads only from this site: no analytics, no fonts or scripts from elsewhere. Your browser’s network panel can confirm it.</p>
+    </div>
+   </div>
+  </div>
+  <div class="wrap footer__end">
+    <span class="footer__dew"><!-- include:brand/motif/gossamer-dew.svg --></span>
+    <p>That’s the whole page. Enjoy the late-summer sun.</p>
+  </div>
+</footer>
+
+<aside class="keyhint" data-keyhint hidden aria-label="Keyboard shortcuts on this page">
+  <p class="keyhint__text" data-keyhint-text aria-live="polite"><kbd>j</kbd> next section</p>
+  <button class="keyhint__toggle" type="button" data-keyhint-toggle aria-pressed="true">Shortcuts on</button>
+</aside>
+</body>
+</html>
