@@ -7,3 +7,5 @@ target/
 .DS_Store
 .env
 .env.*
+src/lib/tokens/generated/
+src-tauri/gen/
