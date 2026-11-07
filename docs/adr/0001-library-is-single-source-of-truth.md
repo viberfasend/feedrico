@@ -1,0 +1,3 @@
+# The Library is the single source of truth; no sync, no merge
+
+All user state lives in one self-contained Library. To use it on another machine, the user carries the Library itself (for example on a USB stick) and opens it there; copies are never merged. We rejected sync and copy-plus-merge because they need either an online service or conflict resolution, and the product promise is "everything local, exactly the same data everywhere". Only one app instance may have a Library open at a time, enforced by a lock that records machine name and time so a stale lock can be taken over after a crash or a yanked stick.

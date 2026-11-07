@@ -1,0 +1,3 @@
+# Tauri 2 with a Rust core and a Svelte 5 UI
+
+The top priority is a fast, smooth app, and small binaries suit portable mode on a USB stick. Tauri 2 lets all heavy work (fetching, feed parsing, SQLite, image caching, pruning) run in native Rust off the UI thread, while the UI uses the OS webview, giving binaries around 10 MB instead of Electron's 100 MB+. Svelte 5 compiles to minimal DOM updates with no virtual-DOM overhead, which keeps long Article lists and fast keyboard navigation cheap. We considered Electron (self-contained but heavy), native toolkits (fast but a slower path to a polished, token-driven design system) and React/Solid (React is heavier; Solid is as fast but has a smaller ecosystem).
