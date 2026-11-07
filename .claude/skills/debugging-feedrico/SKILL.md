@@ -30,8 +30,10 @@ PATH=/snap/bin:$PATH npm run tauri dev     # run in the background, keep the out
 - Is the app on the latest build? Compare `ls -la --time-style=+%T target/debug/feedrico` with
   `date`, and look for `Info File … changed. Rebuilding` / `error[` in the output. A failed
   rebuild leaves the **old** binary running.
-- Restarting: stop the background task, then `pkill -f target/debug/feedrico`. Never run
-  `pkill -f vite` or other broad patterns: they match the shell running the command and kill it.
+- Restarting: stop the background task, then kill the leftover process by an **anchored**
+  pattern, e.g. `kill $(pgrep -f '^/home/andreas/dev/altviberssommer/target/debug/feedrico')` or
+  `kill $(pgrep -f '^node scripts/serve-site.mjs')`. Unanchored `pkill -f <pattern>` also matches
+  the shell running the command (its command line contains the pattern) and kills it.
 
 ## See what the UI is doing
 
