@@ -101,6 +101,14 @@
       "gossamer": {
         "$value": "{palette.dusk.600}"
       }
+    },
+    "media": {
+      "scrim": {
+        "$value": "{palette.scrim}"
+      },
+      "caption": {
+        "$value": "{palette.paper.0}"
+      }
     }
   },
   "shadow": {

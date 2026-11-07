@@ -36,5 +36,26 @@
       "$type": "dimension",
       "$value": "{space.inset.xl}"
     }
+  },
+  "slideOver": {
+    "$type": "dimension",
+    "width": {
+      "$value": "720px"
+    },
+    "maxWidth": {
+      "$value": "88%"
+    }
+  },
+  "grid": {
+    "$type": "dimension",
+    "padding": {
+      "$value": "{space.inset.lg}"
+    }
+  },
+  "cards": {
+    "imageRatio": {
+      "$type": "number",
+      "$value": 0.6667
+    }
   }
 }

@@ -36,6 +36,11 @@
   {#if article}
     <article>
       <header class="head">
+        {#if app.isGrid}
+          <button class="close" onclick={() => app.closeReader()} aria-label="Close reader" title="Close (Esc)">
+            <Icon name="close" size={18} />
+          </button>
+        {/if}
         <div class="source">
           <span>{article.feedTitle}</span>
           {#if article.author}<span>· {article.author}</span>{/if}
@@ -109,6 +114,23 @@
     margin-inline: auto;
     padding: var(--reader-padding-block) var(--reader-padding-inline) calc(var(--reader-padding-block) * 3);
     box-sizing: content-box;
+  }
+  .close {
+    justify-self: end;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--control-height);
+    height: var(--control-height);
+    margin-block-end: calc(var(--space-stack-sm) * -1);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-sunken);
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+  .close:hover {
+    color: var(--color-text-default);
   }
   .head {
     display: grid;
