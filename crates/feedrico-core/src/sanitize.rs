@@ -128,7 +128,12 @@ fn decode_entities(s: &str) -> String {
     while let Some(start) = rest.find('&') {
         out.push_str(&rest[..start]);
         rest = &rest[start..];
-        let Some(end) = rest[..rest.len().min(12)].find(';') else {
+        // Entities are short; look a few characters ahead (char-wise: text may be multi-byte).
+        let Some(end) = rest
+            .char_indices()
+            .take(12)
+            .find_map(|(i, c)| (c == ';').then_some(i))
+        else {
             out.push('&');
             rest = &rest[1..];
             continue;
@@ -248,6 +253,15 @@ mod tests {
     fn style_attributes_are_dropped() {
         let out = clean(r#"<p style="position:fixed;inset:0">x</p>"#);
         assert!(!out.html.contains("style"));
+    }
+
+    #[test]
+    fn decoding_survives_multibyte_text_after_ampersands() {
+        assert_eq!(
+            plain_text("Tom & Jérôme — 🍯🍯🍯🍯🍯 grüßt"),
+            "Tom & Jérôme — 🍯🍯🍯🍯🍯 grüßt"
+        );
+        assert_eq!(plain_text("&äöü&#228;"), "&äöüä");
     }
 
     #[test]
