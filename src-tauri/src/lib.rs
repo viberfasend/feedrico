@@ -408,9 +408,21 @@ async fn run_refresh(app: &AppHandle, force: bool) {
     cache_images(app, &dir, images).await;
 }
 
+/// Lead Images that weren't cached when their Article arrived get another chance each refresh.
+const LEAD_IMAGE_CATCH_UP: usize = 100;
+
 async fn cache_images(app: &AppHandle, dir: &Path, images: Vec<(i64, String)>) {
     let state = app.state::<AppState>();
     let mut urls: Vec<String> = images.into_iter().map(|(_, url)| url).collect();
+    {
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(l) = guard.as_ref().filter(|l| l.dir() == dir) {
+            urls.extend(
+                l.missing_lead_images(LEAD_IMAGE_CATCH_UP)
+                    .unwrap_or_default(),
+            );
+        }
+    }
     urls.sort();
     urls.dedup();
     let fetcher = state.fetcher.clone();
