@@ -38,9 +38,18 @@ pub(crate) fn upsert(
             if title != e.title || html != e.content_html {
                 conn.execute(
                     "UPDATE article SET title = ?2, content_html = ?3, content_text = ?4, excerpt = ?5,
-                            url = ?6, author = ?7
+                            url = ?6, author = ?7, lead_image = ?8
                      WHERE id = ?1",
-                    params![id, e.title, e.content_html, e.content_text, e.excerpt, e.url, e.author],
+                    params![
+                        id,
+                        e.title,
+                        e.content_html,
+                        e.content_text,
+                        e.excerpt,
+                        e.url,
+                        e.author,
+                        lead_key(e)
+                    ],
                 )?;
             }
             Ok(None)
@@ -48,8 +57,8 @@ pub(crate) fn upsert(
         None => {
             conn.execute(
                 "INSERT INTO article (feed_id, identity, url, title, author, content_html, content_text,
-                                      excerpt, published_at, first_seen_at, article_date)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                                      excerpt, published_at, first_seen_at, article_date, lead_image)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     feed_id,
                     e.identity,
@@ -62,6 +71,7 @@ pub(crate) fn upsert(
                     e.published_at,
                     now,
                     article_date(e.published_at, now),
+                    lead_key(e),
                 ],
             )?;
             let id = conn.last_insert_rowid();
@@ -80,6 +90,10 @@ pub(crate) fn upsert(
             Ok(Some(id))
         }
     }
+}
+
+fn lead_key(e: &ParsedEntry) -> Option<String> {
+    e.lead_image.as_deref().map(crate::sanitize::media_key)
 }
 
 /// Which Articles a list shows.
@@ -118,6 +132,9 @@ pub struct ListQuery {
     pub sort: Sort,
     #[serde(default)]
     pub search: Option<String>,
+    /// Only Articles with a Lead Image (the Gallery Layout).
+    #[serde(default)]
+    pub with_lead_image: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -131,6 +148,8 @@ pub struct ArticleRow {
     pub article_date: i64,
     pub is_read: bool,
     pub is_starred: bool,
+    /// Media key of the Lead Image, if any.
+    pub lead_image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -160,6 +179,15 @@ pub struct Enclosure {
 
 /// SQL `WHERE` clause and parameters for a query. Columns refer to `article a`.
 fn filter(q: &ListQuery) -> (String, Vec<rusqlite::types::Value>) {
+    let (clause, args) = view_filter(q);
+    if q.with_lead_image {
+        (format!("({clause}) AND a.lead_image IS NOT NULL"), args)
+    } else {
+        (clause, args)
+    }
+}
+
+fn view_filter(q: &ListQuery) -> (String, Vec<rusqlite::types::Value>) {
     use rusqlite::types::Value;
     match q.view {
         View::AllUnread => ("a.is_read = 0".into(), vec![]),
@@ -218,7 +246,8 @@ impl Library {
         args.push(limit.into());
         args.push(offset.into());
         let mut stmt = self.conn().prepare_cached(&format!(
-            "SELECT a.id, a.feed_id, f.title, a.title, a.excerpt, a.article_date, a.is_read, a.is_starred
+            "SELECT a.id, a.feed_id, f.title, a.title, a.excerpt, a.article_date, a.is_read, a.is_starred,
+                    a.lead_image
              FROM article a JOIN feed f ON f.id = a.feed_id
              WHERE {clause} ORDER BY {order} LIMIT ? OFFSET ?"
         ))?;
@@ -233,6 +262,7 @@ impl Library {
                     article_date: r.get(5)?,
                     is_read: r.get(6)?,
                     is_starred: r.get(7)?,
+                    lead_image: r.get(8)?,
                 })
             })?
             .collect::<rusqlite::Result<_>>()?;
@@ -350,6 +380,7 @@ mod tests {
             excerpt: format!("{title} body"),
             published_at,
             images: vec![],
+            lead_image: None,
             enclosures: vec![],
         }
     }
@@ -407,6 +438,7 @@ mod tests {
             view: View::AllUnread,
             sort: Sort::NewestFirst,
             search: None,
+            with_lead_image: false,
         };
         let rows = library.list_articles(&all, 0, 50).unwrap();
         assert_eq!(
@@ -471,6 +503,7 @@ mod tests {
             view: View::AllUnread,
             sort: Sort::NewestFirst,
             search: None,
+            with_lead_image: false,
         };
         let ids = library.mark_all_read(&all).unwrap();
         assert_eq!(ids.len(), 2);
@@ -482,6 +515,7 @@ mod tests {
             view: View::Search,
             sort: Sort::NewestFirst,
             search: Some(s.into()),
+            with_lead_image: false,
         };
         assert_eq!(
             library.count_articles(&search("spinn")).unwrap(),

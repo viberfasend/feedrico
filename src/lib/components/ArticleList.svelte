@@ -1,64 +1,19 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { shortDate } from '../format';
+  import { LAYOUTS, type Layout } from '../api';
   import { app } from '../state.svelte';
   import EmptyState from './EmptyState.svelte';
-  import Icon from './Icon.svelte';
+  import Icon, { type IconName } from './Icon.svelte';
+  import CardsLayout from './layouts/CardsLayout.svelte';
+  import GalleryLayout from './layouts/GalleryLayout.svelte';
+  import ListLayout from './layouts/ListLayout.svelte';
+  import MagazineLayout from './layouts/MagazineLayout.svelte';
 
-  // Virtualized: only rows near the viewport exist in the DOM. Row height comes from the
-  // density tokens, so comfortable/compact switches stay exact.
-  const OVERSCAN = 10;
-  let viewport = $state<HTMLDivElement>();
-  let scrollTop = $state(0);
-  let height = $state(0);
-  let rowHeight = $state(76);
-
-  function measure() {
-    const value = getComputedStyle(document.documentElement).getPropertyValue(
-      '--article-list-row-height',
-    );
-    rowHeight = parseFloat(value) || 76;
-  }
-
-  onMount(() => {
-    measure();
-    const observer = new MutationObserver(measure);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-density'],
-    });
-    return () => observer.disconnect();
-  });
-
-  const first = $derived(Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN));
-  const last = $derived(Math.min(app.total, Math.ceil((scrollTop + height) / rowHeight) + OVERSCAN));
-
-  $effect(() => {
-    void app.ensureRange(first, last);
-  });
-
-  const rows = $derived.by(() => {
-    void app.pagesVersion;
-    const out = [];
-    for (let index = first; index < last; index++) out.push({ index, row: app.rowAt(index) });
-    return out;
-  });
-
-  // A new list starts at the top.
-  $effect(() => {
-    void app.listEpoch;
-    if (viewport) viewport.scrollTop = 0;
-  });
-
-  // Keep the selected row in view during keyboard navigation.
-  $effect(() => {
-    const index = app.selectedIndex;
-    if (index === null || !viewport) return;
-    const top = index * rowHeight;
-    if (top < viewport.scrollTop) viewport.scrollTop = top;
-    else if (top + rowHeight > viewport.scrollTop + viewport.clientHeight)
-      viewport.scrollTop = top + rowHeight - viewport.clientHeight;
-  });
+  const layoutMeta: Record<Layout, { label: string; icon: IconName }> = {
+    list: { label: 'List', icon: 'list' },
+    cards: { label: 'Cards', icon: 'cards' },
+    magazine: { label: 'Magazine', icon: 'magazine' },
+    gallery: { label: 'Gallery', icon: 'gallery' },
+  };
 
   const title = $derived.by(() => {
     if (app.search.trim()) return `Search: ${app.search.trim()}`;
@@ -100,6 +55,17 @@
       <span class="total">{app.total.toLocaleString()}</span>
     </div>
     <div class="controls">
+      <div class="switcher" role="group" aria-label="Layout (v)">
+        {#each LAYOUTS as layout (layout)}
+          <button
+            class="segment"
+            aria-pressed={app.layout === layout}
+            title={`${layoutMeta[layout].label} (v)`}
+            aria-label={layoutMeta[layout].label}
+            onclick={() => app.setLayout(layout)}
+          ><Icon name={layoutMeta[layout].icon} size={16} /></button>
+        {/each}
+      </div>
       <label class="search">
         <Icon name="search" size={15} />
         <input
@@ -133,6 +99,11 @@
         onclick={() => app.startRefresh(true)}
       ><Icon name="refresh" size={16} /></button>
     </div>
+    {#if app.hiddenWithoutImage > 0}
+      <p class="note">
+        {app.hiddenWithoutImage.toLocaleString()} Article{app.hiddenWithoutImage === 1 ? '' : 's'} without images not shown
+      </p>
+    {/if}
     {#if app.refresh}
       <div class="progress" role="progressbar" aria-valuemin={0} aria-valuemax={app.refresh.total} aria-valuenow={app.refresh.done}>
         <div class="bar" style:width="{app.refresh.total ? (app.refresh.done / app.refresh.total) * 100 : 100}%"></div>
@@ -150,6 +121,8 @@
         <EmptyState title="No Feeds yet">Import an OPML file from the sidebar to get started.</EmptyState>
       {:else if refreshing}
         <EmptyState title="Fetching your Feeds…">Articles will drift in here in a moment.</EmptyState>
+      {:else if app.layout === 'gallery' && app.hiddenWithoutImage > 0}
+        <EmptyState title="No images here">This View has no Articles with images. Try Cards or List.</EmptyState>
       {:else if app.search.trim()}
         <EmptyState title="No matches">Try fewer or shorter words.</EmptyState>
       {:else if app.selection.kind === 'allUnread'}
@@ -158,45 +131,14 @@
         <EmptyState title="Nothing here">No Articles in this view.</EmptyState>
       {/if}
     </div>
+  {:else if app.layout === 'cards'}
+    <CardsLayout label={title} />
+  {:else if app.layout === 'magazine'}
+    <MagazineLayout label={title} />
+  {:else if app.layout === 'gallery'}
+    <GalleryLayout label={title} />
   {:else}
-    <div
-      class="viewport"
-      bind:this={viewport}
-      bind:clientHeight={height}
-      onscroll={(e) => (scrollTop = (e.currentTarget as HTMLDivElement).scrollTop)}
-      role="listbox"
-      aria-label={title}
-      tabindex="-1"
-    >
-      <div class="spacer" style:height="{app.total * rowHeight}px">
-        {#each rows as { index, row } (index)}
-          <div
-            class="row"
-            class:unread={row && !row.isRead}
-            class:selected={app.selectedIndex === index}
-            style:transform="translateY({index * rowHeight}px)"
-            role="option"
-            aria-selected={app.selectedIndex === index}
-            tabindex="-1"
-            onclick={() => app.selectIndex(index)}
-            onkeydown={(e) => e.key === 'Enter' && app.selectIndex(index)}
-          >
-            {#if row}
-              <div class="meta">
-                <span class="dot" aria-hidden="true"></span>
-                <span class="feed">{row.feedTitle}</span>
-                {#if row.isStarred}<span class="star"><Icon name="star" size={12} filled label="Starred" /></span>{/if}
-                <time>{shortDate(row.articleDate)}</time>
-              </div>
-              <div class="title">{row.title}</div>
-              <div class="excerpt">{row.excerpt}</div>
-            {:else}
-              <div class="skeleton"></div>
-            {/if}
-          </div>
-        {/each}
-      </div>
-    </div>
+    <ListLayout label={title} />
   {/if}
 </section>
 
@@ -204,8 +146,9 @@
   .list {
     position: relative;
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
     min-width: 0;
+    overflow: hidden;
     min-height: 0;
     height: 100%;
     background: var(--color-surface-base);
@@ -240,11 +183,13 @@
   }
   .controls {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: var(--space-inline-xs);
   }
   .search {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--space-inline-xs);
@@ -260,6 +205,7 @@
   }
   input {
     flex: 1;
+    width: 0;
     min-width: 0;
     border: 0;
     background: none;
@@ -318,96 +264,38 @@
     box-shadow: var(--shadow-raised);
     cursor: pointer;
   }
-  .empty {
+  .empty,
+  .list > :global(.viewport) {
     min-height: 0;
   }
-  .viewport {
-    overflow-y: auto;
-    min-height: 0;
-    contain: strict;
-    outline: none;
+  .switcher {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: var(--radius-control);
+    background: var(--color-surface-sunken);
   }
-  .spacer {
-    position: relative;
-  }
-  .row {
-    position: absolute;
-    inset-inline: 0;
-    top: 0;
-    height: var(--article-list-row-height);
-    padding: var(--article-list-row-padding-block) var(--article-list-row-padding-inline);
-    border-block-end: 1px solid var(--color-border-subtle);
-    display: grid;
-    grid-template-rows: auto auto 1fr;
-    gap: var(--space-stack-2xs);
-    overflow: hidden;
-    cursor: pointer;
-    contain: layout paint;
-  }
-  .row:hover {
-    background: var(--color-surface-hover);
-  }
-  .row.selected {
-    background: var(--color-surface-selected);
-  }
-  .meta {
-    display: flex;
+  .segment {
+    display: inline-flex;
     align-items: center;
-    gap: var(--space-inline-xs);
-    min-width: 0;
+    justify-content: center;
+    width: calc(var(--control-height) - 4px);
+    height: calc(var(--control-height) - 4px);
+    border: 0;
+    border-radius: calc(var(--radius-control) - 2px);
+    background: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+  .segment:hover {
+    color: var(--color-text-default);
+  }
+  .segment[aria-pressed='true'] {
+    background: var(--color-surface-raised);
+    color: var(--color-text-default);
+    box-shadow: var(--shadow-raised);
+  }
+  .note {
     color: var(--color-text-muted);
     font-size: var(--font-size-caption);
-  }
-  .dot {
-    flex: none;
-    width: 6px;
-    height: 6px;
-    border-radius: var(--radius-pill);
-    background: transparent;
-  }
-  .unread .dot {
-    background: var(--color-unread-indicator);
-  }
-  .feed {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .star {
-    display: inline-flex;
-    color: var(--color-text-accent);
-  }
-  time {
-    flex: none;
-    font-variant-numeric: tabular-nums;
-  }
-  .title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--color-text-muted);
-    font-weight: var(--font-weight-medium);
-  }
-  .unread .title {
-    color: var(--color-text-default);
-    font-weight: var(--font-weight-strong);
-  }
-  .excerpt {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-small);
-  }
-  :global([data-density='compact']) .excerpt {
-    display: none;
-  }
-  .skeleton {
-    grid-row: 1 / -1;
-    margin-block: var(--space-stack-xs);
-    border-radius: var(--radius-control);
-    background: var(--color-surface-hover);
   }
 </style>

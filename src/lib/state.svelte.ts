@@ -6,9 +6,12 @@
 import {
   api,
   isCommandError,
+  LAYOUTS,
   todaySince,
   type ArticleDetail,
   type ArticleRow,
+  type Layout,
+  type Layouts,
   type LibraryInfo,
   type ListQuery,
   type RefreshProgress,
@@ -37,12 +40,13 @@ export interface Toast {
   action?: { label: string; run: () => void };
 }
 
-class AppState {
+export class AppState {
   phase = $state<Phase>('loading');
   library = $state<LibraryInfo | null>(null);
   defaultPath = $state('');
   recent = $state<string[]>([]);
-  attention = $state<{ path: string; status: Status } | null>(null);
+  /** A Library that needs a decision. `takeOverLock` remembers an earlier "Open anyway". */
+  attention = $state<{ path: string; status: Status; takeOverLock: boolean } | null>(null);
 
   sidebar = $state<Sidebar | null>(null);
   selection = $state<Selection>({ kind: 'allUnread' });
@@ -62,6 +66,14 @@ class AppState {
   article = $state<ArticleDetail | null>(null);
   /** Refresh brought new Articles while the user was reading; offer to show them. */
   hasNewArticles = $state(false);
+
+  layouts = $state<Layouts>({ default: 'list', views: {} });
+  /** Grid Layouts show the reader as a slide-over panel; List always shows it. */
+  readerOpen = $state(false);
+  /** Columns of the current grid, reported by the grid so arrow keys can move spatially. */
+  gridColumns = $state(1);
+  /** Gallery only: Articles in the View that have no Lead Image and are therefore hidden. */
+  hiddenWithoutImage = $state(0);
 
   refresh = $state<RefreshProgress | null>(null);
   toasts = $state<Toast[]>([]);
@@ -90,8 +102,8 @@ class AppState {
     this.phase = 'welcome';
   }
 
-  needsAttention(path: string, status: Status) {
-    this.attention = { path, status };
+  needsAttention(path: string, status: Status, takeOverLock = false) {
+    this.attention = { path, status, takeOverLock };
     this.phase = 'attention';
   }
 
@@ -108,8 +120,12 @@ class AppState {
     try {
       await this.enter(await api.open(path, allowUpgrade, takeOverLock));
     } catch (e) {
-      if (isCommandError(e) && ['locked', 'needsUpgrade', 'tooNew'].includes(e.kind)) {
-        this.needsAttention(path, await api.inspect(path));
+      // One problem can hide another: a stale lock *and* an older format. After the user takes
+      // over the lock, ask about the upgrade next instead of re-reporting the lock.
+      if (isCommandError(e) && e.kind === 'needsUpgrade') {
+        this.needsAttention(path, { kind: 'needsUpgrade', found: 0, target: 0 }, takeOverLock);
+      } else if (isCommandError(e) && ['locked', 'tooNew'].includes(e.kind)) {
+        this.needsAttention(path, await api.inspect(path), takeOverLock);
       } else {
         this.notify(errorMessage(e));
       }
@@ -122,6 +138,7 @@ class AppState {
     this.selection = { kind: 'allUnread' };
     this.search = '';
     this.phase = 'ready';
+    this.layouts = await api.layouts();
     await Promise.all([this.loadSidebar(), this.resetList()]);
     if (library.feedCount > 0) void this.startRefresh(false);
     if (this.timer) clearInterval(this.timer);
@@ -168,11 +185,44 @@ class AppState {
   }
 
   query(): ListQuery {
+    const withLeadImage = this.layout === 'gallery';
     const search = this.search.trim();
-    if (search) return { view: { kind: 'search' }, sort: this.sort, search };
+    if (search) return { view: { kind: 'search' }, sort: this.sort, search, withLeadImage };
     const s = this.selection;
     const view: View = s.kind === 'today' ? { kind: 'today', since: todaySince() } : s;
-    return { view, sort: this.sort };
+    return { view, sort: this.sort, withLeadImage };
+  }
+
+  /** The key a View's Layout is stored under; search results use the default. */
+  get viewKey(): string | null {
+    if (this.search.trim()) return null;
+    const s = this.selection;
+    return 'id' in s ? `${s.kind}:${s.id}` : s.kind;
+  }
+
+  get layout(): Layout {
+    const key = this.viewKey;
+    return (key && this.layouts.views[key]) || this.layouts.default;
+  }
+
+  get isGrid(): boolean {
+    return this.layout !== 'list';
+  }
+
+  async setLayout(layout: Layout) {
+    const key = this.viewKey;
+    const before = this.layout;
+    if (key) this.layouts.views[key] = layout;
+    else this.layouts.default = layout;
+    this.readerOpen = false;
+    await api.setLayout(key, layout);
+    // Gallery filters the list; switching into or out of it needs a fresh list.
+    if ((before === 'gallery') !== (layout === 'gallery')) await this.resetList();
+  }
+
+  cycleLayout() {
+    const next = LAYOUTS[(LAYOUTS.indexOf(this.layout) + 1) % LAYOUTS.length] ?? 'list';
+    void this.setLayout(next);
   }
 
   select(selection: Selection) {
@@ -203,19 +253,30 @@ class AppState {
   // ---- The Article list -------------------------------------------------------------------
 
   async resetList() {
+    // Bump the epoch first: anything still loading for the previous list is discarded, and
+    // components that ask for pages while we count already load the new list.
     const query = this.query();
+    const epoch = ++this.listEpoch;
     this.pages = new Map();
     this.loading = new Map();
     this.selectedIndex = null;
     this.article = null;
     this.hasNewArticles = false;
-    this.total = await api.count(query);
-    this.listEpoch++;
+    this.readerOpen = false;
+    const total = await api.count(query);
+    const hidden = query.withLeadImage
+      ? (await api.count({ ...query, withLeadImage: false })) - total
+      : 0;
+    if (epoch !== this.listEpoch) return;
+    this.total = total;
+    this.hiddenWithoutImage = hidden;
     this.pagesVersion++;
     await this.ensureRange(0, PAGE_SIZE);
   }
 
+  /** Reactive: reading a row subscribes to page loads and row patches. */
   rowAt(index: number): ArticleRow | undefined {
+    void this.pagesVersion;
     return this.pages.get(Math.floor(index / PAGE_SIZE))?.[index % PAGE_SIZE];
   }
 
@@ -229,13 +290,20 @@ class AppState {
       if (this.pages.has(page)) continue;
       let job = this.loading.get(page);
       if (!job) {
-        job = api.list(this.query(), page * PAGE_SIZE, PAGE_SIZE).then((rows) => {
-          if (epoch !== this.listEpoch) return;
-          this.pages.set(page, rows);
-          this.loading.delete(page);
-          this.pagesVersion++;
-        });
-        this.loading.set(page, job);
+        const loading = this.loading;
+        const request: Promise<void> = api
+          .list(this.query(), page * PAGE_SIZE, PAGE_SIZE)
+          .then((rows) => {
+            if (epoch !== this.listEpoch) return;
+            this.pages.set(page, rows);
+            this.pagesVersion++;
+          })
+          .finally(() => {
+            // Always clear the marker, or a discarded request would block the page forever.
+            if (loading.get(page) === request) loading.delete(page);
+          });
+        loading.set(page, request);
+        job = request;
       }
       jobs.push(job);
     }
@@ -250,21 +318,49 @@ class AppState {
     this.pagesVersion++;
   }
 
+  /** Opens the Article at `index` in the reader, which marks it Read. */
   async selectIndex(index: number) {
     if (index < 0 || index >= this.total) return;
     await this.ensureRange(index, index + 1);
     const row = this.rowAt(index);
     if (!row) return;
     this.selectedIndex = index;
+    if (this.isGrid) this.readerOpen = true;
     const detail = await api.article(row.id);
     if (this.selectedIndex !== index) return;
     this.article = detail;
     if (!detail.isRead) await this.setRead(true);
   }
 
+  /** Moves the highlight without opening: in grids, seeing an Article doesn't make it Read. */
+  focusIndex(index: number) {
+    if (index < 0 || index >= this.total) return;
+    this.selectedIndex = index;
+    void this.ensureRange(index, index + 1);
+  }
+
   move(delta: number) {
     const next = this.selectedIndex === null ? 0 : this.selectedIndex + delta;
-    void this.selectIndex(Math.min(Math.max(next, 0), this.total - 1));
+    const index = Math.min(Math.max(next, 0), this.total - 1);
+    if (this.isGrid && !this.readerOpen) this.focusIndex(index);
+    else void this.selectIndex(index);
+  }
+
+  /** Arrow keys: spatial in Cards and Gallery, sequential elsewhere. */
+  moveSpatial(direction: 'up' | 'down' | 'left' | 'right') {
+    const vertical = this.layout === 'cards' || this.layout === 'gallery' ? this.gridColumns : 1;
+    const step = { up: -vertical, down: vertical, left: -1, right: 1 }[direction];
+    if (this.layout === 'list' && (direction === 'left' || direction === 'right')) return;
+    this.move(step);
+  }
+
+  openReader() {
+    if (this.selectedIndex === null) this.focusIndex(0);
+    if (this.selectedIndex !== null) void this.selectIndex(this.selectedIndex);
+  }
+
+  closeReader() {
+    this.readerOpen = false;
   }
 
   private async reloadArticle() {

@@ -6,6 +6,9 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
   plugins: [svelte()],
+  // Tests need Svelte's client runtime, or $effect never runs. Rune tests also opt into the
+  // happy-dom environment so the Svelte plugin compiles them for the client.
+  resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
   clearScreen: false,
   server: {
     port: 1420,

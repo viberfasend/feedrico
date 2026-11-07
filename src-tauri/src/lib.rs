@@ -9,7 +9,8 @@ use std::sync::{Mutex, PoisonError};
 
 use feedrico_core::feeds::ImportSummary;
 use feedrico_core::{
-    ArticleDetail, ArticleRow, Fetcher, Library, ListQuery, OpenOptions, Sidebar, Status, opml,
+    ArticleDetail, ArticleRow, Fetcher, Layout, Layouts, Library, ListQuery, OpenOptions, Sidebar,
+    Status, opml,
 };
 use futures::StreamExt;
 use serde::Serialize;
@@ -293,6 +294,21 @@ fn mark_unread(ids: Vec<i64>, state: State<'_, AppState>) -> CommandResult<()> {
     with_library(&state, |l| l.mark_unread(&ids))
 }
 
+#[tauri::command]
+fn layouts(state: State<'_, AppState>) -> CommandResult<Layouts> {
+    with_library(&state, |l| l.layouts())
+}
+
+/// `view` is a View key (`feed:3`, `allUnread`, …) or `None` for the global default.
+#[tauri::command]
+fn set_layout(
+    view: Option<String>,
+    layout: Layout,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    with_library(&state, |l| l.set_layout(view.as_deref(), layout))
+}
+
 /// Opens an http(s) link in the system browser. Nothing else is allowed through.
 #[tauri::command]
 fn open_external(url: String, app: AppHandle) -> CommandResult<()> {
@@ -392,9 +408,21 @@ async fn run_refresh(app: &AppHandle, force: bool) {
     cache_images(app, &dir, images).await;
 }
 
+/// Lead Images that weren't cached when their Article arrived get another chance each refresh.
+const LEAD_IMAGE_CATCH_UP: usize = 100;
+
 async fn cache_images(app: &AppHandle, dir: &Path, images: Vec<(i64, String)>) {
     let state = app.state::<AppState>();
     let mut urls: Vec<String> = images.into_iter().map(|(_, url)| url).collect();
+    {
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(l) = guard.as_ref().filter(|l| l.dir() == dir) {
+            urls.extend(
+                l.missing_lead_images(LEAD_IMAGE_CATCH_UP)
+                    .unwrap_or_default(),
+            );
+        }
+    }
     urls.sort();
     urls.dedup();
     let fetcher = state.fetcher.clone();
@@ -486,6 +514,8 @@ pub fn run() {
             set_starred,
             mark_all_read,
             mark_unread,
+            layouts,
+            set_layout,
             open_external,
             refresh,
         ])

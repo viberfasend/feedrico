@@ -34,7 +34,7 @@
           anymore. A backup of the database is kept inside the Library.
         </p>
         <div class="actions">
-          <button class="primary" onclick={() => app.open(attention.path, true, false)}>
+          <button class="primary" onclick={() => app.open(attention.path, true, attention.takeOverLock)}>
             Upgrade and open
           </button>
           <button onclick={() => app.showWelcome()}>Not now</button>
