@@ -36,6 +36,7 @@ async fn fetches_real_feeds_end_to_end() {
         view: View::AllUnread,
         sort: Sort::NewestFirst,
         search: None,
+        with_lead_image: false,
     };
     let total = library.count_articles(&query).unwrap();
     let rows = library.list_articles(&query, 0, 3).unwrap();

@@ -9,7 +9,8 @@ use std::sync::{Mutex, PoisonError};
 
 use feedrico_core::feeds::ImportSummary;
 use feedrico_core::{
-    ArticleDetail, ArticleRow, Fetcher, Library, ListQuery, OpenOptions, Sidebar, Status, opml,
+    ArticleDetail, ArticleRow, Fetcher, Layout, Layouts, Library, ListQuery, OpenOptions, Sidebar,
+    Status, opml,
 };
 use futures::StreamExt;
 use serde::Serialize;
@@ -293,6 +294,21 @@ fn mark_unread(ids: Vec<i64>, state: State<'_, AppState>) -> CommandResult<()> {
     with_library(&state, |l| l.mark_unread(&ids))
 }
 
+#[tauri::command]
+fn layouts(state: State<'_, AppState>) -> CommandResult<Layouts> {
+    with_library(&state, |l| l.layouts())
+}
+
+/// `view` is a View key (`feed:3`, `allUnread`, …) or `None` for the global default.
+#[tauri::command]
+fn set_layout(
+    view: Option<String>,
+    layout: Layout,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    with_library(&state, |l| l.set_layout(view.as_deref(), layout))
+}
+
 /// Opens an http(s) link in the system browser. Nothing else is allowed through.
 #[tauri::command]
 fn open_external(url: String, app: AppHandle) -> CommandResult<()> {
@@ -486,6 +502,8 @@ pub fn run() {
             set_starred,
             mark_all_read,
             mark_unread,
+            layouts,
+            set_layout,
             open_external,
             refresh,
         ])
