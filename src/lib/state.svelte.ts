@@ -40,7 +40,7 @@ export interface Toast {
   action?: { label: string; run: () => void };
 }
 
-class AppState {
+export class AppState {
   phase = $state<Phase>('loading');
   library = $state<LibraryInfo | null>(null);
   defaultPath = $state('');
