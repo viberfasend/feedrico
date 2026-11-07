@@ -45,7 +45,8 @@ class AppState {
   library = $state<LibraryInfo | null>(null);
   defaultPath = $state('');
   recent = $state<string[]>([]);
-  attention = $state<{ path: string; status: Status } | null>(null);
+  /** A Library that needs a decision. `takeOverLock` remembers an earlier "Open anyway". */
+  attention = $state<{ path: string; status: Status; takeOverLock: boolean } | null>(null);
 
   sidebar = $state<Sidebar | null>(null);
   selection = $state<Selection>({ kind: 'allUnread' });
@@ -101,8 +102,8 @@ class AppState {
     this.phase = 'welcome';
   }
 
-  needsAttention(path: string, status: Status) {
-    this.attention = { path, status };
+  needsAttention(path: string, status: Status, takeOverLock = false) {
+    this.attention = { path, status, takeOverLock };
     this.phase = 'attention';
   }
 
@@ -119,8 +120,12 @@ class AppState {
     try {
       await this.enter(await api.open(path, allowUpgrade, takeOverLock));
     } catch (e) {
-      if (isCommandError(e) && ['locked', 'needsUpgrade', 'tooNew'].includes(e.kind)) {
-        this.needsAttention(path, await api.inspect(path));
+      // One problem can hide another: a stale lock *and* an older format. After the user takes
+      // over the lock, ask about the upgrade next instead of re-reporting the lock.
+      if (isCommandError(e) && e.kind === 'needsUpgrade') {
+        this.needsAttention(path, { kind: 'needsUpgrade', found: 0, target: 0 }, takeOverLock);
+      } else if (isCommandError(e) && ['locked', 'tooNew'].includes(e.kind)) {
+        this.needsAttention(path, await api.inspect(path), takeOverLock);
       } else {
         this.notify(errorMessage(e));
       }
