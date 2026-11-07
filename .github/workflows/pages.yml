@@ -1,0 +1,55 @@
+name: Website
+
+# Builds site/ with the design tokens, brand assets and self-hosted fonts, and publishes it to
+# GitHub Pages (https://viberfasend.github.io/feedrico/). Pages must use "GitHub Actions" as its
+# source in the repository settings.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'brand/**'
+      - 'tokens/**'
+      - 'scripts/build-site.mjs'
+      - 'scripts/build-tokens.mjs'
+      - 'scripts/contrast.mjs'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run site:build
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site-dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
