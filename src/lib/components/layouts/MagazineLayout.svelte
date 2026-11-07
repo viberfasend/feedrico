@@ -38,7 +38,6 @@
 
 <VirtualRows rowHeight={bandHeight + gap} perRow={PER_BAND} {padding} {label}>
   {#snippet row(band)}
-    {@const _ = app.pagesVersion}
     {@const __ = failedImages.size}
     <div
       class="band"

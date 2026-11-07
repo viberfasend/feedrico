@@ -148,6 +148,7 @@
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-width: 0;
+    overflow: hidden;
     min-height: 0;
     height: 100%;
     background: var(--color-surface-base);
@@ -182,11 +183,13 @@
   }
   .controls {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: var(--space-inline-xs);
   }
   .search {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--space-inline-xs);
@@ -202,6 +205,7 @@
   }
   input {
     flex: 1;
+    width: 0;
     min-width: 0;
     border: 0;
     background: none;

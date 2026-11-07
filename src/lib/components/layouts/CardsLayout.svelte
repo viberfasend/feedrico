@@ -28,7 +28,6 @@
 
 <VirtualRows rowHeight={cardHeight + gap} perRow={columns} {padding} bind:width {label}>
   {#snippet row(rowIndex)}
-    {@const _ = app.pagesVersion}
     <div class="grid" style:grid-template-columns="repeat({columns}, 1fr)" style:gap="{gap}px">
       {#each Array.from({ length: columns }, (_, c) => rowIndex * columns + c) as index (index)}
         {@const article = index < app.total ? app.rowAt(index) : undefined}

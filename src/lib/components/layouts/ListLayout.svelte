@@ -11,7 +11,6 @@
 
 <VirtualRows {rowHeight} {label}>
   {#snippet row(index)}
-    {@const _ = app.pagesVersion}
     {@const article = app.rowAt(index)}
     <div
       class="row"

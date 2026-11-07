@@ -23,7 +23,6 @@
 
 <VirtualRows rowHeight={tile + gap} perRow={columns} {padding} bind:width {label}>
   {#snippet row(rowIndex)}
-    {@const _ = app.pagesVersion}
     {@const __ = failedImages.size}
     <div class="grid" style:grid-template-columns="repeat({columns}, 1fr)" style:gap="{gap}px">
       {#each Array.from({ length: columns }, (_, c) => rowIndex * columns + c) as index (index)}
