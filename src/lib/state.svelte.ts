@@ -253,18 +253,23 @@ class AppState {
   // ---- The Article list -------------------------------------------------------------------
 
   async resetList() {
+    // Bump the epoch first: anything still loading for the previous list is discarded, and
+    // components that ask for pages while we count already load the new list.
     const query = this.query();
+    const epoch = ++this.listEpoch;
     this.pages = new Map();
     this.loading = new Map();
     this.selectedIndex = null;
     this.article = null;
     this.hasNewArticles = false;
     this.readerOpen = false;
-    this.total = await api.count(query);
-    this.hiddenWithoutImage = query.withLeadImage
-      ? (await api.count({ ...query, withLeadImage: false })) - this.total
+    const total = await api.count(query);
+    const hidden = query.withLeadImage
+      ? (await api.count({ ...query, withLeadImage: false })) - total
       : 0;
-    this.listEpoch++;
+    if (epoch !== this.listEpoch) return;
+    this.total = total;
+    this.hiddenWithoutImage = hidden;
     this.pagesVersion++;
     await this.ensureRange(0, PAGE_SIZE);
   }
@@ -285,13 +290,20 @@ class AppState {
       if (this.pages.has(page)) continue;
       let job = this.loading.get(page);
       if (!job) {
-        job = api.list(this.query(), page * PAGE_SIZE, PAGE_SIZE).then((rows) => {
-          if (epoch !== this.listEpoch) return;
-          this.pages.set(page, rows);
-          this.loading.delete(page);
-          this.pagesVersion++;
-        });
-        this.loading.set(page, job);
+        const loading = this.loading;
+        const request: Promise<void> = api
+          .list(this.query(), page * PAGE_SIZE, PAGE_SIZE)
+          .then((rows) => {
+            if (epoch !== this.listEpoch) return;
+            this.pages.set(page, rows);
+            this.pagesVersion++;
+          })
+          .finally(() => {
+            // Always clear the marker, or a discarded request would block the page forever.
+            if (loading.get(page) === request) loading.delete(page);
+          });
+        loading.set(page, request);
+        job = request;
       }
       jobs.push(job);
     }
