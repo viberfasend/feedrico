@@ -1,7 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window. Library commands are app commands and need no plugin permissions.",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "Main window: app commands plus file dialogs for Libraries and OPML. Links open via the open_external command, which only allows http(s).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-ask",
+    "dialog:allow-message"
+  ]
 }

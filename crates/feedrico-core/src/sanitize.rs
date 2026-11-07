@@ -1,0 +1,276 @@
+//! Turning untrusted feed HTML into something safe to render (spec: "Content safety and
+//! privacy").
+//!
+//! - iframes, embeds and videos become link cards ("Embedded content on youtube.com").
+//! - Everything executable or layout-breaking is removed by ammonia's allow-list.
+//! - Relative URLs are resolved against the Article's URL.
+//! - Image sources are rewritten to the local media cache, so rendering an Article never makes
+//!   a network request. The original URLs are returned so the cache can download them.
+
+use std::cell::RefCell;
+use std::collections::HashSet;
+
+use lol_html::html_content::ContentType;
+use lol_html::{RewriteStrSettings, element, rewrite_str};
+use url::Url;
+
+pub struct Sanitized {
+    pub html: String,
+    /// Absolute image URLs referenced by the content, in order of appearance.
+    pub images: Vec<String>,
+}
+
+/// Name of a cached media file: a hash of the source URL, so the reader can reference an image
+/// before it is downloaded and the cache can fill in later.
+pub fn media_key(source_url: &str) -> String {
+    blake3::hash(source_url.as_bytes()).to_hex()[..32].to_owned()
+}
+
+/// `media_prefix` is where the shell serves cached media, e.g. `media://localhost/`.
+pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized {
+    let images = RefCell::new(Vec::<String>::new());
+    let resolve = |raw: &str| -> Option<Url> {
+        let raw = raw.trim();
+        match base {
+            Some(base) => base.join(raw).ok(),
+            None => Url::parse(raw).ok(),
+        }
+        .filter(|u| matches!(u.scheme(), "http" | "https"))
+    };
+
+    let embed_card = |src: Option<String>| -> String {
+        match src.as_deref().and_then(resolve) {
+            Some(url) => {
+                let host = url
+                    .host_str()
+                    .unwrap_or("the web")
+                    .trim_start_matches("www.");
+                format!(
+                    r#"<p class="embed-link"><a href="{}">Embedded content on {}: open in browser</a></p>"#,
+                    escape_attr(url.as_str()),
+                    escape_text(host)
+                )
+            }
+            None => String::new(),
+        }
+    };
+
+    // Pass 1: structural rewrites that an allow-list can't express.
+    let rewritten = rewrite_str(
+        html,
+        RewriteStrSettings::new()
+            .append_element_content_handler(element!("iframe, embed, object, video, audio", |el| {
+                let src = el.get_attribute("src").or_else(|| el.get_attribute("data"));
+                el.replace(&embed_card(src), ContentType::Html);
+                Ok(())
+            }))
+            .append_element_content_handler(element!("img", |el| {
+                let src = el
+                    .get_attribute("src")
+                    .or_else(|| el.get_attribute("data-src"));
+                match src.as_deref().and_then(resolve) {
+                    Some(url) => {
+                        let url = url.to_string();
+                        el.set_attribute("src", &format!("{media_prefix}{}", media_key(&url)))?;
+                        images.borrow_mut().push(url);
+                    }
+                    None => el.remove(),
+                }
+                for attr in ["srcset", "sizes", "data-src", "loading"] {
+                    el.remove_attribute(attr);
+                }
+                Ok(())
+            })),
+    )
+    .unwrap_or_default();
+
+    // Pass 2: allow-list. Image sources now point at the media cache and must survive.
+    let mut builder = ammonia::Builder::default();
+    builder
+        .add_url_schemes(["media"])
+        .link_rel(Some("noopener noreferrer"))
+        .add_allowed_classes("p", ["embed-link"])
+        .rm_tags(["picture", "source"])
+        .add_tag_attributes("img", ["alt", "title"]);
+    if let Some(base) = base {
+        builder.url_relative(ammonia::UrlRelative::RewriteWithBase(base.clone()));
+    }
+    let html = builder.clean(&rewritten).to_string();
+
+    let mut seen = HashSet::new();
+    let images = images
+        .into_inner()
+        .into_iter()
+        .filter(|u| seen.insert(u.clone()))
+        .collect();
+    Sanitized { html, images }
+}
+
+/// Plain text of an HTML fragment, for search, excerpts and titles.
+pub fn plain_text(html: &str) -> String {
+    let stripped = ammonia::Builder::empty().clean(html).to_string();
+    let decoded = decode_entities(&stripped);
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+pub fn excerpt(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_owned();
+    }
+    let cut: String = text.chars().take(max_chars).collect();
+    let cut = cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head);
+    format!("{}…", cut.trim_end_matches([',', '.', ';', ':']))
+}
+
+fn decode_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find('&') {
+        out.push_str(&rest[..start]);
+        rest = &rest[start..];
+        // Entities are short; look a few characters ahead (char-wise: text may be multi-byte).
+        let Some(end) = rest
+            .char_indices()
+            .take(12)
+            .find_map(|(i, c)| (c == ';').then_some(i))
+        else {
+            out.push('&');
+            rest = &rest[1..];
+            continue;
+        };
+        let entity = &rest[1..end];
+        let decoded = match entity {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            "nbsp" => Some(' '),
+            _ if entity.starts_with("#x") || entity.starts_with("#X") => {
+                u32::from_str_radix(&entity[2..], 16)
+                    .ok()
+                    .and_then(char::from_u32)
+            }
+            _ if entity.starts_with('#') => entity[1..].parse().ok().and_then(char::from_u32),
+            _ => None,
+        };
+        match decoded {
+            Some(c) => {
+                out.push(c);
+                rest = &rest[end + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn escape_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_text(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PREFIX: &str = "media://localhost/";
+
+    fn clean(html: &str) -> Sanitized {
+        let base = Url::parse("https://blog.example/posts/1").unwrap();
+        sanitize(html, Some(&base), PREFIX)
+    }
+
+    #[test]
+    fn removes_scripts_handlers_and_forms() {
+        let out = clean(
+            r#"<p onclick="evil()">Hi<script>alert(1)</script></p><form action="/x"><input></form><a href="javascript:alert(1)">x</a>"#,
+        );
+        assert!(!out.html.contains("script"));
+        assert!(!out.html.contains("onclick"));
+        assert!(!out.html.contains("<form"));
+        assert!(!out.html.contains("<input"));
+        assert!(!out.html.contains("javascript:"));
+        assert!(out.html.contains("Hi"));
+    }
+
+    #[test]
+    fn iframes_become_link_cards() {
+        let out = clean(r#"<iframe src="https://www.youtube.com/embed/abc"></iframe>"#);
+        assert!(out.html.contains(r#"class="embed-link""#), "{}", out.html);
+        assert!(out.html.contains("Embedded content on youtube.com"));
+        assert!(out.html.contains("https://www.youtube.com/embed/abc"));
+        assert!(!out.html.contains("<iframe"));
+    }
+
+    #[test]
+    fn images_point_at_the_local_cache() {
+        let out =
+            clean(r#"<img src="/img/a.png" srcset="b.png 2x" alt="A"><img src="/img/a.png">"#);
+        let url = "https://blog.example/img/a.png";
+        assert_eq!(
+            out.images,
+            vec![url.to_owned()],
+            "resolved and de-duplicated"
+        );
+        assert!(
+            out.html.contains(&format!("{PREFIX}{}", media_key(url))),
+            "{}",
+            out.html
+        );
+        assert!(
+            !out.html.contains("blog.example/img"),
+            "no remote image URL left"
+        );
+        assert!(!out.html.contains("srcset"));
+        assert!(out.html.contains(r#"alt="A""#));
+    }
+
+    #[test]
+    fn links_resolve_and_get_rel() {
+        let out = clean(r#"<a href="../about">About</a>"#);
+        assert!(
+            out.html.contains(r#"href="https://blog.example/about""#),
+            "{}",
+            out.html
+        );
+        assert!(out.html.contains("noopener"));
+    }
+
+    #[test]
+    fn style_attributes_are_dropped() {
+        let out = clean(r#"<p style="position:fixed;inset:0">x</p>"#);
+        assert!(!out.html.contains("style"));
+    }
+
+    #[test]
+    fn decoding_survives_multibyte_text_after_ampersands() {
+        assert_eq!(
+            plain_text("Tom & Jérôme — 🍯🍯🍯🍯🍯 grüßt"),
+            "Tom & Jérôme — 🍯🍯🍯🍯🍯 grüßt"
+        );
+        assert_eq!(plain_text("&äöü&#228;"), "&äöüä");
+    }
+
+    #[test]
+    fn plain_text_and_excerpt() {
+        assert_eq!(
+            plain_text("<p>Fish &amp; chips&nbsp;&#8212; <b>good</b></p><script>x()</script>"),
+            "Fish & chips — good"
+        );
+        assert_eq!(excerpt("one two three four", 9), "one two…");
+        assert_eq!(excerpt("short", 9), "short");
+    }
+}
