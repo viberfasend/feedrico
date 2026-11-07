@@ -1,0 +1,4 @@
+#!/bin/sh
+# Enforces Conventional Commits 1.0.0 (see commitlint.config.js).
+# Installed by `npm install` via the `prepare` script (git config core.hooksPath .githooks).
+exec npx --no -- commitlint --edit "$1"
