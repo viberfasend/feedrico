@@ -29,5 +29,38 @@
     "height": {
       "$value": "32px"
     }
+  },
+  "cards": {
+    "$type": "dimension",
+    "minWidth": {
+      "$value": "260px"
+    },
+    "textHeight": {
+      "$value": "132px"
+    },
+    "gap": {
+      "$value": "16px"
+    }
+  },
+  "gallery": {
+    "$type": "dimension",
+    "minTile": {
+      "$value": "180px"
+    },
+    "gap": {
+      "$value": "6px"
+    }
+  },
+  "magazine": {
+    "$type": "dimension",
+    "bandHeight": {
+      "$value": "700px"
+    },
+    "smallRowHeight": {
+      "$value": "132px"
+    },
+    "gap": {
+      "$value": "16px"
+    }
   }
 }

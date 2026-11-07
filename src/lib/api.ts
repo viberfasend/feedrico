@@ -1,6 +1,6 @@
 // Typed bridge to the Rust shell. Every command lives here; components never call invoke().
 
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export interface LockInfo {
@@ -76,6 +76,16 @@ export interface ListQuery {
   view: View;
   sort: Sort;
   search?: string | null;
+  /** Only Articles with a Lead Image (Gallery). */
+  withLeadImage?: boolean;
+}
+
+export type Layout = 'list' | 'cards' | 'magazine' | 'gallery';
+export const LAYOUTS: Layout[] = ['list', 'cards', 'magazine', 'gallery'];
+
+export interface Layouts {
+  default: Layout;
+  views: Record<string, Layout>;
 }
 
 export interface ArticleRow {
@@ -87,6 +97,8 @@ export interface ArticleRow {
   articleDate: number;
   isRead: boolean;
   isStarred: boolean;
+  /** Media key of the Lead Image; see mediaUrl(). */
+  leadImage: string | null;
 }
 
 export interface Enclosure {
@@ -137,12 +149,19 @@ export const api = {
   setStarred: (id: number, starred: boolean) => invoke<void>('set_starred', { id, starred }),
   markAllRead: (query: ListQuery) => invoke<number[]>('mark_all_read', { query }),
   markUnread: (ids: number[]) => invoke<void>('mark_unread', { ids }),
+  layouts: () => invoke<Layouts>('layouts'),
+  setLayout: (view: string | null, layout: Layout) => invoke<void>('set_layout', { view, layout }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
   refresh: (force: boolean) => invoke<boolean>('refresh', { force }),
   onRefreshProgress: (cb: (p: RefreshProgress) => void): Promise<UnlistenFn> =>
     listen<RefreshProgress>('refresh-progress', (e) => cb(e.payload)),
   onMediaCached: (cb: () => void): Promise<UnlistenFn> => listen('media-cached', () => cb()),
 };
+
+/** URL of a cached image, served from the open Library by the shell's media protocol. */
+export function mediaUrl(key: string): string {
+  return convertFileSrc(key, 'media');
+}
 
 /** Local midnight in unix seconds: the start of the Today Smart View. */
 export function todaySince(now = new Date()): number {
