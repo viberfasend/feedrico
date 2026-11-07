@@ -9,6 +9,8 @@
     "dev": "npm run tokens && vite",
     "build": "npm run tokens && vite build",
     "preview": "vite preview",
+    "site:build": "npm run tokens && node scripts/build-site.mjs",
+    "site:preview": "node scripts/serve-site.mjs",
     "check": "npm run tokens && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "npm run tokens && vitest run",
     "tauri": "tauri",
