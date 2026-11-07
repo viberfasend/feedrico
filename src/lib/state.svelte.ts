@@ -269,7 +269,9 @@ class AppState {
     await this.ensureRange(0, PAGE_SIZE);
   }
 
+  /** Reactive: reading a row subscribes to page loads and row patches. */
   rowAt(index: number): ArticleRow | undefined {
+    void this.pagesVersion;
     return this.pages.get(Math.floor(index / PAGE_SIZE))?.[index % PAGE_SIZE];
   }
 
