@@ -12,7 +12,7 @@ export default {
     'scope-enum': [
       2,
       'always',
-      ['core', 'shell', 'ui', 'tokens', 'library', 'feeds', 'layouts', 'spec', 'ci', 'deps', 'release'],
+      ['core', 'shell', 'ui', 'tokens', 'library', 'feeds', 'layouts', 'spec', 'ci', 'deps', 'release', 'site'],
     ],
     'header-max-length': [2, 'always', 80],
     'body-max-line-length': [2, 'always', 100],
