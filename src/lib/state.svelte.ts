@@ -89,6 +89,7 @@ export class AppState {
   async start() {
     await api.onRefreshProgress((p) => this.onProgress(p));
     await api.onMediaCached(() => this.reloadArticle());
+    await api.onArticlesPruned(() => this.onPruned());
     try {
       const startup = await api.startup();
       if (startup.kind === 'opened') await this.enter(startup.library);
@@ -518,6 +519,13 @@ export class AppState {
         if (this.refresh?.finished) this.refresh = null;
       }, 2500);
     }
+  }
+
+  /** Pruning removed Articles: refresh the counts, and the list unless someone is reading it. */
+  private onPruned() {
+    void this.loadSidebar();
+    if (this.selectedIndex === null) void this.resetList();
+    else this.hasNewArticles = true;
   }
 
   // ---- Toasts -----------------------------------------------------------------------------
