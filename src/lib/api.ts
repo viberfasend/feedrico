@@ -121,6 +121,17 @@ export interface ImportSummary {
   foldersCreated: number;
 }
 
+export interface FeedCandidate {
+  url: string;
+  title: string | null;
+}
+
+export type Discovery =
+  | { kind: 'found'; url: string; title: string; siteUrl: string | null }
+  | { kind: 'choose'; candidates: FeedCandidate[] };
+
+export type AddOutcome = { kind: 'added'; feedId: number } | { kind: 'exists'; feedId: number };
+
 export interface RefreshProgress {
   done: number;
   total: number;
@@ -139,6 +150,9 @@ export const api = {
   info: () => invoke<LibraryInfo>('library_info'),
   close: () => invoke<void>('library_close'),
   importOpml: (path: string) => invoke<ImportSummary>('import_opml', { path }),
+  discoverFeed: (input: string) => invoke<Discovery>('discover_feed', { input }),
+  addFeed: (url: string, title: string, siteUrl: string | null, folderId: number | null) =>
+    invoke<AddOutcome>('add_feed', { url, title, siteUrl, folderId }),
   exportOpml: (path: string) => invoke<void>('export_opml', { path }),
   sidebar: (todaySince: number) => invoke<Sidebar>('sidebar', { todaySince }),
   count: (query: ListQuery) => invoke<number>('count_articles', { query }),

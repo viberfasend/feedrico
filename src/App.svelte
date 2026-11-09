@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import AddFeed from './lib/components/AddFeed.svelte';
   import ArticleList from './lib/components/ArticleList.svelte';
   import Attention from './lib/components/Attention.svelte';
   import Reader from './lib/components/Reader.svelte';
@@ -40,6 +41,7 @@
       m: () => void app.toggleRead(),
       o: () => app.openInBrowser(),
       r: () => void app.startRefresh(true),
+      a: () => (app.addFeedOpen = true),
       '/': () => document.getElementById('search')?.focus(),
     };
     const action = actions[event.key];
@@ -72,6 +74,9 @@
   {/if}
 {/if}
 
+{#if app.addFeedOpen}
+  <AddFeed />
+{/if}
 <Toasts />
 
 <style>

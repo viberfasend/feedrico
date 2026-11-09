@@ -16,6 +16,19 @@ pub struct ImportSummary {
     pub folders_created: usize,
 }
 
+/// Outcome of adding one Feed by URL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum AddOutcome {
+    Added {
+        feed_id: i64,
+    },
+    /// A Feed with this URL is already subscribed; nothing was changed.
+    Exists {
+        feed_id: i64,
+    },
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sidebar {
@@ -130,6 +143,32 @@ impl Library {
         }
         tx.commit()?;
         Ok(summary)
+    }
+
+    /// Subscribes to one Feed. A URL that is already subscribed points to the existing Feed
+    /// instead of duplicating it. `folder_id: None` means the top level.
+    pub fn add_feed(
+        &self,
+        url: &str,
+        title: &str,
+        site_url: Option<&str>,
+        folder_id: Option<i64>,
+    ) -> Result<AddOutcome> {
+        let tx = self.conn().unchecked_transaction()?;
+        let existing: Option<i64> = tx
+            .query_row("SELECT id FROM feed WHERE url = ?1", [url], |r| r.get(0))
+            .optional()?;
+        if let Some(feed_id) = existing {
+            return Ok(AddOutcome::Exists { feed_id });
+        }
+        tx.execute(
+            "INSERT INTO feed (url, title, site_url, folder_id, position)
+             VALUES (?1, ?2, ?3, ?4, (SELECT coalesce(max(position), -1) + 1 FROM feed))",
+            params![url, title, site_url, folder_id],
+        )?;
+        let feed_id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(AddOutcome::Added { feed_id })
     }
 
     pub fn export_opml(&self) -> Result<String> {
@@ -339,6 +378,36 @@ mod tests {
             site_url: None,
             folder: folder.map(Into::into),
         }
+    }
+
+    #[test]
+    fn add_feed_subscribes_once_and_honours_the_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[opml_feed("https://a.example", Some("Tech"))])
+            .unwrap();
+        let folder_id = library.sidebar(0).unwrap().folders[0].id;
+
+        let added = library
+            .add_feed("https://b.example/feed", "B", None, Some(folder_id))
+            .unwrap();
+        assert!(matches!(added, AddOutcome::Added { .. }));
+        let again = library
+            .add_feed("https://b.example/feed", "B again", None, None)
+            .unwrap();
+        let AddOutcome::Added { feed_id } = added else {
+            unreachable!()
+        };
+        assert_eq!(again, AddOutcome::Exists { feed_id });
+
+        let sidebar = library.sidebar(0).unwrap();
+        assert_eq!(sidebar.folders[0].feeds.len(), 2);
+        assert!(sidebar.feeds.is_empty());
+        library
+            .add_feed("https://c.example", "C", None, None)
+            .unwrap();
+        assert_eq!(library.sidebar(0).unwrap().feeds.len(), 1);
     }
 
     #[test]
