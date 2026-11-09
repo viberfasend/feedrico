@@ -296,6 +296,25 @@ fn export_opml(path: PathBuf, state: State<'_, AppState>) -> CommandResult<()> {
     Ok(())
 }
 
+/// Copies the open Library to `path` in the background and reports `export-progress`. Only the
+/// database snapshot holds the Library; the media copy runs without blocking the UI.
+#[tauri::command]
+async fn export_library(path: PathBuf, app: AppHandle) -> CommandResult<()> {
+    let export = {
+        let state = app.state::<AppState>();
+        with_library(&state, |l| l.begin_export(&path))?
+    };
+    let progress_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        export.finish(|p| {
+            let _ = progress_app.emit("export-progress", p);
+        })
+    })
+    .await
+    .map_err(|e| CommandError::new("internal", e.to_string()))??;
+    Ok(())
+}
+
 #[tauri::command]
 fn sidebar(today_since: i64, state: State<'_, AppState>) -> CommandResult<Sidebar> {
     with_library(&state, |l| l.sidebar(today_since))
@@ -597,6 +616,7 @@ pub fn run() {
             library_close,
             import_opml,
             export_opml,
+            export_library,
             discover_feed,
             add_feed,
             rename_feed,
