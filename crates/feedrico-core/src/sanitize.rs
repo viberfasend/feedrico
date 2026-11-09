@@ -239,6 +239,25 @@ mod tests {
     }
 
     #[test]
+    fn sanitized_content_never_loads_anything_remote() {
+        // Reading must not hit the network: every other way to load a resource is gone.
+        let out = clean(
+            r#"<picture><source srcset="https://t.example/a.webp 1x" type="image/webp">
+               <img src="https://t.example/a.jpg" srcset="https://t.example/a2.jpg 2x"></picture>
+               <img data-src="https://t.example/lazy.png" loading="lazy">
+               <img srcset="https://t.example/only-srcset.png 2x">
+               <svg><image href="https://t.example/s.png"/></svg>
+               <p style="background:url(https://t.example/bg.png)">x</p>"#,
+        );
+        let html = &out.html;
+        assert!(!html.contains("t.example"), "{html}");
+        assert!(!html.contains("srcset") && !html.contains("<source"), "{html}");
+        for src in html.split("src=\"").skip(1) {
+            assert!(src.starts_with(PREFIX), "non-local src in {html}");
+        }
+    }
+
+    #[test]
     fn links_resolve_and_get_rel() {
         let out = clean(r#"<a href="../about">About</a>"#);
         assert!(
