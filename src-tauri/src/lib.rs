@@ -472,6 +472,43 @@ async fn run_refresh(app: &AppHandle, force: bool) {
     let _ = app.emit("refresh-progress", progress);
 
     cache_images(app, &dir, images).await;
+    prune(app, &dir).await;
+}
+
+/// Articles removed per lock hold, so reading and searching never wait long on Pruning.
+const PRUNE_BATCH: usize = 200;
+
+/// Pruning after a refresh. Each batch takes the Library lock on its own; the orphaned images
+/// are removed at the end. Tells the UI only if something was removed.
+async fn prune(app: &AppHandle, dir: &Path) {
+    let state = app.state::<AppState>();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let mut removed = 0;
+    loop {
+        let n = {
+            let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+            match guard.as_ref().filter(|l| l.dir() == dir) {
+                Some(l) => l.prune_batch(now, PRUNE_BATCH).unwrap_or(0),
+                None => return,
+            }
+        };
+        removed += n;
+        if n < PRUNE_BATCH {
+            break;
+        }
+    }
+    if removed == 0 {
+        return;
+    }
+    {
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(l) = guard.as_ref().filter(|l| l.dir() == dir) {
+            let _ = l.remove_unreferenced_media();
+        }
+    }
+    let _ = app.emit("articles-pruned", removed);
 }
 
 /// Lead Images that weren't cached when their Article arrived get another chance each refresh.

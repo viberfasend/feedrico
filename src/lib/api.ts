@@ -183,6 +183,7 @@ export const api = {
   onRefreshProgress: (cb: (p: RefreshProgress) => void): Promise<UnlistenFn> =>
     listen<RefreshProgress>('refresh-progress', (e) => cb(e.payload)),
   onMediaCached: (cb: () => void): Promise<UnlistenFn> => listen('media-cached', () => cb()),
+  onArticlesPruned: (cb: () => void): Promise<UnlistenFn> => listen('articles-pruned', () => cb()),
 };
 
 /** URL of a cached image, served from the open Library by the shell's media protocol. */
