@@ -4,6 +4,7 @@
 //! tested headless. Vocabulary follows `GLOSSARY.md` at the repository root.
 
 pub mod articles;
+pub mod discover;
 mod error;
 pub mod feeds;
 pub mod fetch;
@@ -19,8 +20,8 @@ pub mod settings;
 
 pub use articles::{ArticleDetail, ArticleRow, ListQuery, Sort, View};
 pub use error::{Error, Result};
-pub use feeds::{FeedToFetch, FetchResult, ImportSummary, Sidebar};
-pub use fetch::Fetcher;
+pub use feeds::{AddOutcome, FeedToFetch, FetchResult, ImportSummary, Sidebar};
+pub use fetch::{Discovery, Fetcher};
 pub use library::{Library, OpenOptions, Status};
 pub use lock::LockInfo;
 pub use manifest::Manifest;

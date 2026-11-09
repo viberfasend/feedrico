@@ -42,6 +42,8 @@ export interface Toast {
 
 export class AppState {
   phase = $state<Phase>('loading');
+  /** The Add Feed dialog. */
+  addFeedOpen = $state(false);
   library = $state<LibraryInfo | null>(null);
   defaultPath = $state('');
   recent = $state<string[]>([]);
@@ -156,6 +158,22 @@ export class AppState {
       if (s.added) void this.startRefresh(false);
     } catch (e) {
       this.notify(errorMessage(e));
+    }
+  }
+
+  /** Adds a validated Feed and selects it; an existing URL selects the existing Feed instead. */
+  async addFeed(url: string, title: string, siteUrl: string | null, folderId: number | null) {
+    try {
+      const outcome = await api.addFeed(url, title, siteUrl, folderId);
+      this.library = await api.info();
+      await this.loadSidebar();
+      this.select({ kind: 'feed', id: outcome.feedId });
+      this.notify(outcome.kind === 'exists' ? 'Already subscribed — showing that Feed' : `Added ${title}`);
+      if (outcome.kind === 'added') void this.startRefresh(false);
+      return true;
+    } catch (e) {
+      this.notify(errorMessage(e));
+      return false;
     }
   }
 

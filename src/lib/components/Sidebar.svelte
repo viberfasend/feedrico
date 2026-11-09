@@ -132,7 +132,8 @@
     {:else}
       <div class="onboarding">
         <p>No Feeds yet.</p>
-        <button class="primary" onclick={importOpml}><Icon name="import" size={16} /> Import OPML…</button>
+        <button class="primary" onclick={() => (app.addFeedOpen = true)}><Icon name="plus" size={16} /> Add Feed…</button>
+        <button onclick={importOpml}><Icon name="import" size={16} /> Import OPML…</button>
       </div>
     {/if}
   </div>
@@ -143,6 +144,7 @@
       <span>{app.library?.portable ? 'Portable Library' : (app.library?.name ?? '')}</span>
     </div>
     <div class="tools">
+      <button class="tool" title="Add Feed" aria-label="Add Feed" onclick={() => (app.addFeedOpen = true)}><Icon name="plus" size={16} /></button>
       <button class="tool" title="Import OPML" aria-label="Import OPML" onclick={importOpml}><Icon name="import" size={16} /></button>
       <button class="tool" title="Export OPML" aria-label="Export OPML" onclick={exportOpml}><Icon name="export" size={16} /></button>
       <button class="tool" title="Open another Library" aria-label="Open another Library" onclick={() => app.showWelcome()}><Icon name="folder" size={16} /></button>

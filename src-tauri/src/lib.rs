@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use feedrico_core::feeds::ImportSummary;
+use feedrico_core::{AddOutcome, Discovery};
 use feedrico_core::{
     ArticleDetail, ArticleRow, Fetcher, Layout, Layouts, Library, ListQuery, OpenOptions, Sidebar,
     Status, opml,
@@ -240,6 +241,26 @@ fn import_opml(path: PathBuf, state: State<'_, AppState>) -> CommandResult<Impor
     let text = String::from_utf8_lossy(&bytes);
     let feeds = opml::parse(&text)?;
     with_library(&state, |l| l.import_opml(&feeds))
+}
+
+/// Resolves a Feed URL or website URL to a validated Feed (or a choice of several).
+#[tauri::command]
+async fn discover_feed(input: String, app: AppHandle) -> CommandResult<Discovery> {
+    let fetcher = app.state::<AppState>().fetcher.clone();
+    Ok(fetcher.discover(&input).await?)
+}
+
+#[tauri::command]
+fn add_feed(
+    url: String,
+    title: String,
+    site_url: Option<String>,
+    folder_id: Option<i64>,
+    state: State<'_, AppState>,
+) -> CommandResult<AddOutcome> {
+    with_library(&state, |l| {
+        l.add_feed(&url, &title, site_url.as_deref(), folder_id)
+    })
 }
 
 #[tauri::command]
@@ -506,6 +527,8 @@ pub fn run() {
             library_close,
             import_opml,
             export_opml,
+            discover_feed,
+            add_feed,
             sidebar,
             count_articles,
             list_articles,

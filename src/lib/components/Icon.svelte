@@ -22,6 +22,7 @@
     cards: 'M3.5 4h5.5v5.5H3.5zM11 4h5.5v5.5H11zM3.5 11.5h5.5V16H3.5zM11 11.5h5.5V16H11z',
     magazine: 'M3.5 4h7v12h-7zM12.5 4.5h4M12.5 8h4M12.5 11.5h4M12.5 15h4',
     gallery: 'M3.5 3.5h3.6v3.6H3.5zM8.2 3.5h3.6v3.6H8.2zM12.9 3.5h3.6v3.6h-3.6zM3.5 8.2h3.6v3.6H3.5zM8.2 8.2h3.6v3.6H8.2zM12.9 8.2h3.6v3.6h-3.6zM3.5 12.9h3.6v3.6H3.5zM8.2 12.9h3.6v3.6H8.2zM12.9 12.9h3.6v3.6h-3.6z',
+    plus: 'M10 4.5v11M4.5 10h11',
     close: 'M5.5 5.5l9 9M14.5 5.5l-9 9',
   } as const;
   export type IconName = keyof typeof paths;
