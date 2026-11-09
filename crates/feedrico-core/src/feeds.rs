@@ -680,4 +680,63 @@ mod tests {
         assert_eq!(node.last_error.as_deref(), Some("HTTP 404"));
         library.close().unwrap();
     }
+
+    #[test]
+    fn backoff_steps_are_30_minutes_2_hours_then_12_hours() {
+        assert_eq!(backoff_secs(0), 0);
+        assert_eq!(backoff_secs(1), 30 * 60);
+        assert_eq!(backoff_secs(2), 2 * 3600);
+        assert_eq!(backoff_secs(3), 12 * 3600);
+        assert_eq!(
+            backoff_secs(50),
+            12 * 3600,
+            "never gives up, never speeds up"
+        );
+    }
+
+    #[test]
+    fn success_clears_the_error_and_keeps_the_last_success_time() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[opml_feed("https://a.example", None)])
+            .unwrap();
+        for _ in 0..3 {
+            library
+                .apply_fetch(1, FetchResult::Failed("timed out".into()))
+                .unwrap();
+        }
+        let node = &library.sidebar(0).unwrap().feeds[0];
+        assert_eq!(node.last_error.as_deref(), Some("timed out"));
+        assert!(node.last_success_at.is_none());
+        let errors: i64 = library
+            .conn()
+            .query_row("SELECT error_count FROM feed WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(errors, 3);
+
+        library.apply_fetch(1, FetchResult::NotModified).unwrap();
+        let node = &library.sidebar(0).unwrap().feeds[0];
+        assert!(node.last_error.is_none(), "badge disappears");
+        assert!(node.last_success_at.is_some());
+        let errors: i64 = library
+            .conn()
+            .query_row("SELECT error_count FROM feed WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(errors, 0, "backoff resets");
+        // Failing again starts over at 30 minutes, and the Feed is still subscribed.
+        library
+            .apply_fetch(1, FetchResult::Failed("HTTP 500".into()))
+            .unwrap();
+        assert_eq!(library.feed_count().unwrap(), 1);
+        let node = &library.sidebar(0).unwrap().feeds[0];
+        assert!(
+            node.last_success_at.is_some(),
+            "last success is kept for the tooltip"
+        );
+    }
 }

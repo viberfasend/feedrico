@@ -118,7 +118,7 @@
   }
 
   const brokenTitle = (f: FeedNode) =>
-    `${f.lastError}${f.lastSuccessAt ? ` · last worked ${new Date(f.lastSuccessAt * 1000).toLocaleString()}` : ''}`;
+    `${f.lastError} · ${f.lastSuccessAt ? `last worked ${new Date(f.lastSuccessAt * 1000).toLocaleString()}` : 'has never worked'}`;
 </script>
 
 {#snippet feedRow(feed: FeedNode, nested: boolean)}
