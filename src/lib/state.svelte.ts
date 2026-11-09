@@ -177,6 +177,54 @@ export class AppState {
     }
   }
 
+  // ---- Managing Feeds and Folders ---------------------------------------------------------
+
+  /** Runs a library change, refreshes the sidebar, and reports errors as a toast. */
+  private async manage(change: () => Promise<void>, after?: () => Promise<void> | void) {
+    try {
+      await change();
+      await this.loadSidebar();
+      await after?.();
+      return true;
+    } catch (e) {
+      this.notify(errorMessage(e));
+      return false;
+    }
+  }
+
+  renameFeed(id: number, title: string) {
+    return this.manage(() => api.renameFeed(id, title));
+  }
+
+  renameFolder(id: number, name: string) {
+    return this.manage(() => api.renameFolder(id, name));
+  }
+
+  moveFeed(id: number, folderId: number | null) {
+    // A Folder's list changes when one of its Feeds leaves or arrives.
+    return this.manage(
+      () => api.moveFeed(id, folderId),
+      () => (this.selection.kind === 'folder' ? this.resetList() : undefined),
+    );
+  }
+
+  deleteFolder(id: number) {
+    return this.manage(
+      () => api.deleteFolder(id),
+      () => (this.selection.kind === 'folder' && this.selection.id === id ? this.select({ kind: 'allUnread' }) : undefined),
+    );
+  }
+
+  unsubscribe(id: number) {
+    return this.manage(
+      async () => {
+        await api.unsubscribe(id);
+        this.library = await api.info();
+      },
+      () => (this.selection.kind === 'feed' && this.selection.id === id ? this.select({ kind: 'allUnread' }) : this.resetList()),
+    );
+  }
+
   async exportOpml(path: string) {
     try {
       await api.exportOpml(path);

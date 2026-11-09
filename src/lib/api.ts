@@ -153,6 +153,11 @@ export const api = {
   discoverFeed: (input: string) => invoke<Discovery>('discover_feed', { input }),
   addFeed: (url: string, title: string, siteUrl: string | null, folderId: number | null) =>
     invoke<AddOutcome>('add_feed', { url, title, siteUrl, folderId }),
+  renameFeed: (id: number, title: string) => invoke<void>('rename_feed', { id, title }),
+  renameFolder: (id: number, name: string) => invoke<void>('rename_folder', { id, name }),
+  moveFeed: (id: number, folderId: number | null) => invoke<void>('move_feed', { id, folderId }),
+  deleteFolder: (id: number) => invoke<void>('delete_folder', { id }),
+  unsubscribe: (id: number) => invoke<void>('unsubscribe', { id }),
   exportOpml: (path: string) => invoke<void>('export_opml', { path }),
   sidebar: (todaySince: number) => invoke<Sidebar>('sidebar', { todaySince }),
   count: (query: ListQuery) => invoke<number>('count_articles', { query }),

@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::lock::now;
 use crate::opml::{self, OpmlFeed};
 use crate::parse::ParsedFeed;
-use crate::{Library, Result};
+use crate::{Error, Library, Result};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +80,22 @@ pub enum FetchResult {
         last_modified: Option<String>,
     },
     Failed(String),
+}
+
+fn non_empty<'a>(text: &'a str, message: &str) -> Result<&'a str> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(Error::Invalid(message.into()));
+    }
+    Ok(text)
+}
+
+fn found(changed: usize) -> Result<()> {
+    if changed == 0 {
+        Err(Error::NotFound)
+    } else {
+        Ok(())
+    }
 }
 
 /// Retry delays for broken Feeds: 30 min, 2 h, then 12 h.
@@ -169,6 +185,73 @@ impl Library {
         let feed_id = tx.last_insert_rowid();
         tx.commit()?;
         Ok(AddOutcome::Added { feed_id })
+    }
+
+    pub fn rename_feed(&self, feed_id: i64, title: &str) -> Result<()> {
+        let title = non_empty(title, "a Feed needs a name")?;
+        let changed = self.conn().execute(
+            "UPDATE feed SET title = ?2 WHERE id = ?1",
+            params![feed_id, title],
+        )?;
+        found(changed)
+    }
+
+    /// Folder names are unique, because OPML re-import matches Folders by exact name.
+    pub fn rename_folder(&self, folder_id: i64, name: &str) -> Result<()> {
+        let name = non_empty(name, "a Folder needs a name")?;
+        let taken: bool = self.conn().query_row(
+            "SELECT EXISTS(SELECT 1 FROM folder WHERE name = ?1 AND id <> ?2)",
+            params![name, folder_id],
+            |r| r.get(0),
+        )?;
+        if taken {
+            return Err(Error::Invalid(format!(
+                "a Folder named \"{name}\" already exists"
+            )));
+        }
+        let changed = self.conn().execute(
+            "UPDATE folder SET name = ?2 WHERE id = ?1",
+            params![folder_id, name],
+        )?;
+        found(changed)
+    }
+
+    /// Moves a Feed into a Folder, or to the top level with `None`. Folders are one level deep
+    /// and a Feed is in at most one Folder, so this is a single column.
+    pub fn move_feed(&self, feed_id: i64, folder_id: Option<i64>) -> Result<()> {
+        if let Some(id) = folder_id {
+            let exists: bool = self.conn().query_row(
+                "SELECT EXISTS(SELECT 1 FROM folder WHERE id = ?1)",
+                [id],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                return Err(Error::NotFound);
+            }
+        }
+        let changed = self.conn().execute(
+            "UPDATE feed SET folder_id = ?2 WHERE id = ?1",
+            params![feed_id, folder_id],
+        )?;
+        found(changed)
+    }
+
+    /// Deletes a Folder; its Feeds move to the top level.
+    pub fn delete_folder(&self, folder_id: i64) -> Result<()> {
+        // `feed.folder_id` is ON DELETE SET NULL.
+        found(
+            self.conn()
+                .execute("DELETE FROM folder WHERE id = ?1", [folder_id])?,
+        )
+    }
+
+    /// Removes a Feed with its Articles, then deletes cached images nothing refers to anymore.
+    pub fn unsubscribe(&self, feed_id: i64) -> Result<()> {
+        found(
+            self.conn()
+                .execute("DELETE FROM feed WHERE id = ?1", [feed_id])?,
+        )?;
+        self.remove_unreferenced_media()
     }
 
     pub fn export_opml(&self) -> Result<String> {
@@ -408,6 +491,124 @@ mod tests {
             .add_feed("https://c.example", "C", None, None)
             .unwrap();
         assert_eq!(library.sidebar(0).unwrap().feeds.len(), 1);
+    }
+
+    #[test]
+    fn rename_move_and_delete_folder_keep_the_tree_consistent() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", Some("Tech")),
+                opml_feed("https://b.example", Some("News")),
+                opml_feed("https://c.example", None),
+            ])
+            .unwrap();
+        let sidebar = library.sidebar(0).unwrap();
+        let (tech, news) = (sidebar.folders[0].id, sidebar.folders[1].id);
+        let a = sidebar.folders[0].feeds[0].id;
+        let c = sidebar.feeds[0].id;
+
+        library.rename_feed(a, "  Alpha ").unwrap();
+        assert!(library.rename_feed(a, "   ").is_err());
+        library.rename_folder(tech, "Technik").unwrap();
+        assert!(library.rename_folder(tech, "News").is_err());
+        library.rename_folder(tech, "Technik").unwrap(); // same name is not a clash
+        assert!(matches!(
+            library.rename_feed(999, "x"),
+            Err(Error::NotFound)
+        ));
+
+        library.move_feed(c, Some(news)).unwrap();
+        assert!(matches!(
+            library.move_feed(c, Some(999)),
+            Err(Error::NotFound)
+        ));
+        library.move_feed(a, None).unwrap();
+        let sidebar = library.sidebar(0).unwrap();
+        assert_eq!(sidebar.folders[1].feeds.len(), 2);
+        assert_eq!(sidebar.feeds[0].title, "Alpha");
+
+        library.delete_folder(news).unwrap();
+        let sidebar = library.sidebar(0).unwrap();
+        assert_eq!(sidebar.folders.len(), 1);
+        assert_eq!(
+            sidebar.feeds.len(),
+            3,
+            "deleted Folder's Feeds go to the top level"
+        );
+        assert!(matches!(library.delete_folder(news), Err(Error::NotFound)));
+    }
+
+    #[test]
+    fn unsubscribe_removes_articles_and_unreferenced_images_only() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        let AddOutcome::Added { feed_id: gone } = library
+            .add_feed("https://a.example", "A", None, None)
+            .unwrap()
+        else {
+            unreachable!()
+        };
+        let AddOutcome::Added { feed_id: kept } = library
+            .add_feed("https://b.example", "B", None, None)
+            .unwrap()
+        else {
+            unreachable!()
+        };
+        let conn = library.conn();
+        for (feed, id) in [(gone, 1), (kept, 2)] {
+            conn.execute(
+                "INSERT INTO article (id, feed_id, identity, first_seen_at, article_date)
+                 VALUES (?1, ?2, ?1, 0, 0)",
+                params![id, feed],
+            )
+            .unwrap();
+        }
+        for (article, url) in [
+            (1, "https://img/only-gone.png"),
+            (1, "https://img/shared.png"),
+            (2, "https://img/shared.png"),
+        ] {
+            conn.execute(
+                "INSERT INTO article_media (article_id, source_url) VALUES (?1, ?2)",
+                params![article, url],
+            )
+            .unwrap();
+        }
+        library
+            .store_media("https://img/only-gone.png", b"1", "image/png")
+            .unwrap();
+        library
+            .store_media("https://img/shared.png", b"2", "image/png")
+            .unwrap();
+        let key = |u| crate::sanitize::media_key(u);
+
+        library.unsubscribe(gone).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM article", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+        assert!(
+            library
+                .media_file(&key("https://img/only-gone.png"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            !library
+                .dir()
+                .join("media")
+                .join(key("https://img/only-gone.png"))
+                .exists()
+        );
+        let (path, _) = library
+            .media_file(&key("https://img/shared.png"))
+            .unwrap()
+            .unwrap();
+        assert!(path.exists());
+        assert_eq!(library.feed_count().unwrap(), 1);
     }
 
     #[test]

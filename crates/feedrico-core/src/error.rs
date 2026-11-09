@@ -32,6 +32,9 @@ pub enum Error {
     #[error("network error: {0}")]
     Network(String),
 
+    #[error("{0}")]
+    Invalid(String),
+
     #[error("not found")]
     NotFound,
 
