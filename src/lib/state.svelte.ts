@@ -79,6 +79,8 @@ export class AppState {
 
   refresh = $state<RefreshProgress | null>(null);
   toasts = $state<Toast[]>([]);
+  /** Set while a Library backup is running. */
+  exportProgress = $state<string | null>(null);
   private toastId = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -231,6 +233,22 @@ export class AppState {
       this.notify('OPML exported');
     } catch (e) {
       this.notify(errorMessage(e));
+    }
+  }
+
+  /** Copies the open Library to an empty folder; the core reports progress per media file. */
+  async exportLibrary(path: string) {
+    const unlisten = await api.onExportProgress((p) => {
+      this.exportProgress = p.total > 0 ? `Backing up Library… ${p.done} / ${p.total}` : null;
+    });
+    try {
+      await api.exportLibrary(path);
+      this.notify('Library backed up');
+    } catch (e) {
+      this.notify(errorMessage(e));
+    } finally {
+      unlisten();
+      this.exportProgress = null;
     }
   }
 

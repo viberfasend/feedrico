@@ -132,6 +132,11 @@ export type Discovery =
 
 export type AddOutcome = { kind: 'added'; feedId: number } | { kind: 'exists'; feedId: number };
 
+export interface ExportProgress {
+  done: number;
+  total: number;
+}
+
 export interface RefreshProgress {
   done: number;
   total: number;
@@ -159,6 +164,9 @@ export const api = {
   deleteFolder: (id: number) => invoke<void>('delete_folder', { id }),
   unsubscribe: (id: number) => invoke<void>('unsubscribe', { id }),
   exportOpml: (path: string) => invoke<void>('export_opml', { path }),
+  exportLibrary: (path: string) => invoke<void>('export_library', { path }),
+  onExportProgress: (cb: (p: ExportProgress) => void): Promise<UnlistenFn> =>
+    listen<ExportProgress>('export-progress', (e) => cb(e.payload)),
   sidebar: (todaySince: number) => invoke<Sidebar>('sidebar', { todaySince }),
   count: (query: ListQuery) => invoke<number>('count_articles', { query }),
   list: (query: ListQuery, offset: number, limit: number) =>

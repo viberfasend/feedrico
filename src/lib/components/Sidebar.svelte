@@ -49,6 +49,11 @@
     if (file) await app.exportOpml(file);
   }
 
+  async function backUpLibrary() {
+    const folder = await open({ title: 'Back up Library to an empty folder', directory: true });
+    if (typeof folder === 'string') await app.exportLibrary(folder);
+  }
+
   // ---- Managing Feeds and Folders: context menu, inline rename, drag and drop ----------------
   type Target = { kind: 'feed'; feed: FeedNode } | { kind: 'folder'; folder: FolderNode };
   let menu = $state<{ x: number; y: number; target: Target } | null>(null);
@@ -246,6 +251,13 @@
       <button class="tool" title="Add Feed" aria-label="Add Feed" onclick={() => (app.addFeedOpen = true)}><Icon name="plus" size={16} /></button>
       <button class="tool" title="Import OPML" aria-label="Import OPML" onclick={importOpml}><Icon name="import" size={16} /></button>
       <button class="tool" title="Export OPML" aria-label="Export OPML" onclick={exportOpml}><Icon name="export" size={16} /></button>
+      <button
+        class="tool"
+        title={app.exportProgress ?? 'Export / back up Library'}
+        aria-label="Export / back up Library"
+        disabled={app.exportProgress !== null}
+        onclick={backUpLibrary}
+      ><Icon name="library" size={16} /></button>
       <button class="tool" title="Open another Library" aria-label="Open another Library" onclick={() => app.showWelcome()}><Icon name="folder" size={16} /></button>
       <button
         class="tool"
