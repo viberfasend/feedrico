@@ -61,6 +61,36 @@ impl Library {
         Ok(urls)
     }
 
+    /// Deletes cached files that no Article refers to (neither as an image nor as a Lead Image),
+    /// and their `media` rows.
+    pub fn remove_unreferenced_media(&self) -> Result<()> {
+        let mut stmt = self.conn().prepare(
+            "SELECT hash FROM media m
+             WHERE NOT EXISTS (SELECT 1 FROM article_media am WHERE am.source_url IS NOT NULL AND am.hash = m.hash)
+               AND NOT EXISTS (SELECT 1 FROM article a WHERE a.lead_image = m.hash)",
+        )?;
+        let orphans: Vec<String> = stmt
+            .query_map([], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        drop(stmt);
+        let dir = self.dir().join(MEDIA_DIR);
+        for hash in &orphans {
+            if is_valid_key(hash) {
+                match fs::remove_file(dir.join(hash)) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        }
+        let tx = self.conn().unchecked_transaction()?;
+        for hash in &orphans {
+            tx.execute("DELETE FROM media WHERE hash = ?1", [hash])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Path and MIME type of a cached file, if present.
     pub fn media_file(&self, key: &str) -> Result<Option<(PathBuf, String)>> {
         if !is_valid_key(key) {

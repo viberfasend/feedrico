@@ -63,6 +63,7 @@ impl From<feedrico_core::Error> for CommandError {
             Locked(_) => "locked",
             Opml(_) => "invalidOpml",
             NotFound => "notFound",
+            Invalid(_) => "invalid",
             Feed(_) | Network(_) | Manifest(_) | Database(_) | Io(_) => "internal",
         };
         Self::new(kind, error.to_string())
@@ -261,6 +262,31 @@ fn add_feed(
     with_library(&state, |l| {
         l.add_feed(&url, &title, site_url.as_deref(), folder_id)
     })
+}
+
+#[tauri::command]
+fn rename_feed(id: i64, title: String, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.rename_feed(id, &title))
+}
+
+#[tauri::command]
+fn rename_folder(id: i64, name: String, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.rename_folder(id, &name))
+}
+
+#[tauri::command]
+fn move_feed(id: i64, folder_id: Option<i64>, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.move_feed(id, folder_id))
+}
+
+#[tauri::command]
+fn delete_folder(id: i64, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.delete_folder(id))
+}
+
+#[tauri::command]
+fn unsubscribe(id: i64, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.unsubscribe(id))
 }
 
 #[tauri::command]
@@ -529,6 +555,11 @@ pub fn run() {
             export_opml,
             discover_feed,
             add_feed,
+            rename_feed,
+            rename_folder,
+            move_feed,
+            delete_folder,
+            unsubscribe,
             sidebar,
             count_articles,
             list_articles,
