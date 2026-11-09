@@ -492,7 +492,51 @@ async fn cache_images(app: &AppHandle, dir: &Path, images: Vec<(i64, String)>) {
             _ => return,
         }
     }
+    cache_favicons(app, dir).await;
+    // Last, so a fresh download can't push the cache past its cap until the next refresh.
+    {
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(l) = guard.as_ref().filter(|l| l.dir() == dir)
+            && let Ok(cap) = l.image_cache_cap()
+        {
+            let _ = l.evict_media(cap);
+        }
+    }
     let _ = app.emit("media-cached", ());
+}
+
+/// Feeds without a favicon get another look each refresh, a few at a time.
+const FAVICONS_PER_REFRESH: usize = 20;
+
+async fn cache_favicons(app: &AppHandle, dir: &Path) {
+    let state = app.state::<AppState>();
+    let pending = {
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+        guard
+            .as_ref()
+            .filter(|l| l.dir() == dir)
+            .and_then(|l| l.feeds_missing_favicon().ok())
+            .unwrap_or_default()
+    };
+    let fetcher = state.fetcher.clone();
+    let mut icons = futures::stream::iter(pending.into_iter().take(FAVICONS_PER_REFRESH))
+        .map(|(feed_id, page)| {
+            let fetcher = fetcher.clone();
+            async move { (feed_id, fetcher.fetch_favicon(&page).await) }
+        })
+        .buffer_unordered(IMAGE_CONCURRENCY);
+    while let Some((feed_id, icon)) = icons.next().await {
+        let Some((url, bytes, mime)) = icon else {
+            continue;
+        };
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+        match guard.as_ref() {
+            Some(l) if l.dir() == dir => {
+                let _ = l.set_favicon(feed_id, &url, &bytes, &mime);
+            }
+            _ => return,
+        }
+    }
 }
 
 /// Serves `media://localhost/<key>` from the open Library's cache. Nothing else.

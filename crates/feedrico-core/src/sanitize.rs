@@ -251,7 +251,10 @@ mod tests {
         );
         let html = &out.html;
         assert!(!html.contains("t.example"), "{html}");
-        assert!(!html.contains("srcset") && !html.contains("<source"), "{html}");
+        assert!(
+            !html.contains("srcset") && !html.contains("<source"),
+            "{html}"
+        );
         for src in html.split("src=\"").skip(1) {
             assert!(src.starts_with(PREFIX), "non-local src in {html}");
         }
