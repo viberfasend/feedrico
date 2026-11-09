@@ -15,6 +15,7 @@ pub mod manifest;
 pub mod media;
 pub mod opml;
 pub mod parse;
+pub mod prune;
 pub mod sanitize;
 mod schema;
 pub mod settings;

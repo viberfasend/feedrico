@@ -31,6 +31,13 @@ const IMAGE_CACHE_CAP_KEY: &str = "imageCache.capBytes";
 /// Spec: "A total cap is configurable (default 1 GB)."
 pub const DEFAULT_IMAGE_CACHE_CAP: u64 = 1024 * 1024 * 1024;
 
+const PRUNE_READ_DAYS_KEY: &str = "pruning.readDays";
+const PRUNE_UNREAD_DAYS_KEY: &str = "pruning.unreadDays";
+/// Spec: "Read, unstarred Articles: removed when older than 90 days (configurable)."
+pub const DEFAULT_PRUNE_READ_DAYS: u32 = 90;
+/// Spec: "Unread Articles: removed when older than 1 year (configurable)."
+pub const DEFAULT_PRUNE_UNREAD_DAYS: u32 = 365;
+
 const DEFAULT_KEY: &str = "layout.default";
 const VIEW_PREFIX: &str = "layout.view.";
 
@@ -63,6 +70,28 @@ impl Library {
 
     pub fn set_image_cache_cap(&self, bytes: u64) -> Result<()> {
         self.set_setting(IMAGE_CACHE_CAP_KEY, &bytes)
+    }
+
+    /// Age in days (by Article Date) past which Read, unstarred Articles are pruned.
+    pub fn prune_read_days(&self) -> Result<u32> {
+        Ok(self
+            .setting(PRUNE_READ_DAYS_KEY)?
+            .unwrap_or(DEFAULT_PRUNE_READ_DAYS))
+    }
+
+    pub fn set_prune_read_days(&self, days: u32) -> Result<()> {
+        self.set_setting(PRUNE_READ_DAYS_KEY, &days)
+    }
+
+    /// Age in days (by Article Date) past which unread, unstarred Articles are pruned.
+    pub fn prune_unread_days(&self) -> Result<u32> {
+        Ok(self
+            .setting(PRUNE_UNREAD_DAYS_KEY)?
+            .unwrap_or(DEFAULT_PRUNE_UNREAD_DAYS))
+    }
+
+    pub fn set_prune_unread_days(&self, days: u32) -> Result<()> {
+        self.set_setting(PRUNE_UNREAD_DAYS_KEY, &days)
     }
 
     pub fn layouts(&self) -> Result<Layouts> {
