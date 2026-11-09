@@ -98,9 +98,62 @@ pub fn common_candidates(base: &Url) -> Vec<Candidate> {
         .collect()
 }
 
+/// Icon URLs advertised by an HTML page via `<link rel="icon">` (also `shortcut icon`), in
+/// document order, followed by `/favicon.ico` on the site root unless already listed.
+pub fn icon_links(html: &[u8], base: &Url) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let handler = element!("link[rel][href]", |el| {
+        let rel = el.get_attribute("rel").unwrap_or_default();
+        if rel
+            .split_ascii_whitespace()
+            .any(|r| r.eq_ignore_ascii_case("icon"))
+            && let Some(href) = el.get_attribute("href")
+            && let Ok(url) = base.join(href.trim())
+            && matches!(url.scheme(), "http" | "https")
+        {
+            let url = url.to_string();
+            if !found.contains(&url) {
+                found.push(url);
+            }
+        }
+        Ok(())
+    });
+    let text = String::from_utf8_lossy(html);
+    let _ = rewrite_str(
+        &text,
+        RewriteStrSettings::new().append_element_content_handler(handler),
+    );
+    if let Ok(default) = base.join("/favicon.ico") {
+        let default = default.to_string();
+        if !found.contains(&default) {
+            found.push(default);
+        }
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn icon_links_resolve_and_end_with_the_default_path() {
+        let html = br#"<link rel="shortcut icon" href="/i.png">
+            <link rel="apple-touch-icon" href="/apple.png">
+            <link rel="icon" href="//cdn.example/x.svg"><link rel="icon" href="javascript:x">"#;
+        assert_eq!(
+            icon_links(html, &base()),
+            [
+                "https://example.com/i.png",
+                "https://cdn.example/x.svg",
+                "https://example.com/favicon.ico"
+            ]
+        );
+        assert_eq!(
+            icon_links(b"<html></html>", &base()),
+            ["https://example.com/favicon.ico"]
+        );
+    }
 
     fn base() -> Url {
         Url::parse("https://example.com/blog/").unwrap()

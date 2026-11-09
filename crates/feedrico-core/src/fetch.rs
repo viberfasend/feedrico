@@ -19,6 +19,12 @@ const MAX_FEED_BYTES: usize = 20 * 1024 * 1024;
 /// Spec: "Any single image over 5 MB is skipped and stays a remote link."
 pub const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 
+/// Favicons are small; anything bigger is not worth caching.
+const MAX_FAVICON_BYTES: usize = 256 * 1024;
+/// How many advertised icons one lookup tries, and how much of the page it reads for them.
+const MAX_ICON_CANDIDATES: usize = 4;
+const MAX_ICON_PAGE_BYTES: usize = 512 * 1024;
+
 /// What adding a Feed by URL found.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -190,6 +196,39 @@ impl Fetcher {
     /// Downloads one image. Returns bytes and MIME type; refuses anything that isn't an image
     /// or exceeds `MAX_IMAGE_BYTES`.
     pub async fn download_image(&self, url: &str) -> Result<(Vec<u8>, String)> {
+        self.download_capped(url, MAX_IMAGE_BYTES, false).await
+    }
+
+    /// Finds and downloads the favicon of the website at `page_url`: the icons its HTML
+    /// advertises, then `/favicon.ico`. Returns the icon's URL, bytes and MIME type.
+    /// Best effort: `None` when nothing usable is found.
+    pub async fn fetch_favicon(&self, page_url: &str) -> Option<(String, Vec<u8>, String)> {
+        let start = url::Url::parse(page_url).ok()?;
+        let (base, html) = match self.get_body(start.as_str()).await {
+            Ok((final_url, body)) => (
+                url::Url::parse(&final_url).unwrap_or(start),
+                body.into_iter().take(MAX_ICON_PAGE_BYTES).collect(),
+            ),
+            Err(_) => (start, Vec::new()),
+        };
+        for icon in discover::icon_links(&html, &base)
+            .into_iter()
+            .take(MAX_ICON_CANDIDATES)
+        {
+            if let Ok((bytes, mime)) = self.download_capped(&icon, MAX_FAVICON_BYTES, true).await {
+                return Some((icon, bytes, mime));
+            }
+        }
+        None
+    }
+
+    /// `lenient_mime`: servers often send `.ico` files as `application/octet-stream`.
+    async fn download_capped(
+        &self,
+        url: &str,
+        cap: usize,
+        lenient_mime: bool,
+    ) -> Result<(Vec<u8>, String)> {
         let response = self.client.get(url).send().await.map_err(network)?;
         if !response.status().is_success() {
             return Err(Error::Network(format!("HTTP {}", response.status())));
@@ -200,16 +239,24 @@ impl Fetcher {
             .and_then(|v| v.to_str().ok())
             .map(|v| v.split(';').next().unwrap_or(v).trim().to_ascii_lowercase())
             .unwrap_or_default();
+        let mime = if lenient_mime
+            && mime == "application/octet-stream"
+            && response.url().path().ends_with(".ico")
+        {
+            "image/x-icon".to_owned()
+        } else {
+            mime
+        };
         if !mime.starts_with("image/") {
             return Err(Error::Network(format!("not an image: {mime}")));
         }
         if response
             .content_length()
-            .is_some_and(|len| len as usize > MAX_IMAGE_BYTES)
+            .is_some_and(|len| len as usize > cap)
         {
             return Err(Error::Network("image too large".into()));
         }
-        Ok((read_capped(response, MAX_IMAGE_BYTES).await?, mime))
+        Ok((read_capped(response, cap).await?, mime))
     }
 }
 
@@ -333,6 +380,30 @@ mod tests {
         ]);
         let found = fetcher().discover(&base).await.unwrap();
         assert!(matches!(found, Discovery::Found { url, .. } if url == format!("{base}/atom.xml")));
+    }
+
+    #[tokio::test]
+    async fn favicon_comes_from_the_page_link_or_the_default_path() {
+        let page = r#"<link rel="icon" href="/big.png"><link rel="icon" href="/small.png">"#;
+        let base = serve(vec![
+            ("/", "text/html", page.into()),
+            ("/big.png", "image/png", "x".repeat(300 * 1024)),
+            ("/small.png", "image/png", "PNG".into()),
+        ]);
+        let (url, bytes, mime) = fetcher().fetch_favicon(&base).await.unwrap();
+        assert_eq!(url, format!("{base}/small.png"), "oversized icons are skipped");
+        assert_eq!((bytes, mime.as_str()), (b"PNG".to_vec(), "image/png"));
+
+        let base = serve(vec![
+            ("/", "text/html", "<html></html>".into()),
+            ("/favicon.ico", "application/octet-stream", "ICO".into()),
+        ]);
+        let (url, _, mime) = fetcher().fetch_favicon(&base).await.unwrap();
+        assert_eq!(url, format!("{base}/favicon.ico"));
+        assert_eq!(mime, "image/x-icon");
+
+        let base = serve(vec![("/", "text/html", "<html></html>".into())]);
+        assert!(fetcher().fetch_favicon(&base).await.is_none());
     }
 
     #[tokio::test]
