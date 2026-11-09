@@ -294,13 +294,12 @@ impl Library {
     /// The sidebar tree with unread counts. `today_since` is local midnight in unix seconds.
     pub fn sidebar(&self, today_since: i64) -> Result<Sidebar> {
         let conn = self.conn();
-        let (all_unread, starred, today): (i64, i64, i64) = conn.query_row(
+        let (starred, today): (i64, i64) = conn.query_row(
             "SELECT
-                (SELECT count(*) FROM article WHERE is_read = 0),
                 (SELECT count(*) FROM article WHERE is_starred = 1),
                 (SELECT count(*) FROM article WHERE article_date >= ?1)",
             [today_since],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
 
         let mut feeds_stmt = conn.prepare(
@@ -350,6 +349,9 @@ impl Library {
                 None => top.push(node),
             }
         }
+        // The per-Feed counts already cover every unread Article; don't scan them twice.
+        let all_unread = folders.iter().map(|f| f.unread).sum::<i64>()
+            + top.iter().map(|f| f.unread).sum::<i64>();
         Ok(Sidebar {
             all_unread,
             starred,
