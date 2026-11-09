@@ -6,6 +6,7 @@
 pub mod articles;
 pub mod discover;
 mod error;
+pub mod export;
 pub mod feeds;
 pub mod fetch;
 pub mod library;
@@ -20,6 +21,7 @@ pub mod settings;
 
 pub use articles::{ArticleDetail, ArticleRow, ListQuery, Sort, View};
 pub use error::{Error, Result};
+pub use export::{Export, ExportProgress};
 pub use feeds::{AddOutcome, FeedToFetch, FetchResult, ImportSummary, Sidebar};
 pub use fetch::{Discovery, Fetcher};
 pub use library::{Library, OpenOptions, Status};
