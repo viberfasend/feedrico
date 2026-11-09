@@ -101,9 +101,11 @@ impl Library {
     /// Evicted images stay remote links: the file and `media` row go, `article_media.hash`
     /// becomes NULL. Returns the number of bytes freed.
     pub fn evict_media(&self, cap: u64) -> Result<u64> {
-        let total: i64 = self
-            .conn()
-            .query_row("SELECT coalesce(sum(bytes), 0) FROM media", [], |r| r.get(0))?;
+        let total: i64 =
+            self.conn()
+                .query_row("SELECT coalesce(sum(bytes), 0) FROM media", [], |r| {
+                    r.get(0)
+                })?;
         let mut over = (total as u64).saturating_sub(cap);
         if over == 0 {
             return Ok(0);

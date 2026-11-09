@@ -391,7 +391,11 @@ mod tests {
             ("/small.png", "image/png", "PNG".into()),
         ]);
         let (url, bytes, mime) = fetcher().fetch_favicon(&base).await.unwrap();
-        assert_eq!(url, format!("{base}/small.png"), "oversized icons are skipped");
+        assert_eq!(
+            url,
+            format!("{base}/small.png"),
+            "oversized icons are skipped"
+        );
         assert_eq!((bytes, mime.as_str()), (b"PNG".to_vec(), "image/png"));
 
         let base = serve(vec![
