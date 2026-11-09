@@ -27,6 +27,10 @@ pub struct Layouts {
     pub views: HashMap<String, Layout>,
 }
 
+const IMAGE_CACHE_CAP_KEY: &str = "imageCache.capBytes";
+/// Spec: "A total cap is configurable (default 1 GB)."
+pub const DEFAULT_IMAGE_CACHE_CAP: u64 = 1024 * 1024 * 1024;
+
 const DEFAULT_KEY: &str = "layout.default";
 const VIEW_PREFIX: &str = "layout.view.";
 
@@ -48,6 +52,17 @@ impl Library {
             params![key, serde_json::to_string(value)?],
         )?;
         Ok(())
+    }
+
+    /// Total size cap of cached images, in bytes. See `evict_media`.
+    pub fn image_cache_cap(&self) -> Result<u64> {
+        Ok(self
+            .setting(IMAGE_CACHE_CAP_KEY)?
+            .unwrap_or(DEFAULT_IMAGE_CACHE_CAP))
+    }
+
+    pub fn set_image_cache_cap(&self, bytes: u64) -> Result<()> {
+        self.set_setting(IMAGE_CACHE_CAP_KEY, &bytes)
     }
 
     pub fn layouts(&self) -> Result<Layouts> {
@@ -79,6 +94,16 @@ impl Library {
 mod tests {
     use super::*;
     use crate::library::DIR_NAME;
+
+    #[test]
+    fn image_cache_cap_defaults_to_1_gb_and_is_configurable() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        assert_eq!(library.image_cache_cap().unwrap(), 1024 * 1024 * 1024);
+        library.set_image_cache_cap(5_000).unwrap();
+        assert_eq!(library.image_cache_cap().unwrap(), 5_000);
+        library.close().unwrap();
+    }
 
     #[test]
     fn layouts_per_view_with_default() {
