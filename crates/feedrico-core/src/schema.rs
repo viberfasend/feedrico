@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use crate::Result;
 
-pub(crate) const MIGRATIONS: &[&str] = &[V1, V2];
+pub(crate) const MIGRATIONS: &[&str] = &[V1, V2, V3];
 
 const V1: &str = r#"
 CREATE TABLE folder (
@@ -112,6 +112,11 @@ END;
 const V2: &str = r#"
 ALTER TABLE article ADD COLUMN lead_image TEXT;
 CREATE INDEX article_lead_date ON article(article_date DESC) WHERE lead_image IS NOT NULL;
+"#;
+
+/// Unread counts per Feed (the sidebar) read this index instead of scanning every Article.
+const V3: &str = r#"
+CREATE INDEX article_feed_unread ON article(feed_id) WHERE is_read = 0;
 "#;
 
 /// Existing Articles get the first image of their content as Lead Image.

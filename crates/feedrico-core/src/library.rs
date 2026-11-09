@@ -407,6 +407,43 @@ mod tests {
     }
 
     #[test]
+    fn v2_libraries_upgrade_to_an_unread_index_the_sidebar_uses() {
+        let root = tmp();
+        let dir = root.path().join(DIR_NAME);
+        Library::create_with(&dir, &MIGRATIONS[..2])
+            .unwrap()
+            .close()
+            .unwrap();
+        assert_eq!(
+            inspect(&dir).unwrap(),
+            Status::NeedsUpgrade {
+                found: 2,
+                target: 3
+            }
+        );
+
+        let upgraded = Library::open(
+            &dir,
+            OpenOptions {
+                allow_upgrade: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(dir.join("library.db.backup-v2").is_file());
+        let plan: String = upgraded
+            .conn()
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT feed_id, count(*) FROM article WHERE is_read = 0 GROUP BY feed_id",
+                [],
+                |r| r.get(3),
+            )
+            .unwrap();
+        assert!(plan.contains("article_feed_unread"), "plan was: {plan}");
+        upgraded.close().unwrap();
+    }
+
+    #[test]
     fn newer_library_is_never_touched() {
         let root = tmp();
         let dir = root.path().join(DIR_NAME);

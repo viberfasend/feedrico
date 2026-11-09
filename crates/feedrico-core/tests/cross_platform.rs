@@ -1,8 +1,9 @@
 //! A Library created on Linux must open unchanged on Windows and macOS (issue #5). The fixture
 //! under `tests/fixtures/` is committed; CI opens it on all three platforms.
 //!
-//! Regenerate after a format change (and commit the result):
-//! `cargo test -p feedrico-core --test cross_platform -- --ignored regenerate_fixture`
+//! The fixture is frozen at format 2 (created by build 0.1.0 on Linux) on purpose: every build
+//! must upgrade an older Library on every OS. Don't regenerate it; add a new fixture when a
+//! format version needs the same cross-platform proof.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -34,11 +35,23 @@ fn fixture_library_from_linux_opens_here() {
     let dir = root.path().join(DIR_NAME);
     copy_dir(&fixture_dir(), &dir);
 
+    // The fixture is format 2 on purpose: every build must upgrade an older Library on every OS.
     assert!(matches!(
         feedrico_core::library::inspect(&dir).unwrap(),
-        Status::Ready
+        Status::NeedsUpgrade { found: 2, .. }
     ));
-    let library = Library::open(&dir, OpenOptions::default()).unwrap();
+    assert!(matches!(
+        Library::open(&dir, OpenOptions::default()),
+        Err(feedrico_core::Error::NeedsUpgrade { .. })
+    ));
+    let library = Library::open(
+        &dir,
+        OpenOptions {
+            allow_upgrade: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert_eq!(library.format_version().unwrap(), FORMAT_VERSION);
     let (title, starred): (String, bool) = library
         .conn()
@@ -52,31 +65,4 @@ fn fixture_library_from_linux_opens_here() {
     assert_eq!(title, "Hello from Linux");
     assert!(starred);
     library.close().unwrap();
-}
-
-#[test]
-#[ignore = "regenerates the committed fixture"]
-fn regenerate_fixture() {
-    let dir = fixture_dir();
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap();
-    }
-    let library = Library::create(&dir).unwrap();
-    let conn = library.conn();
-    conn.execute("INSERT INTO folder (name) VALUES ('Tech')", [])
-        .unwrap();
-    conn.execute(
-        "INSERT INTO feed (url, title, folder_id) VALUES ('https://example.org/feed.xml', 'Ünïcode Feed 日本語', 1)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO article (feed_id, identity, title, first_seen_at, article_date, is_starred)
-         VALUES (1, 'a1', 'Hello from Linux', 1700000000, 1700000000, 1)",
-        [],
-    )
-    .unwrap();
-    library.close().unwrap();
-    // Git doesn't track empty folders; an empty media/ is recreated on demand.
-    fs::write(dir.join("media/.gitkeep"), "").unwrap();
 }
