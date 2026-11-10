@@ -280,8 +280,18 @@ fn move_feed(id: i64, folder_id: Option<i64>, state: State<'_, AppState>) -> Com
 }
 
 #[tauri::command]
-fn delete_folder(id: i64, state: State<'_, AppState>) -> CommandResult<()> {
-    with_library(&state, |l| l.delete_folder(id))
+fn delete_folder(
+    id: i64,
+    unsubscribe_feeds: bool,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    with_library(&state, |l| {
+        if unsubscribe_feeds {
+            l.delete_folder_with_feeds(id)
+        } else {
+            l.delete_folder(id)
+        }
+    })
 }
 
 #[tauri::command]

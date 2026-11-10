@@ -103,13 +103,14 @@
     closeMenu();
     await app.moveFeed(feedId, folderId);
   }
-  async function confirmed() {
+  async function confirmed(unsubscribeFeeds: boolean) {
     const target = confirm;
     confirm = null;
     if (!target) return;
     if (target.kind === 'feed') await app.unsubscribe(target.feed.id);
-    else await app.deleteFolder(target.folder.id);
+    else await app.deleteFolder(target.folder.id, unsubscribeFeeds);
   }
+  const feedsLabel = (n: number) => (n === 1 ? '1 Feed' : `${n} Feeds`);
   async function drop(event: DragEvent, folderId: number | null) {
     event.preventDefault();
     const id = dragging;
@@ -300,16 +301,33 @@
       {#if target.kind === 'feed'}
         <h2 id="confirm-title">Unsubscribe from {target.feed.title}?</h2>
         <p>Its Articles and cached images are removed from this Library. This can't be undone.</p>
+      {:else if target.folder.feeds.length === 0}
+        <h2 id="confirm-title">Delete the Folder {target.folder.name}?</h2>
+        <p>The Folder is empty.</p>
       {:else}
         <h2 id="confirm-title">Delete the Folder {target.folder.name}?</h2>
-        <p>Its Feeds move to the top level. No Feeds or Articles are removed.</p>
+        <p>
+          It contains {feedsLabel(target.folder.feeds.length)}. Move them to the top level, or
+          unsubscribe from them: their Articles and cached images are removed from this Library.
+          Unsubscribing can't be undone.
+        </p>
       {/if}
       <div class="actions">
         <button onclick={() => (confirm = null)}>Cancel</button>
-        <!-- svelte-ignore a11y_autofocus -->
-        <button class="danger-solid" autofocus onclick={confirmed}>
-          {target.kind === 'feed' ? 'Unsubscribe' : 'Delete Folder'}
-        </button>
+        {#if target.kind === 'feed'}
+          <!-- svelte-ignore a11y_autofocus -->
+          <button class="danger-solid" autofocus onclick={() => confirmed(true)}>Unsubscribe</button>
+        {:else if target.folder.feeds.length === 0}
+          <!-- svelte-ignore a11y_autofocus -->
+          <button class="danger-solid" autofocus onclick={() => confirmed(false)}>Delete Folder</button>
+        {:else}
+          <!-- The safe choice gets focus, so Enter never unsubscribes by accident. -->
+          <!-- svelte-ignore a11y_autofocus -->
+          <button autofocus onclick={() => confirmed(false)}>Move Feeds to top level</button>
+          <button class="danger-solid" onclick={() => confirmed(true)}>
+            Unsubscribe from {feedsLabel(target.folder.feeds.length)}
+          </button>
+        {/if}
       </div>
     </div>
   </div>
@@ -395,6 +413,7 @@
   }
   .dialog .actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--space-inline-sm);
   }

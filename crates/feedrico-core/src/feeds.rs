@@ -245,6 +245,16 @@ impl Library {
         )
     }
 
+    /// Deletes a Folder and unsubscribes from every Feed in it, removing their Articles and the
+    /// cached images nothing else refers to.
+    pub fn delete_folder_with_feeds(&self, folder_id: i64) -> Result<()> {
+        let tx = self.conn().unchecked_transaction()?;
+        tx.execute("DELETE FROM feed WHERE folder_id = ?1", [folder_id])?;
+        found(tx.execute("DELETE FROM folder WHERE id = ?1", [folder_id])?)?;
+        tx.commit()?;
+        self.remove_unreferenced_media()
+    }
+
     /// Removes a Feed with its Articles, then deletes cached images nothing refers to anymore.
     pub fn unsubscribe(&self, feed_id: i64) -> Result<()> {
         found(
@@ -540,6 +550,82 @@ mod tests {
             "deleted Folder's Feeds go to the top level"
         );
         assert!(matches!(library.delete_folder(news), Err(Error::NotFound)));
+    }
+
+    // Bug (YouTube Folder deleted, its Articles still in All Unread): deleting a Folder could
+    // only move its Feeds to the top level, so there was no way to drop a Folder of hundreds of
+    // Feeds together with their Articles.
+    #[test]
+    fn delete_folder_with_feeds_unsubscribes_only_that_folders_feeds() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://yt1.example", Some("YouTube")),
+                opml_feed("https://yt2.example", Some("YouTube")),
+                opml_feed("https://news.example", Some("News")),
+                opml_feed("https://top.example", None),
+            ])
+            .unwrap();
+        let sidebar = library.sidebar(0).unwrap();
+        let news = sidebar.folders.iter().find(|f| f.name == "News").unwrap();
+        let youtube = sidebar
+            .folders
+            .iter()
+            .find(|f| f.name == "YouTube")
+            .unwrap();
+        let kept = [news.feeds[0].id, sidebar.feeds[0].id];
+        let gone: Vec<i64> = youtube.feeds.iter().map(|f| f.id).collect();
+        let youtube = youtube.id;
+
+        let conn = library.conn();
+        for (id, feed) in gone.iter().chain(&kept).enumerate() {
+            conn.execute(
+                "INSERT INTO article (id, feed_id, identity, first_seen_at, article_date)
+                 VALUES (?1, ?2, ?1, 0, 0)",
+                params![id as i64 + 1, feed],
+            )
+            .unwrap();
+            let url = if gone.contains(feed) {
+                format!("https://img/{feed}.png")
+            } else {
+                "https://img/kept.png".to_string()
+            };
+            conn.execute(
+                "INSERT INTO article_media (article_id, source_url) VALUES (?1, ?2)",
+                params![id as i64 + 1, url],
+            )
+            .unwrap();
+            library.store_media(&url, b"x", "image/png").unwrap();
+        }
+
+        library.delete_folder_with_feeds(youtube).unwrap();
+
+        let sidebar = library.sidebar(0).unwrap();
+        assert_eq!(sidebar.folders.len(), 1, "only News is left");
+        assert_eq!(sidebar.folders[0].feeds.len(), 1);
+        assert_eq!(sidebar.feeds.len(), 1, "no Feed moved to the top level");
+        assert_eq!(sidebar.all_unread, 2, "only the kept Feeds' Articles count");
+        assert_eq!(library.feed_count().unwrap(), 2);
+        let key = |u: &str| crate::sanitize::media_key(u);
+        for feed in &gone {
+            assert!(
+                library
+                    .media_file(&key(&format!("https://img/{feed}.png")))
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(
+            library
+                .media_file(&key("https://img/kept.png"))
+                .unwrap()
+                .is_some()
+        );
+        assert!(matches!(
+            library.delete_folder_with_feeds(youtube),
+            Err(Error::NotFound)
+        ));
     }
 
     #[test]

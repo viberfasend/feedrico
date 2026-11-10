@@ -161,7 +161,8 @@ export const api = {
   renameFeed: (id: number, title: string) => invoke<void>('rename_feed', { id, title }),
   renameFolder: (id: number, name: string) => invoke<void>('rename_folder', { id, name }),
   moveFeed: (id: number, folderId: number | null) => invoke<void>('move_feed', { id, folderId }),
-  deleteFolder: (id: number) => invoke<void>('delete_folder', { id }),
+  deleteFolder: (id: number, unsubscribeFeeds: boolean) =>
+    invoke<void>('delete_folder', { id, unsubscribeFeeds }),
   unsubscribe: (id: number) => invoke<void>('unsubscribe', { id }),
   exportOpml: (path: string) => invoke<void>('export_opml', { path }),
   exportLibrary: (path: string) => invoke<void>('export_library', { path }),
