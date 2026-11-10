@@ -48,6 +48,38 @@ PATH=/snap/bin:$PATH npm run tauri dev     # run in the background, keep the out
 - If the user can't see something, ask them to switch to the view, act, then say "done", and
   read the log.
 
+### Look at it yourself (mock IPC in a browser)
+
+Agents can't screenshot the Tauri window (GNOME Wayland). Unit tests and `svelte-check` don't
+see layout. So **look at every visible UI change before calling it done**:
+
+1. With the dev server running, open `http://localhost:1420/` in Chrome (Claude in Chrome).
+2. Run [`mock-ipc.js`](mock-ipc.js) in the page. It fakes the Tauri IPC with canned data and
+   remounts the real `<App/>`. Extend its `handlers` for the commands your change uses.
+3. Screenshot every Layout (List, Cards, Magazine, Gallery) and both themes. Resize down to the
+   window's `minWidth` (880 px, `tauri.conf.json`): fixed-width panes (sidebar 260 px, list
+   column) are where controls overflow.
+
+Chrome is not WebKitGTK. If the mock looks right but the app doesn't, suspect an engine
+difference (see "Known traps") or dev-server state (next section).
+
+## UI glitch that a restart fixes
+
+If the app looks broken but **a restart fixes it**, it's dev-server state, not app code. Don't
+patch components for it. Before restarting, collect evidence. After a restart it's gone.
+
+- Grep the `tauri dev` output for `optimized dependencies changed`, `new dependencies
+  optimized`, `Outdated Optimize Dep`, `504`, `Failed to resolve`, `hmr update`, `page reload`.
+- Note the time and what else ran: other agents (Vibe, Claude worktrees), `npm run
+  check|test|build|tokens` in this checkout (each one rewrites `src/lib/tokens/generated/*.css`
+  under the running server), `git pull` or a branch switch (changes the lockfile, so deps get
+  re-optimized).
+- `ls -la --time-style=+%T node_modules/.vite/deps src/lib/tokens/generated` shows when the
+  dependency cache and the token CSS were last rewritten.
+- Agent worktrees live in `.claude/worktrees/` **inside** the project root. `vite.config.ts` keeps
+  the dev server from scanning (`optimizeDeps.entries`) or watching (`server.watch.ignored`)
+  them, guarded by `src/lib/dev-server.test.ts`. Keep those guards if you touch the config.
+
 ## Inspect the user's Library (read-only)
 
 - Machine-local recent list: `~/.config/de.andi1984.feedrico/recent-libraries.json`
@@ -74,6 +106,9 @@ PATH=/snap/bin:$PATH npm run tauri dev     # run in the background, keep the out
   error fires. Virtualization already limits images to visible rows.
 - **Flex items with `<input>`** need `min-width: 0` on the input's flex parent, or the input's
   intrinsic width overflows narrow columns.
+- **Adding a control to a fixed-width row** (sidebar footer, list header) silently pushes the
+  last controls out of view. The pane clips, so nothing errors. Check at `minWidth` with the
+  mock, and wrap or move rarely used actions into a menu.
 - **Multi-byte text**: never slice Rust strings by byte offsets from user content; use
   `char_indices`.
 - **One problem can hide another** on the attention screen (stale lock *and* pending upgrade).
