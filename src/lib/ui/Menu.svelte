@@ -7,6 +7,8 @@
     disabled?: boolean;
     /** Renders a separator above this item (e.g. before a destructive action). */
     separatorBefore?: boolean;
+    /** Renders a non-interactive heading above this item. */
+    headingBefore?: string;
   }
 </script>
 
@@ -47,6 +49,7 @@
         <div {...props} class="menu">
           {#each items as item (item.label)}
             {#if item.separatorBefore}<div class="menu-separator" role="separator"></div>{/if}
+            {#if item.headingBefore}<div class="menu-heading">{item.headingBefore}</div>{/if}
             <DropdownMenu.Item
               disabled={item.disabled}
               textValue={item.label}
@@ -96,5 +99,10 @@
   .menu-separator {
     margin: var(--space-inset-xs) 0;
     border-top: 1px solid var(--color-border-subtle);
+  }
+  .menu-heading {
+    padding: var(--space-inset-sm) var(--space-inset-md) 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
   }
 </style>
