@@ -63,6 +63,12 @@ see layout. So **look at every visible UI change before calling it done**:
 Chrome is not WebKitGTK. If the mock looks right but the app doesn't, suspect an engine
 difference (see "Known traps") or dev-server state (next section).
 
+### Measure performance
+
+`npx tauri build --no-bundle && npm run perf` runs the Rust query benchmarks and the real app in
+perf mode (`FEEDRICO_PERF_LIBRARY`, see `src-tauri/src/perf.rs`, `src/lib/perf.ts`) against a
+generated 300 Feed / 50k Article Library and prints a Markdown report. CI runs it on `main`.
+
 ## UI glitch that a restart fixes
 
 If the app looks broken but **a restart fixes it**, it's dev-server state, not app code. Don't

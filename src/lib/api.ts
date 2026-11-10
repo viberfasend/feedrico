@@ -185,6 +185,10 @@ export const api = {
     listen<RefreshProgress>('refresh-progress', (e) => cb(e.payload)),
   onMediaCached: (cb: () => void): Promise<UnlistenFn> => listen('media-cached', () => cb()),
   onArticlesPruned: (cb: () => void): Promise<UnlistenFn> => listen('articles-pruned', () => cb()),
+  /** Perf mode only: milliseconds since the process started. */
+  perfInteractive: () => invoke<number>('perf_interactive'),
+  /** Perf mode only: prints the report and exits the app. */
+  perfFinish: (report: unknown) => invoke<void>('perf_finish', { report }),
 };
 
 /** URL of a cached image, served from the open Library by the shell's media protocol. */

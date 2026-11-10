@@ -19,7 +19,10 @@
   }
 
   onMount(() => {
-    void app.start();
+    // Perf mode: the shell injects this flag only when FEEDRICO_PERF_LIBRARY is set.
+    app.perf = '__FEEDRICO_PERF__' in window;
+    const started = app.start();
+    if (app.perf) void started.then(() => import('./lib/perf').then((m) => m.perfSession(app)));
   });
 
   // Keyboard-first reading (spec: "Keyboard"). Shortcuts never fire while typing.

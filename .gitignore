@@ -11,3 +11,4 @@ src/lib/tokens/generated/
 src-tauri/gen/
 site-dist/
 .shots/
+perf-results.json

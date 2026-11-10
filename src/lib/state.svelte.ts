@@ -81,6 +81,8 @@ export class AppState {
   toasts = $state<Toast[]>([]);
   /** Set while a Library backup is running. */
   exportProgress = $state<string | null>(null);
+  /** Perf mode (see `perf.ts`): a generated Library, so never touch the network. */
+  perf = false;
   private toastId = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -145,8 +147,9 @@ export class AppState {
     this.phase = 'ready';
     this.layouts = await api.layouts();
     await Promise.all([this.loadSidebar(), this.resetList()]);
-    if (library.feedCount > 0) void this.startRefresh(false);
     if (this.timer) clearInterval(this.timer);
+    if (this.perf) return;
+    if (library.feedCount > 0) void this.startRefresh(false);
     this.timer = setInterval(() => void this.startRefresh(false), AUTO_REFRESH_MS);
   }
 
@@ -318,15 +321,16 @@ export class AppState {
     void this.setLayout(next);
   }
 
+  /** Resolves once the new View's first page is loaded. */
   select(selection: Selection) {
     this.selection = selection;
     this.search = '';
-    void this.resetList();
+    return this.resetList();
   }
 
   setSearch(search: string) {
     this.search = search;
-    void this.resetList();
+    return this.resetList();
   }
 
   toggleSort() {
@@ -432,11 +436,11 @@ export class AppState {
     void this.ensureRange(index, index + 1);
   }
 
-  move(delta: number) {
+  async move(delta: number) {
     const next = this.selectedIndex === null ? 0 : this.selectedIndex + delta;
     const index = Math.min(Math.max(next, 0), this.total - 1);
     if (this.isGrid && !this.readerOpen) this.focusIndex(index);
-    else void this.selectIndex(index);
+    else await this.selectIndex(index);
   }
 
   /** Arrow keys: spatial in Cards and Gallery, sequential elsewhere. */
