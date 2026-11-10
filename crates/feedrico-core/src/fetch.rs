@@ -8,6 +8,7 @@ use reqwest::header::{CONTENT_TYPE, ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST
 
 use crate::discover::{self, Candidate};
 use crate::feeds::{FeedToFetch, FetchResult};
+use crate::update::{self, UpdateStatus};
 use crate::{Error, Result, parse};
 
 const USER_AGENT: &str = concat!(
@@ -191,6 +192,24 @@ impl Fetcher {
             },
             title,
         ))
+    }
+
+    /// Asks GitHub Releases for the newest version of the app. Spec "Network policy": this is
+    /// the only non-feed request, and the UI only calls it from an explicit click. A 404 (no
+    /// Release published yet) is `UpdateStatus::NoReleases`; any other failure is
+    /// `Error::Network` so the UI can show the offline message.
+    pub async fn check_for_updates(&self, current: &str) -> Result<UpdateStatus> {
+        let response = self
+            .client
+            .get(update::LATEST_RELEASE_URL)
+            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+            .timeout(update::UPDATE_TIMEOUT)
+            .send()
+            .await
+            .map_err(network)?;
+        let status = response.status();
+        let body = read_capped(response, update::MAX_UPDATE_BYTES).await?;
+        update::map_response(current, status.as_u16(), &body)
     }
 
     /// Downloads one image. Returns bytes and MIME type; refuses anything that isn't an image

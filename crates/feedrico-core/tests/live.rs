@@ -63,3 +63,17 @@ async fn fetches_real_feeds_end_to_end() {
     assert_eq!(again.new_articles, 0);
     library.close().unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs network"]
+async fn checks_github_releases_for_the_latest_version() {
+    let fetcher = Fetcher::new("media://localhost/").unwrap();
+    // The repo has no Releases today, so this must read as NoReleases, not an error.
+    let status = fetcher.check_for_updates("0.1.0").await.unwrap();
+    println!("{status:?}");
+    assert!(matches!(
+        status,
+        feedrico_core::UpdateStatus::NoReleases { .. }
+            | feedrico_core::UpdateStatus::UpToDate { .. }
+    ));
+}

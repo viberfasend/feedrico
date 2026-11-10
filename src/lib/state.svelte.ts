@@ -511,6 +511,33 @@ export class AppState {
     api.openExternal(url).catch((e) => this.notify(errorMessage(e)));
   }
 
+  // ---- Updates ----------------------------------------------------------------------------
+
+  private updateCheckRunning = false;
+
+  /** One manual check against GitHub Releases. Network policy: only ever run from a click. */
+  async checkForUpdates() {
+    if (this.updateCheckRunning) return;
+    this.updateCheckRunning = true;
+    try {
+      const status = await api.checkForUpdates();
+      if (status.kind === 'available') {
+        this.notify(`Feedrico ${status.latest} is available`, {
+          label: 'Open',
+          run: () => this.openExternal(status.url),
+        });
+      } else if (status.kind === 'noReleases') {
+        this.notify('No release published yet');
+      } else {
+        this.notify(`You're up to date (${status.current})`);
+      }
+    } catch {
+      this.notify("Couldn't reach GitHub. Check your connection and try again.");
+    } finally {
+      this.updateCheckRunning = false;
+    }
+  }
+
   // ---- Refresh ----------------------------------------------------------------------------
 
   async startRefresh(force: boolean) {

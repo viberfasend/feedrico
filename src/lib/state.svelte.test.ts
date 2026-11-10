@@ -40,6 +40,12 @@ const mockApi = {
   layouts: vi.fn(async () => ({ default: 'list', views: {} })),
   refresh: vi.fn(async () => true),
   onRefreshProgress: vi.fn(async () => () => {}),
+  openExternal: vi.fn(async () => {}),
+  checkForUpdates: vi.fn(),
+  startup: vi.fn(async () => ({ kind: 'welcome', defaultPath: '' })),
+  recentLibraries: vi.fn(async () => [] as string[]),
+  onMediaCached: vi.fn(async () => () => {}),
+  onArticlesPruned: vi.fn(async () => () => {}),
 };
 
 vi.mock('./api', async (importOriginal) => ({
@@ -233,5 +239,73 @@ describe('Perf mode', () => {
     lists[0]!.d.resolve(rows(1));
     await switched;
     expect(app.rowAt(0)?.id).toBe(1);
+  });
+});
+
+describe('Check for updates', () => {
+  it('says the app is up to date', async () => {
+    const app = new AppState();
+    mockApi.checkForUpdates.mockResolvedValue({ kind: 'upToDate', current: '0.1.0' });
+    await app.checkForUpdates();
+    expect(app.toasts.at(-1)?.message).toBe("You're up to date (0.1.0)");
+    expect(app.toasts.at(-1)?.action).toBeUndefined();
+  });
+
+  it('offers the new release with an Open action that opens the release page', async () => {
+    const app = new AppState();
+    mockApi.checkForUpdates.mockResolvedValue({
+      kind: 'available',
+      current: '0.1.0',
+      latest: '0.2.0',
+      url: 'https://github.com/viberfasend/feedrico/releases/tag/v0.2.0',
+    });
+    await app.checkForUpdates();
+    const toast = app.toasts.at(-1);
+    expect(toast?.message).toBe('Feedrico 0.2.0 is available');
+    expect(toast?.action?.label).toBe('Open');
+    toast?.action?.run();
+    expect(mockApi.openExternal).toHaveBeenCalledWith(
+      'https://github.com/viberfasend/feedrico/releases/tag/v0.2.0',
+    );
+  });
+
+  it('reads a 404 as "no release published yet"', async () => {
+    const app = new AppState();
+    mockApi.checkForUpdates.mockResolvedValue({ kind: 'noReleases', current: '0.1.0' });
+    await app.checkForUpdates();
+    expect(app.toasts.at(-1)?.message).toBe('No release published yet');
+  });
+
+  it('shows a clear message when GitHub cannot be reached', async () => {
+    const app = new AppState();
+    mockApi.checkForUpdates.mockRejectedValue({ kind: 'internal', message: 'network error: could not connect' });
+    await app.checkForUpdates();
+    expect(app.toasts.at(-1)?.message).toBe(
+      "Couldn't reach GitHub. Check your connection and try again.",
+    );
+  });
+
+  it('ignores a second click while a check is still in flight', async () => {
+    const app = new AppState();
+    const d = deferred<unknown>();
+    mockApi.checkForUpdates.mockReturnValue(d.promise);
+    const first = app.checkForUpdates();
+    void app.checkForUpdates();
+    void app.checkForUpdates();
+    expect(mockApi.checkForUpdates).toHaveBeenCalledTimes(1);
+    d.resolve({ kind: 'upToDate', current: '0.1.0' });
+    await first;
+    expect(app.toasts.at(-1)?.message).toBe("You're up to date (0.1.0)");
+    // Once finished, clicking again works again.
+    mockApi.checkForUpdates.mockResolvedValue({ kind: 'noReleases', current: '0.1.0' });
+    await app.checkForUpdates();
+    expect(mockApi.checkForUpdates).toHaveBeenCalledTimes(2);
+  });
+
+  // Network policy: nothing may call the update check unless the user clicks.
+  it('never checks for updates on startup', async () => {
+    const app = new AppState();
+    await app.start();
+    expect(mockApi.checkForUpdates).not.toHaveBeenCalled();
   });
 });

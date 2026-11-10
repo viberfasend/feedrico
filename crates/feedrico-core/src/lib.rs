@@ -19,6 +19,7 @@ pub mod prune;
 pub mod sanitize;
 mod schema;
 pub mod settings;
+pub mod update;
 
 pub use articles::{ArticleDetail, ArticleRow, ListQuery, Sort, View};
 pub use error::{Error, Result};
@@ -29,6 +30,7 @@ pub use library::{Library, OpenOptions, Status};
 pub use lock::LockInfo;
 pub use manifest::Manifest;
 pub use settings::{Layout, Layouts};
+pub use update::UpdateStatus;
 
 /// The newest Library format this build can read and write.
 pub const FORMAT_VERSION: u32 = schema::MIGRATIONS.len() as u32;
