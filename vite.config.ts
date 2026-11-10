@@ -1,8 +1,19 @@
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { fileURLToPath } from 'node:url';
 
 // Tauri expects a fixed dev port and serves the built files from dist/.
 const host = process.env.TAURI_DEV_HOST;
+
+const slashes = (path: string) => path.replaceAll('\\', '/');
+/** Agent worktrees (`.claude/worktrees/`) are full checkouts inside this one. */
+const agentCheckouts = slashes(fileURLToPath(new URL('./.claude/', import.meta.url)));
+/**
+ * True for files of the agent checkouts inside this one. Anchored to this checkout, so a dev
+ * server started inside a worktree still watches its own files (a glob for any `.claude` folder
+ * would ignore them all).
+ */
+export const isAgentCheckout = (path: string) => slashes(path).startsWith(agentCheckouts);
 
 export default defineConfig({
   plugins: [svelte()],
@@ -15,8 +26,7 @@ export default defineConfig({
     strictPort: true,
     host: host || false,
     hmr: host ? { protocol: 'ws', host, port: 1421 } : undefined,
-    // Agent worktrees (.claude/worktrees/) are full checkouts inside the root: never watch them.
-    watch: { ignored: ['**/src-tauri/**', '**/crates/**', '**/target/**', '**/.claude/**'] },
+    watch: { ignored: ['**/src-tauri/**', '**/crates/**', '**/target/**', isAgentCheckout] },
   },
   // Vite would otherwise scan every **/*.html under the root, including other checkouts' code.
   optimizeDeps: { entries: ['index.html'] },
