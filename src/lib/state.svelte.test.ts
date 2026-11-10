@@ -37,6 +37,9 @@ const mockApi = {
   sidebar: vi.fn(async () => ({ allUnread: 0, starred: 0, today: 0, folders: [], feeds: [] })),
   info: vi.fn(async () => ({ path: '/lib', name: 'Lib', formatVersion: 1, feedCount: 1, portable: false })),
   deleteFolder: vi.fn(async (_id: number, _unsubscribeFeeds: boolean) => {}),
+  layouts: vi.fn(async () => ({ default: 'list', views: {} })),
+  refresh: vi.fn(async () => true),
+  onRefreshProgress: vi.fn(async () => () => {}),
 };
 
 vi.mock('./api', async (importOriginal) => ({
@@ -193,5 +196,42 @@ describe('Deleting a Folder', () => {
     expect(mockApi.deleteFolder).toHaveBeenCalledWith(7, false);
     expect(mockApi.info).not.toHaveBeenCalled();
     expect(mockApi.count).not.toHaveBeenCalled();
+  });
+});
+
+describe('Perf mode', () => {
+  // The perf harness opens a generated Library whose Feeds point at example domains. A refresh
+  // would hit the network, write errors into the fixture and skew every timing.
+  it('never refreshes Feeds', async () => {
+    vi.useFakeTimers();
+    try {
+      const app = new AppState();
+      app.perf = true;
+      mockApi.open.mockResolvedValueOnce({ path: '/lib', name: 'Lib', formatVersion: 3, feedCount: 300, portable: false });
+      const opened = app.open('/lib');
+      await vi.waitFor(() => expect(counts).toHaveLength(1));
+      counts[0]!.resolve(0);
+      await vi.waitFor(() => expect(lists).toHaveLength(1));
+      lists[0]!.d.resolve([]);
+      await opened;
+      await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+
+      expect(mockApi.refresh).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets the harness await a View switch until its first page is loaded', async () => {
+    const app = new AppState();
+    let done = false;
+    const switched = app.select({ kind: 'starred' }).then(() => (done = true));
+    await vi.waitFor(() => expect(counts).toHaveLength(1));
+    counts[0]!.resolve(1);
+    await vi.waitFor(() => expect(lists).toHaveLength(1));
+    expect(done).toBe(false);
+    lists[0]!.d.resolve(rows(1));
+    await switched;
+    expect(app.rowAt(0)?.id).toBe(1);
   });
 });

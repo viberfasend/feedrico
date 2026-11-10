@@ -2,10 +2,12 @@
 //! background refresh, and serves cached media. No domain logic lives here.
 
 mod machine;
+mod perf;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
+use std::time::Instant;
 
 use feedrico_core::feeds::ImportSummary;
 use feedrico_core::{AddOutcome, Discovery};
@@ -33,6 +35,8 @@ struct AppState {
     library: Mutex<Option<Library>>,
     fetcher: Fetcher,
     refreshing: AtomicBool,
+    /// Set only when the app runs its timing harness (`perf.rs`).
+    perf: Option<perf::Perf>,
 }
 
 /// Errors cross the IPC boundary as a kind the UI can branch on plus a readable message.
@@ -121,7 +125,9 @@ fn install(app: &AppHandle, state: &AppState, library: Library) -> CommandResult
     if let Some(previous) = slot.take() {
         previous.close()?;
     }
-    machine::remember(app, library.dir());
+    if state.perf.is_none() {
+        machine::remember(app, library.dir());
+    }
     *slot = Some(library);
     Ok(result)
 }
@@ -154,6 +160,12 @@ fn startup(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Startup>
     {
         return Ok(Startup::Opened {
             library: info(library)?,
+        });
+    }
+    if let Some(perf) = &state.perf {
+        let library = Library::open(&perf.library, OpenOptions::default())?;
+        return Ok(Startup::Opened {
+            library: install(&app, &state, library)?,
         });
     }
     let candidates = machine::portable_library()
@@ -605,6 +617,28 @@ async fn cache_favicons(app: &AppHandle, dir: &Path) {
     }
 }
 
+#[tauri::command]
+fn perf_interactive(state: State<'_, AppState>) -> CommandResult<f64> {
+    let perf = state.perf.as_ref().ok_or_else(not_perf_mode)?;
+    Ok(perf.elapsed_ms())
+}
+
+#[tauri::command]
+fn perf_finish(
+    report: serde_json::Value,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    state.perf.as_ref().ok_or_else(not_perf_mode)?;
+    println!("FEEDRICO_PERF {report}");
+    app.exit(0);
+    Ok(())
+}
+
+fn not_perf_mode() -> CommandError {
+    CommandError::new("notPerfMode", "only available in perf mode")
+}
+
 /// Serves `media://localhost/<key>` from the open Library's cache. Nothing else.
 fn serve_media(app: &AppHandle, path: &str) -> Response<Vec<u8>> {
     let key = path.trim_start_matches('/');
@@ -640,8 +674,18 @@ fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let started = Instant::now();
     let fetcher = Fetcher::new(MEDIA_PREFIX).expect("HTTP client");
-    tauri::Builder::default()
+    let perf = perf::Perf::from_env(started);
+    let mut builder = tauri::Builder::default();
+    if perf.is_some() {
+        builder = builder.plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("perf")
+                .js_init_script(perf::INIT_SCRIPT.to_string())
+                .build(),
+        );
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(navigation_guard())
@@ -649,6 +693,7 @@ pub fn run() {
             library: Mutex::new(None),
             fetcher,
             refreshing: AtomicBool::new(false),
+            perf,
         })
         .register_uri_scheme_protocol("media", |ctx, request| {
             serve_media(ctx.app_handle(), request.uri().path())
@@ -683,6 +728,8 @@ pub fn run() {
             set_layout,
             open_external,
             refresh,
+            perf_interactive,
+            perf_finish,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Feedrico")
