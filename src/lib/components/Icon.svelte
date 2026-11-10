@@ -24,6 +24,7 @@
     gallery: 'M3.5 3.5h3.6v3.6H3.5zM8.2 3.5h3.6v3.6H8.2zM12.9 3.5h3.6v3.6h-3.6zM3.5 8.2h3.6v3.6H3.5zM8.2 8.2h3.6v3.6H8.2zM12.9 8.2h3.6v3.6h-3.6zM3.5 12.9h3.6v3.6H3.5zM8.2 12.9h3.6v3.6H8.2zM12.9 12.9h3.6v3.6h-3.6z',
     plus: 'M10 4.5v11M4.5 10h11',
     close: 'M5.5 5.5l9 9M14.5 5.5l-9 9',
+    more: 'M4.5 10h1M9.5 10h1M14.5 10h1',
     update: 'M10 4.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM10 13V7.5M7.8 9.7L10 7.5l2.2 2.2',
   } as const;
   export type IconName = keyof typeof paths;
