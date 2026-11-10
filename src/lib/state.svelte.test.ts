@@ -34,6 +34,9 @@ const mockApi = {
   setLayout: vi.fn(async () => {}),
   article: vi.fn(),
   setRead: vi.fn(async () => {}),
+  sidebar: vi.fn(async () => ({ allUnread: 0, starred: 0, today: 0, folders: [], feeds: [] })),
+  info: vi.fn(async () => ({ path: '/lib', name: 'Lib', formatVersion: 1, feedCount: 1, portable: false })),
+  deleteFolder: vi.fn(async (_id: number, _unsubscribeFeeds: boolean) => {}),
 };
 
 vi.mock('./api', async (importOriginal) => ({
@@ -162,5 +165,33 @@ describe('Opening a Library', () => {
     expect(app.attention?.status.kind).toBe('needsUpgrade');
     expect(app.attention?.takeOverLock).toBe(true);
     expect(mockApi.inspect).not.toHaveBeenCalled();
+  });
+});
+
+describe('Deleting a Folder', () => {
+  // Bug (YouTube Folder deleted, its Articles still in All Unread): deleting a Folder could
+  // only move its Feeds to the top level. Unsubscribing them must also drop their Articles
+  // from the list on screen and update the Library's Feed count.
+  it('unsubscribes from its Feeds and reloads the list when asked to', async () => {
+    const app = new AppState();
+    const done = app.deleteFolder(7, true);
+    await vi.waitFor(() => expect(counts).toHaveLength(1));
+    counts[0]!.resolve(0);
+    await vi.waitFor(() => expect(lists).toHaveLength(1));
+    lists[0]!.d.resolve([]);
+    await done;
+
+    expect(mockApi.deleteFolder).toHaveBeenCalledWith(7, true);
+    expect(mockApi.info).toHaveBeenCalled();
+    expect(mockApi.count).toHaveBeenCalled();
+  });
+
+  it('keeps the Feeds and the list when they move to the top level', async () => {
+    const app = new AppState();
+    await app.deleteFolder(7, false);
+
+    expect(mockApi.deleteFolder).toHaveBeenCalledWith(7, false);
+    expect(mockApi.info).not.toHaveBeenCalled();
+    expect(mockApi.count).not.toHaveBeenCalled();
   });
 });

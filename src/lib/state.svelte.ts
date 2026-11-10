@@ -211,10 +211,18 @@ export class AppState {
     );
   }
 
-  deleteFolder(id: number) {
+  /** Deletes a Folder. Its Feeds move to the top level, or are unsubscribed with their Articles. */
+  deleteFolder(id: number, unsubscribeFeeds: boolean) {
     return this.manage(
-      () => api.deleteFolder(id),
-      () => (this.selection.kind === 'folder' && this.selection.id === id ? this.select({ kind: 'allUnread' }) : undefined),
+      async () => {
+        await api.deleteFolder(id, unsubscribeFeeds);
+        if (unsubscribeFeeds) this.library = await api.info();
+      },
+      () => {
+        if (this.selection.kind === 'folder' && this.selection.id === id) return this.select({ kind: 'allUnread' });
+        // Unsubscribed Feeds' Articles vanish from every other View too.
+        return unsubscribeFeeds ? this.resetList() : undefined;
+      },
     );
   }
 
