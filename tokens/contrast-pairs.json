@@ -155,6 +155,11 @@
       "fg": "color.status.warning.text",
       "bg": "color.surface.base",
       "min": 4.5
+    },
+    {
+      "fg": "color.text.default",
+      "bg": "color.surface.overlay",
+      "min": 4.5
     }
   ]
 }

@@ -18,7 +18,12 @@
     return { destroy: () => previous?.focus({ preventScroll: true }) };
   }
 
+  // Dev-only component gallery at #gallery; statically false in production builds, so the
+  // dynamic import below is tree-shaken out of the bundle.
+  const showGallery = import.meta.env.DEV && location.hash === '#gallery';
+
   onMount(() => {
+    if (showGallery) return;
     // Perf mode: the shell injects this flag only when FEEDRICO_PERF_LIBRARY is set.
     app.perf = '__FEEDRICO_PERF__' in window;
     const started = app.start();
@@ -57,7 +62,11 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-{#if app.phase === 'welcome'}
+{#if showGallery}
+  {#await import('./lib/components/Gallery.svelte') then { default: Gallery }}
+    <Gallery />
+  {/await}
+{:else if app.phase === 'welcome'}
   <Welcome />
 {:else if app.phase === 'attention'}
   <Attention />
@@ -77,10 +86,12 @@
   {/if}
 {/if}
 
-{#if app.addFeedOpen}
+{#if app.addFeedOpen && !showGallery}
   <AddFeed />
 {/if}
-<Toasts />
+{#if !showGallery}
+  <Toasts />
+{/if}
 
 <style>
   .shell.grid-layout {

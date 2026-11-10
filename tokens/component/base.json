@@ -57,5 +57,62 @@
       "$type": "number",
       "$value": 0.6667
     }
+  },
+  "button": {
+    "$type": "dimension",
+    "paddingInline": {
+      "$value": "{space.inset.lg}"
+    },
+    "gap": {
+      "$value": "{space.inline.sm}"
+    }
+  },
+  "input": {
+    "$type": "dimension",
+    "paddingInline": {
+      "$value": "{space.inset.md}"
+    }
+  },
+  "menu": {
+    "$type": "dimension",
+    "minWidth": {
+      "$value": "12rem"
+    },
+    "padding": {
+      "$value": "{space.inset.xs}"
+    }
+  },
+  "dialog": {
+    "$type": "dimension",
+    "width": {
+      "$value": "32rem"
+    },
+    "padding": {
+      "$value": "{space.inset.xl}"
+    }
+  },
+  "tooltip": {
+    "$type": "dimension",
+    "paddingInline": {
+      "$value": "{space.inset.sm}"
+    },
+    "paddingBlock": {
+      "$value": "{space.inset.xs}"
+    }
+  },
+  "toast": {
+    "$type": "dimension",
+    "paddingInline": {
+      "$value": "{space.inset.lg}"
+    },
+    "paddingBlock": {
+      "$value": "{space.inset.sm}"
+    }
+  },
+  "tabs": {
+    "$type": "dimension",
+    "listPadding": {
+      "$value": "{space.inset.xs}"
+    }
   }
 }
