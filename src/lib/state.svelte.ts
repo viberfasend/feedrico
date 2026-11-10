@@ -3,6 +3,7 @@
 // The Article list is virtualized: only `total` and the pages around the viewport are loaded,
 // so a view with 50,000 Articles costs the same as one with 50.
 
+import { open, save } from '@tauri-apps/plugin-dialog';
 import {
   api,
   isCommandError,
@@ -20,9 +21,11 @@ import {
   type Status,
   type View,
 } from './api';
+import { applyTheme, type Theme } from './tokens';
 
 export const PAGE_SIZE = 100;
 const AUTO_REFRESH_MS = 30 * 60 * 1000;
+const THEME_KEY = 'feedrico.theme';
 
 /** What the user picked in the sidebar. `today` resolves to a concrete `since` per query. */
 export type Selection =
@@ -83,12 +86,15 @@ export class AppState {
   exportProgress = $state<string | null>(null);
   /** Perf mode (see `perf.ts`): a generated Library, so never touch the network. */
   perf = false;
+  /** The active theme; persisted per machine, not part of the Library. */
+  theme = $state<Theme>((localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
   private toastId = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
 
   // ---- Startup and Libraries ------------------------------------------------------------
 
   async start() {
+    applyTheme(this.theme);
     await api.onRefreshProgress((p) => this.onProgress(p));
     await api.onMediaCached(() => this.reloadArticle());
     await api.onArticlesPruned(() => this.onPruned());
@@ -246,6 +252,36 @@ export class AppState {
     } catch (e) {
       this.notify(errorMessage(e));
     }
+  }
+
+  /** Asks for an OPML file and imports it (sidebar button and palette share this). */
+  async chooseImportOpml() {
+    const file = await open({
+      title: 'Import OPML',
+      filters: [{ name: 'OPML', extensions: ['opml', 'xml'] }],
+    });
+    if (typeof file === 'string') await this.importOpml(file);
+  }
+
+  /** Asks where to write the OPML export (sidebar button and palette share this). */
+  async chooseExportOpml() {
+    const file = await save({
+      title: 'Export OPML',
+      defaultPath: 'feedrico.opml',
+      filters: [{ name: 'OPML', extensions: ['opml'] }],
+    });
+    if (file) await this.exportOpml(file);
+  }
+
+  setTheme(theme: Theme) {
+    this.theme = theme;
+    applyTheme(theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }
+
+  cycleTheme() {
+    const themes: Theme[] = ['system', 'light', 'dark'];
+    this.setTheme(themes[(themes.indexOf(this.theme) + 1) % themes.length] ?? 'system');
   }
 
   /** Copies the open Library to an empty folder; the core reports progress per media file. */
