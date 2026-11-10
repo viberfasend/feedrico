@@ -3,6 +3,7 @@
   import AddFeed from './lib/components/AddFeed.svelte';
   import ArticleList from './lib/components/ArticleList.svelte';
   import Attention from './lib/components/Attention.svelte';
+  import CommandPalette from './lib/components/CommandPalette.svelte';
   import Reader from './lib/components/Reader.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Toasts from './lib/components/Toasts.svelte';
@@ -30,8 +31,17 @@
     if (app.perf) void started.then(() => import('./lib/perf').then((m) => m.perfSession(app)));
   });
 
+  let paletteOpen = $state(false);
+
   // Keyboard-first reading (spec: "Keyboard"). Shortcuts never fire while typing.
   function onKeydown(event: KeyboardEvent) {
+    // Ctrl/⌘+K toggles the command palette, even from inside the search field, but not while
+    // another dialog is open.
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      if (!app.addFeedOpen) paletteOpen = !paletteOpen;
+      return;
+    }
     if (app.phase !== 'ready' || event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
@@ -90,6 +100,7 @@
   <AddFeed />
 {/if}
 {#if !showGallery}
+  <CommandPalette bind:open={paletteOpen} />
   <Toasts />
 {/if}
 

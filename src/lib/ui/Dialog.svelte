@@ -20,16 +20,17 @@
     onOpenChange?.(open);
   });
 
-  // Focus returns to whatever had it when the dialog opened.
+  // Focus returns to whatever had it when the dialog opened (via bits' close hook).
   let previousFocus: HTMLElement | null = null;
   $effect(() => {
-    if (open) {
-      previousFocus = document.activeElement as HTMLElement | null;
-    } else if (previousFocus) {
-      previousFocus.focus({ preventScroll: true });
-      previousFocus = null;
-    }
+    if (open) previousFocus = document.activeElement as HTMLElement | null;
   });
+
+  function onCloseAutoFocus(event: Event) {
+    event.preventDefault();
+    previousFocus?.focus({ preventScroll: true });
+    previousFocus = null;
+  }
 </script>
 
 <Dialog.Root bind:open>
@@ -39,7 +40,7 @@
         <div {...props} class="scrim"></div>
       {/snippet}
     </Dialog.Overlay>
-    <Dialog.Content>
+    <Dialog.Content {onCloseAutoFocus}>
       {#snippet child({ props })}
         <div {...props} class="dialog {klass}">
           <Dialog.Title>
