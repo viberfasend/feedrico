@@ -62,5 +62,35 @@
     "gap": {
       "$value": "12px"
     }
+  },
+  "button": {
+    "$type": "dimension",
+    "height": {
+      "$value": "{control.height}"
+    }
+  },
+  "iconButton": {
+    "$type": "dimension",
+    "size": {
+      "$value": "{control.height}"
+    }
+  },
+  "input": {
+    "$type": "dimension",
+    "height": {
+      "$value": "{control.height}"
+    }
+  },
+  "menu": {
+    "$type": "dimension",
+    "itemHeight": {
+      "$value": "{control.height}"
+    }
+  },
+  "tabs": {
+    "$type": "dimension",
+    "triggerHeight": {
+      "$value": "{control.height}"
+    }
   }
 }
