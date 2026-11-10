@@ -15,8 +15,11 @@ export default defineConfig({
     strictPort: true,
     host: host || false,
     hmr: host ? { protocol: 'ws', host, port: 1421 } : undefined,
-    watch: { ignored: ['**/src-tauri/**', '**/crates/**', '**/target/**'] },
+    // Agent worktrees (.claude/worktrees/) are full checkouts inside the root: never watch them.
+    watch: { ignored: ['**/src-tauri/**', '**/crates/**', '**/target/**', '**/.claude/**'] },
   },
+  // Vite would otherwise scan every **/*.html under the root, including other checkouts' code.
+  optimizeDeps: { entries: ['index.html'] },
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
   build: {
     // Tauri webviews: WebView2 (Chromium) on Windows, WebKit on macOS and Linux.
