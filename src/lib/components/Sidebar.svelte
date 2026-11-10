@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { open, save } from '@tauri-apps/plugin-dialog';
+  import { open } from '@tauri-apps/plugin-dialog';
   import type { FeedNode, FolderNode } from '../api';
   import { app, type Selection } from '../state.svelte';
-  import { applyTheme, type Theme } from '../tokens';
   import Button from '../ui/Button.svelte';
   import ContextMenu, { type MenuItem } from '../ui/ContextMenu.svelte';
   import Dialog from '../ui/Dialog.svelte';
@@ -22,36 +21,11 @@
     localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
   }
 
-  const THEME_KEY = 'feedrico.theme';
-  const themes: Theme[] = ['system', 'light', 'dark'];
-  let theme = $state<Theme>((localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
-  $effect(() => {
-    applyTheme(theme);
-    localStorage.setItem(THEME_KEY, theme);
-  });
-
   const smart: { selection: Selection; label: string; icon: IconName; count: () => number }[] = [
     { selection: { kind: 'allUnread' }, label: 'All Unread', icon: 'inbox', count: () => app.sidebar?.allUnread ?? 0 },
     { selection: { kind: 'today' }, label: 'Today', icon: 'today', count: () => app.sidebar?.today ?? 0 },
     { selection: { kind: 'starred' }, label: 'Starred', icon: 'star', count: () => app.sidebar?.starred ?? 0 },
   ];
-
-  async function importOpml() {
-    const file = await open({
-      title: 'Import OPML',
-      filters: [{ name: 'OPML', extensions: ['opml', 'xml'] }],
-    });
-    if (typeof file === 'string') await app.importOpml(file);
-  }
-
-  async function exportOpml() {
-    const file = await save({
-      title: 'Export OPML',
-      defaultPath: 'feedrico.opml',
-      filters: [{ name: 'OPML', extensions: ['opml'] }],
-    });
-    if (file) await app.exportOpml(file);
-  }
 
   async function backUpLibrary() {
     const folder = await open({ title: 'Back up Library to an empty folder', directory: true });
@@ -242,7 +216,7 @@
       <div class="onboarding">
         <p>No Feeds yet.</p>
         <button class="primary" onclick={() => (app.addFeedOpen = true)}><Icon name="plus" size={16} /> Add Feed…</button>
-        <button onclick={importOpml}><Icon name="import" size={16} /> Import OPML…</button>
+        <button onclick={() => void app.chooseImportOpml()}><Icon name="import" size={16} /> Import OPML…</button>
       </div>
     {/if}
   </div>
@@ -254,8 +228,8 @@
     </div>
     <div class="tools">
       <IconButton label="Add Feed" icon="plus" onclick={() => (app.addFeedOpen = true)} />
-      <IconButton label="Import OPML" icon="import" onclick={() => void importOpml()} />
-      <IconButton label="Export OPML" icon="export" onclick={() => void exportOpml()} />
+      <IconButton label="Import OPML" icon="import" onclick={() => void app.chooseImportOpml()} />
+      <IconButton label="Export OPML" icon="export" onclick={() => void app.chooseExportOpml()} />
       <IconButton
         label="Export / back up Library"
         title={app.exportProgress ?? 'Export / back up Library'}
@@ -266,9 +240,9 @@
       <IconButton label="Open another Library" icon="folder" onclick={() => app.showWelcome()} />
       <IconButton label="Check for updates" icon="refresh" onclick={() => void app.checkForUpdates()} />
       <IconButton
-        label={`Theme: ${theme}`}
+        label={`Theme: ${app.theme}`}
         icon="sun"
-        onclick={() => (theme = themes[(themes.indexOf(theme) + 1) % themes.length] ?? 'system')}
+        onclick={() => app.cycleTheme()}
       />
     </div>
   </footer>
