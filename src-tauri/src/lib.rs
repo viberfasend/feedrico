@@ -13,7 +13,7 @@ use feedrico_core::feeds::ImportSummary;
 use feedrico_core::{AddOutcome, Discovery};
 use feedrico_core::{
     ArticleDetail, ArticleRow, Fetcher, Layout, Layouts, Library, ListQuery, OpenOptions, Sidebar,
-    Status, opml,
+    Status, UpdateStatus, opml,
 };
 use futures::StreamExt;
 use serde::Serialize;
@@ -397,6 +397,15 @@ fn set_layout(
     with_library(&state, |l| l.set_layout(view.as_deref(), layout))
 }
 
+/// Spec "Network policy": asks GitHub Releases for the newest version, only when the user
+/// clicks "Check for updates". Nothing calls this on startup.
+#[tauri::command]
+async fn check_for_updates(app: AppHandle) -> CommandResult<UpdateStatus> {
+    let fetcher = app.state::<AppState>().fetcher.clone();
+    let current = app.package_info().version.to_string();
+    Ok(fetcher.check_for_updates(&current).await?)
+}
+
 /// Opens an http(s) link in the system browser. Nothing else is allowed through.
 #[tauri::command]
 fn open_external(url: String, app: AppHandle) -> CommandResult<()> {
@@ -726,6 +735,7 @@ pub fn run() {
             mark_unread,
             layouts,
             set_layout,
+            check_for_updates,
             open_external,
             refresh,
             perf_interactive,

@@ -145,6 +145,12 @@ export interface RefreshProgress {
   finished: boolean;
 }
 
+/** Result of one manual check against GitHub Releases (only ever requested on a click). */
+export type UpdateStatus =
+  | { kind: 'upToDate'; current: string }
+  | { kind: 'available'; current: string; latest: string; url: string }
+  | { kind: 'noReleases'; current: string };
+
 export const api = {
   startup: () => invoke<Startup>('startup'),
   recentLibraries: () => invoke<string[]>('recent_libraries'),
@@ -180,6 +186,7 @@ export const api = {
   layouts: () => invoke<Layouts>('layouts'),
   setLayout: (view: string | null, layout: Layout) => invoke<void>('set_layout', { view, layout }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
+  checkForUpdates: () => invoke<UpdateStatus>('check_for_updates'),
   refresh: (force: boolean) => invoke<boolean>('refresh', { force }),
   onRefreshProgress: (cb: (p: RefreshProgress) => void): Promise<UnlistenFn> =>
     listen<RefreshProgress>('refresh-progress', (e) => cb(e.payload)),

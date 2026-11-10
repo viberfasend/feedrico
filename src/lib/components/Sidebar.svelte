@@ -260,6 +260,7 @@
         onclick={backUpLibrary}
       ><Icon name="library" size={16} /></button>
       <button class="tool" title="Open another Library" aria-label="Open another Library" onclick={() => app.showWelcome()}><Icon name="folder" size={16} /></button>
+      <button class="tool" title="Check for updates" aria-label="Check for updates" onclick={() => void app.checkForUpdates()}><Icon name="refresh" size={16} /></button>
       <button
         class="tool"
         title={`Theme: ${theme}`}
