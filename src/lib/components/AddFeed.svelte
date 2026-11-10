@@ -1,6 +1,9 @@
 <script lang="ts">
   import { api, type Discovery, type FeedCandidate } from '../api';
   import { app, errorMessage } from '../state.svelte';
+  import Button from '../ui/Button.svelte';
+  import Dialog from '../ui/Dialog.svelte';
+  import Input from '../ui/Input.svelte';
 
   let input = $state('');
   let folderId = $state<number | null>(null);
@@ -11,6 +14,14 @@
   function close() {
     app.addFeedOpen = false;
   }
+
+  // The address field gets focus when the dialog opens (after the dialog's own focus).
+  $effect(() => {
+    if (app.addFeedOpen) {
+      const t = setTimeout(() => document.getElementById('add-feed-url')?.focus(), 0);
+      return () => clearTimeout(t);
+    }
+  });
 
   async function subscribe(url: string, title: string, siteUrl: string | null) {
     if (await app.addFeed(url, title, siteUrl, folderId)) close();
@@ -32,83 +43,52 @@
       busy = false;
     }
   }
-
-  function focus(node: HTMLElement) {
-    node.focus();
-  }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && close()} />
+<Dialog bind:open={app.addFeedOpen} title="Add Feed">
+  <form onsubmit={submit}>
+    <label for="add-feed-url">Feed or website address</label>
+    <Input
+      bind:value={input}
+      id="add-feed-url"
+      type="text"
+      inputmode="url"
+      autocomplete="off"
+      spellcheck={false}
+      placeholder="example.com or https://example.com/feed.xml"
+    />
+    <label for="add-feed-folder">Folder</label>
+    <select id="add-feed-folder" bind:value={folderId}>
+      <option value={null}>No Folder (top level)</option>
+      {#each app.sidebar?.folders ?? [] as folder (folder.id)}
+        <option value={folder.id}>{folder.name}</option>
+      {/each}
+    </select>
 
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="scrim" onclick={(e) => e.target === e.currentTarget && close()}>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="add-feed-title">
-    <h2 id="add-feed-title">Add Feed</h2>
-    <form onsubmit={submit}>
-      <label for="add-feed-url">Feed or website address</label>
-      <input
-        id="add-feed-url"
-        type="text"
-        inputmode="url"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="example.com or https://example.com/feed.xml"
-        bind:value={input}
-        use:focus
-      />
-      <label for="add-feed-folder">Folder</label>
-      <select id="add-feed-folder" bind:value={folderId}>
-        <option value={null}>No Folder (top level)</option>
-        {#each app.sidebar?.folders ?? [] as folder (folder.id)}
-          <option value={folder.id}>{folder.name}</option>
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+
+    {#if choices}
+      <fieldset>
+        <legend>Several Feeds found. Pick one:</legend>
+        {#each choices as choice (choice.url)}
+          <button type="button" class="choice" onclick={() => subscribe(choice.url, choice.title ?? choice.url, null)}>
+            <strong>{choice.title ?? choice.url}</strong>
+            <span>{choice.url}</span>
+          </button>
         {/each}
-      </select>
+      </fieldset>
+    {/if}
 
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
-
-      {#if choices}
-        <fieldset>
-          <legend>Several Feeds found. Pick one:</legend>
-          {#each choices as choice (choice.url)}
-            <button type="button" class="choice" onclick={() => subscribe(choice.url, choice.title ?? choice.url, null)}>
-              <strong>{choice.title ?? choice.url}</strong>
-              <span>{choice.url}</span>
-            </button>
-          {/each}
-        </fieldset>
-      {/if}
-
-      <div class="actions">
-        <button type="button" onclick={close}>Cancel</button>
-        <button type="submit" class="primary" disabled={busy || !input.trim()}>
-          {busy ? 'Looking…' : 'Add'}
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
+    <div class="actions">
+      <Button type="button" onclick={close}>Cancel</Button>
+      <Button variant="primary" type="submit" disabled={busy || !input.trim()}>
+        {busy ? 'Looking…' : 'Add'}
+      </Button>
+    </div>
+  </form>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    display: grid;
-    place-items: center;
-    background: color-mix(in srgb, black 40%, transparent);
-  }
-  .dialog {
-    width: min(32rem, calc(100vw - 2rem));
-    padding: var(--space-inset-xl);
-    border: 1px solid var(--color-border-default);
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-  }
-  h2 {
-    margin: 0 0 var(--space-stack-md);
-    font-family: var(--font-family-reading);
-    font-size: var(--font-size-title-lg);
-  }
   form {
     display: grid;
     gap: var(--space-stack-sm);
@@ -118,13 +98,12 @@
     color: var(--color-text-muted);
     font-size: var(--font-size-caption);
   }
-  input,
   select {
     height: var(--control-height);
     padding-inline: var(--space-inset-md);
     border: 1px solid var(--color-border-default);
     border-radius: var(--radius-control);
-    background: var(--color-surface-default);
+    background: var(--color-surface-base);
     color: var(--color-text-default);
     font: inherit;
   }
@@ -144,7 +123,12 @@
     gap: 2px;
     height: auto;
     padding: var(--space-inset-sm) var(--space-inset-md);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-control);
+    background: var(--color-surface-raised);
+    color: var(--color-text-default);
     text-align: start;
+    cursor: pointer;
   }
   .choice span {
     overflow: hidden;
@@ -158,24 +142,5 @@
     justify-content: flex-end;
     gap: var(--space-inline-sm);
     margin-block-start: var(--space-stack-sm);
-  }
-  button {
-    height: var(--control-height);
-    padding-inline: var(--space-inset-lg);
-    border: 1px solid var(--color-border-default);
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-    color: var(--color-text-default);
-    cursor: pointer;
-  }
-  .primary {
-    border-color: transparent;
-    background: var(--color-accent-default);
-    color: var(--color-text-on-accent);
-    font-weight: var(--font-weight-strong);
-  }
-  button:disabled {
-    opacity: 0.6;
-    cursor: default;
   }
 </style>

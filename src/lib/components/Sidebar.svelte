@@ -3,6 +3,10 @@
   import type { FeedNode, FolderNode } from '../api';
   import { app, type Selection } from '../state.svelte';
   import { applyTheme, type Theme } from '../tokens';
+  import Button from '../ui/Button.svelte';
+  import ContextMenu, { type MenuItem } from '../ui/ContextMenu.svelte';
+  import Dialog from '../ui/Dialog.svelte';
+  import IconButton from '../ui/IconButton.svelte';
   import Icon, { type IconName } from './Icon.svelte';
 
   // Collapsed Folders are a per-machine view preference, not Library data.
@@ -56,25 +60,26 @@
 
   // ---- Managing Feeds and Folders: context menu, inline rename, drag and drop ----------------
   type Target = { kind: 'feed'; feed: FeedNode } | { kind: 'folder'; folder: FolderNode };
-  let menu = $state<{ x: number; y: number; target: Target } | null>(null);
   let editing = $state<{ kind: 'feed' | 'folder'; id: number } | null>(null);
   let confirm = $state<Target | null>(null);
   let dragging = $state<number | null>(null);
   let dropTarget = $state<number | 'top' | null>(null);
 
-  function openMenu(event: MouseEvent, target: Target) {
-    event.preventDefault();
-    menu = { x: event.clientX, y: event.clientY, target };
+  /** The context-menu entries for a Feed or Folder row. */
+  function menuItems(target: Target): MenuItem[] {
+    const items: MenuItem[] = [{ label: 'Rename', onclick: () => startRename(target) }];
+    if (target.kind === 'feed') {
+      items.push({ label: 'No Folder', headingBefore: 'Move to', onclick: () => void moveTo(target.feed.id, null) });
+      for (const folder of app.sidebar?.folders ?? []) {
+        items.push({ label: folder.name, onclick: () => void moveTo(target.feed.id, folder.id) });
+      }
+      items.push({ label: 'Unsubscribe…', danger: true, separatorBefore: true, onclick: () => (confirm = target) });
+    } else {
+      items.push({ label: 'Delete Folder…', danger: true, separatorBefore: true, onclick: () => (confirm = target) });
+    }
+    return items;
   }
-  function openMenuFromKey(event: KeyboardEvent, target: Target) {
-    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-    event.preventDefault();
-    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    menu = { x: box.left + 24, y: box.bottom, target };
-  }
-  const closeMenu = () => (menu = null);
   function startRename(target: Target) {
-    closeMenu();
     editing = target.kind === 'feed' ? { kind: 'feed', id: target.feed.id } : { kind: 'folder', id: target.folder.id };
   }
   async function commitRename(event: Event, current: string) {
@@ -100,7 +105,6 @@
     node.select();
   }
   async function moveTo(feedId: number, folderId: number | null) {
-    closeMenu();
     await app.moveFeed(feedId, folderId);
   }
   async function confirmed(unsubscribeFeeds: boolean) {
@@ -129,33 +133,33 @@
 
 {#snippet feedRow(feed: FeedNode, nested: boolean)}
   <li>
-    <button
-      class="row"
-      class:nested
-      class:unread={feed.unread > 0}
-      aria-current={app.isSelected({ kind: 'feed', id: feed.id }) ? 'page' : undefined}
-      draggable={editing === null}
-      ondragstart={(e) => {
-        dragging = feed.id;
-        e.dataTransfer?.setData('text/plain', feed.title);
-      }}
-      ondragend={() => (dragging = dropTarget = null)}
-      oncontextmenu={(e) => openMenu(e, { kind: 'feed', feed })}
-      onkeydown={(e) => openMenuFromKey(e, { kind: 'feed', feed })}
-      onclick={() => app.select({ kind: 'feed', id: feed.id })}
-    >
-      {#if editing?.kind === 'feed' && editing.id === feed.id}
-        <!-- svelte-ignore a11y_autofocus -->
-        <input class="rename" aria-label="Feed name" value={feed.title} use:focusSelect
-          onblur={(e) => commitRename(e, feed.title)} onkeydown={renameKeys} onclick={(e) => e.stopPropagation()} />
-      {:else}
-        <span class="title">{feed.title}</span>
-      {/if}
-      {#if feed.lastError}
-        <span class="broken" title={brokenTitle(feed)}><Icon name="warning" size={14} label="Feed has problems" /></span>
-      {/if}
-      {#if feed.unread}<span class="count">{feed.unread}</span>{/if}
-    </button>
+    <ContextMenu items={menuItems({ kind: 'feed', feed })}>
+      <button
+        class="row"
+        class:nested
+        class:unread={feed.unread > 0}
+        aria-current={app.isSelected({ kind: 'feed', id: feed.id }) ? 'page' : undefined}
+        draggable={editing === null}
+        ondragstart={(e) => {
+          dragging = feed.id;
+          e.dataTransfer?.setData('text/plain', feed.title);
+        }}
+        ondragend={() => (dragging = dropTarget = null)}
+        onclick={() => app.select({ kind: 'feed', id: feed.id })}
+      >
+        {#if editing?.kind === 'feed' && editing.id === feed.id}
+          <!-- svelte-ignore a11y_autofocus -->
+          <input class="rename" aria-label="Feed name" value={feed.title} use:focusSelect
+            onblur={(e) => commitRename(e, feed.title)} onkeydown={renameKeys} onclick={(e) => e.stopPropagation()} />
+        {:else}
+          <span class="title">{feed.title}</span>
+        {/if}
+        {#if feed.lastError}
+          <span class="broken" title={brokenTitle(feed)}><Icon name="warning" size={14} label="Feed has problems" /></span>
+        {/if}
+        {#if feed.unread}<span class="count">{feed.unread}</span>{/if}
+      </button>
+    </ContextMenu>
   </li>
 {/snippet}
 
@@ -200,26 +204,26 @@
               >
                 <span class="chevron" class:open={!collapsed.has(folder.id)}><Icon name="chevron" size={14} /></span>
               </button>
-              <button
-                class="row folder"
-                class:unread={folder.unread > 0}
-                aria-current={app.isSelected({ kind: 'folder', id: folder.id }) ? 'page' : undefined}
-                class:drop={dropTarget === folder.id}
-                ondragover={(e) => dragOver(e, folder.id)}
-                ondragleave={() => (dropTarget = null)}
-                ondrop={(e) => drop(e, folder.id)}
-                oncontextmenu={(e) => openMenu(e, { kind: 'folder', folder })}
-                onkeydown={(e) => openMenuFromKey(e, { kind: 'folder', folder })}
-                onclick={() => app.select({ kind: 'folder', id: folder.id })}
-              >
-                {#if editing?.kind === 'folder' && editing.id === folder.id}
-                  <input class="rename" aria-label="Folder name" value={folder.name} use:focusSelect
-                    onblur={(e) => commitRename(e, folder.name)} onkeydown={renameKeys} onclick={(e) => e.stopPropagation()} />
-                {:else}
-                  <span class="title">{folder.name}</span>
-                {/if}
-                {#if folder.unread}<span class="count">{folder.unread}</span>{/if}
-              </button>
+              <ContextMenu items={menuItems({ kind: 'folder', folder })}>
+                <button
+                  class="row folder"
+                  class:unread={folder.unread > 0}
+                  aria-current={app.isSelected({ kind: 'folder', id: folder.id }) ? 'page' : undefined}
+                  class:drop={dropTarget === folder.id}
+                  ondragover={(e) => dragOver(e, folder.id)}
+                  ondragleave={() => (dropTarget = null)}
+                  ondrop={(e) => drop(e, folder.id)}
+                  onclick={() => app.select({ kind: 'folder', id: folder.id })}
+                >
+                  {#if editing?.kind === 'folder' && editing.id === folder.id}
+                    <input class="rename" aria-label="Folder name" value={folder.name} use:focusSelect
+                      onblur={(e) => commitRename(e, folder.name)} onkeydown={renameKeys} onclick={(e) => e.stopPropagation()} />
+                  {:else}
+                    <span class="title">{folder.name}</span>
+                  {/if}
+                  {#if folder.unread}<span class="count">{folder.unread}</span>{/if}
+                </button>
+              </ContextMenu>
             </div>
             {#if !collapsed.has(folder.id)}
               <ul>
@@ -249,89 +253,60 @@
       <span>{app.library?.portable ? 'Portable Library' : (app.library?.name ?? '')}</span>
     </div>
     <div class="tools">
-      <button class="tool" title="Add Feed" aria-label="Add Feed" onclick={() => (app.addFeedOpen = true)}><Icon name="plus" size={16} /></button>
-      <button class="tool" title="Import OPML" aria-label="Import OPML" onclick={importOpml}><Icon name="import" size={16} /></button>
-      <button class="tool" title="Export OPML" aria-label="Export OPML" onclick={exportOpml}><Icon name="export" size={16} /></button>
-      <button
-        class="tool"
+      <IconButton label="Add Feed" icon="plus" onclick={() => (app.addFeedOpen = true)} />
+      <IconButton label="Import OPML" icon="import" onclick={() => void importOpml()} />
+      <IconButton label="Export OPML" icon="export" onclick={() => void exportOpml()} />
+      <IconButton
+        label="Export / back up Library"
         title={app.exportProgress ?? 'Export / back up Library'}
-        aria-label="Export / back up Library"
+        icon="library"
         disabled={app.exportProgress !== null}
-        onclick={backUpLibrary}
-      ><Icon name="library" size={16} /></button>
-      <button class="tool" title="Open another Library" aria-label="Open another Library" onclick={() => app.showWelcome()}><Icon name="folder" size={16} /></button>
-      <button class="tool" title="Check for updates" aria-label="Check for updates" onclick={() => void app.checkForUpdates()}><Icon name="refresh" size={16} /></button>
-      <button
-        class="tool"
-        title={`Theme: ${theme}`}
-        aria-label={`Theme: ${theme}`}
+        onclick={() => void backUpLibrary()}
+      />
+      <IconButton label="Open another Library" icon="folder" onclick={() => app.showWelcome()} />
+      <IconButton label="Check for updates" icon="refresh" onclick={() => void app.checkForUpdates()} />
+      <IconButton
+        label={`Theme: ${theme}`}
+        icon="sun"
         onclick={() => (theme = themes[(themes.indexOf(theme) + 1) % themes.length] ?? 'system')}
-      ><Icon name="sun" size={16} /></button>
+      />
     </div>
   </footer>
 </nav>
 
-<svelte:window onclick={closeMenu} onkeydown={(e) => e.key === 'Escape' && (menu = confirm = null)} />
-
-{#if menu}
-  {@const target = menu.target}
-  <!-- svelte-ignore a11y_no_static_element_interactions, a11y_interactive_supports_focus, a11y_click_events_have_key_events -->
-  <div class="menu" role="menu" style:left="{menu.x}px" style:top="{menu.y}px" onclick={(e) => e.stopPropagation()}>
-    <button role="menuitem" onclick={() => startRename(target)}>Rename</button>
-    {#if target.kind === 'feed'}
-      {@const feed = target.feed}
-      <div class="menu-label">Move to</div>
-      <button role="menuitem" onclick={() => moveTo(feed.id, null)}>No Folder</button>
-      {#each app.sidebar?.folders ?? [] as folder (folder.id)}
-        <button role="menuitem" onclick={() => moveTo(feed.id, folder.id)}>{folder.name}</button>
-      {/each}
-      <hr />
-      <button role="menuitem" class="danger" onclick={() => { confirm = target; closeMenu(); }}>Unsubscribe…</button>
-    {:else}
-      <hr />
-      <button role="menuitem" class="danger" onclick={() => { confirm = target; closeMenu(); }}>Delete Folder…</button>
-    {/if}
-  </div>
-{/if}
-
 {#if confirm}
   {@const target = confirm}
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="scrim" onclick={(e) => e.target === e.currentTarget && (confirm = null)}>
-    <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+  <Dialog
+    open={true}
+    onOpenChange={(o) => { if (!o) confirm = null; }}
+    title={target.kind === 'feed' ? `Unsubscribe from ${target.feed.title}?` : `Delete the Folder ${target.folder.name}?`}
+  >
+    <p class="confirm-text">
       {#if target.kind === 'feed'}
-        <h2 id="confirm-title">Unsubscribe from {target.feed.title}?</h2>
-        <p>Its Articles and cached images are removed from this Library. This can't be undone.</p>
+        Its Articles and cached images are removed from this Library. This can't be undone.
       {:else if target.folder.feeds.length === 0}
-        <h2 id="confirm-title">Delete the Folder {target.folder.name}?</h2>
-        <p>The Folder is empty.</p>
+        The Folder is empty.
       {:else}
-        <h2 id="confirm-title">Delete the Folder {target.folder.name}?</h2>
-        <p>
-          It contains {feedsLabel(target.folder.feeds.length)}. Move them to the top level, or
-          unsubscribe from them: their Articles and cached images are removed from this Library.
-          Unsubscribing can't be undone.
-        </p>
+        It contains {feedsLabel(target.folder.feeds.length)}. Move them to the top level, or
+        unsubscribe from them: their Articles and cached images are removed from this Library.
+        Unsubscribing can't be undone.
       {/if}
-      <div class="actions">
-        <button onclick={() => (confirm = null)}>Cancel</button>
-        {#if target.kind === 'feed'}
-          <!-- svelte-ignore a11y_autofocus -->
-          <button class="danger-solid" autofocus onclick={() => confirmed(true)}>Unsubscribe</button>
-        {:else if target.folder.feeds.length === 0}
-          <!-- svelte-ignore a11y_autofocus -->
-          <button class="danger-solid" autofocus onclick={() => confirmed(false)}>Delete Folder</button>
-        {:else}
-          <!-- The safe choice gets focus, so Enter never unsubscribes by accident. -->
-          <!-- svelte-ignore a11y_autofocus -->
-          <button autofocus onclick={() => confirmed(false)}>Move Feeds to top level</button>
-          <button class="danger-solid" onclick={() => confirmed(true)}>
-            Unsubscribe from {feedsLabel(target.folder.feeds.length)}
-          </button>
-        {/if}
-      </div>
+    </p>
+    <!-- Cancel comes first and gets focus on open, so Enter never removes anything. -->
+    <div class="actions">
+      <Button onclick={() => (confirm = null)}>Cancel</Button>
+      {#if target.kind === 'feed'}
+        <Button variant="primary" onclick={() => confirmed(true)}>Unsubscribe</Button>
+      {:else if target.folder.feeds.length === 0}
+        <Button variant="primary" onclick={() => confirmed(false)}>Delete Folder</Button>
+      {:else}
+        <Button onclick={() => confirmed(false)}>Move Feeds to top level</Button>
+        <Button variant="primary" onclick={() => confirmed(true)}>
+          Unsubscribe from {feedsLabel(target.folder.feeds.length)}
+        </Button>
+      {/if}
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 <style>
@@ -350,88 +325,15 @@
     background: var(--color-surface-selected);
     outline: 1px dashed var(--color-accent-default);
   }
-  .menu {
-    position: fixed;
-    z-index: 30;
-    display: grid;
-    min-width: 12rem;
-    padding: var(--space-inset-xs);
-    border: 1px solid var(--color-border-default);
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-  }
-  .menu button {
-    height: var(--sidebar-row-height);
-    padding-inline: var(--space-inset-md);
-    border: 0;
-    border-radius: var(--radius-control);
-    background: none;
-    color: var(--color-text-default);
-    text-align: start;
-    cursor: pointer;
-  }
-  .menu button:hover,
-  .menu button:focus-visible {
-    background: var(--color-surface-hover);
-  }
-  .menu-label {
-    padding: var(--space-inset-sm) var(--space-inset-md) 0;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
-  }
-  .menu hr {
-    width: 100%;
-    margin: var(--space-inset-xs) 0;
-    border: 0;
-    border-top: 1px solid var(--color-border-subtle);
-  }
-  .danger {
-    color: var(--color-status-warning-text);
-  }
-  .scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    display: grid;
-    place-items: center;
-    background: color-mix(in srgb, black 40%, transparent);
-  }
-  .dialog {
-    width: min(28rem, calc(100vw - 2rem));
-    padding: var(--space-inset-xl);
-    border: 1px solid var(--color-border-default);
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-  }
-  .dialog h2 {
-    margin: 0 0 var(--space-stack-sm);
-    font-family: var(--font-family-reading);
-    font-size: var(--font-size-title-md);
-  }
-  .dialog p {
+  .confirm-text {
     margin: 0 0 var(--space-stack-md);
     color: var(--color-text-muted);
   }
-  .dialog .actions {
+  .actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--space-inline-sm);
-  }
-  .dialog .actions button {
-    height: var(--control-height);
-    padding-inline: var(--space-inset-lg);
-    border: 1px solid var(--color-border-default);
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-    color: var(--color-text-default);
-    cursor: pointer;
-  }
-  .dialog .actions .danger-solid {
-    border-color: transparent;
-    background: var(--color-accent-default);
-    color: var(--color-text-on-accent);
-    font-weight: var(--font-weight-strong);
   }
   .sidebar {
     display: grid;
@@ -581,21 +483,5 @@
   }
   .tools {
     display: flex;
-  }
-  .tool {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--control-height);
-    height: var(--control-height);
-    border: 0;
-    border-radius: var(--radius-control);
-    background: none;
-    color: var(--color-text-muted);
-    cursor: pointer;
-  }
-  .tool:hover {
-    background: var(--color-surface-hover);
-    color: var(--color-text-default);
   }
 </style>

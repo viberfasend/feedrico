@@ -4,15 +4,21 @@
 
   let {
     open = $bindable(false),
+    onOpenChange,
     title,
     class: klass = '',
     children,
   }: {
     open?: boolean;
+    onOpenChange?: (open: boolean) => void;
     title: string;
     class?: string;
     children: Snippet;
   } = $props();
+
+  $effect(() => {
+    onOpenChange?.(open);
+  });
 
   // Focus returns to whatever had it when the dialog opened.
   let previousFocus: HTMLElement | null = null;
