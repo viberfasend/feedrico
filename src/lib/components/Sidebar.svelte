@@ -6,6 +6,7 @@
   import ContextMenu, { type MenuItem } from '../ui/ContextMenu.svelte';
   import Dialog from '../ui/Dialog.svelte';
   import IconButton from '../ui/IconButton.svelte';
+  import Menu from '../ui/Menu.svelte';
   import Icon, { type IconName } from './Icon.svelte';
 
   // Collapsed Folders are a per-machine view preference, not Library data.
@@ -88,6 +89,17 @@
     if (target.kind === 'feed') await app.unsubscribe(target.feed.id);
     else await app.deleteFolder(target.folder.id, unsubscribeFeeds);
   }
+  const moreItems = $derived<MenuItem[]>([
+    { label: 'Import OPML…', onclick: () => void app.chooseImportOpml() },
+    { label: 'Export OPML…', onclick: () => void app.chooseExportOpml() },
+    {
+      label: app.exportProgress ?? 'Export / back up Library…',
+      disabled: app.exportProgress !== null,
+      onclick: () => void backUpLibrary(),
+    },
+    { label: 'Open another Library…', onclick: () => app.showWelcome(), separatorBefore: true },
+    { label: 'Check for updates', onclick: () => void app.checkForUpdates() },
+  ]);
   const feedsLabel = (n: number) => (n === 1 ? '1 Feed' : `${n} Feeds`);
   async function drop(event: DragEvent, folderId: number | null) {
     event.preventDefault();
@@ -228,22 +240,11 @@
     </div>
     <div class="tools">
       <IconButton label="Add Feed" icon="plus" onclick={() => (app.addFeedOpen = true)} />
-      <IconButton label="Import OPML" icon="import" onclick={() => void app.chooseImportOpml()} />
-      <IconButton label="Export OPML" icon="export" onclick={() => void app.chooseExportOpml()} />
-      <IconButton
-        label="Export / back up Library"
-        title={app.exportProgress ?? 'Export / back up Library'}
-        icon="library"
-        disabled={app.exportProgress !== null}
-        onclick={() => void backUpLibrary()}
-      />
-      <IconButton label="Open another Library" icon="folder" onclick={() => app.showWelcome()} />
-      <IconButton label="Check for updates" icon="refresh" onclick={() => void app.checkForUpdates()} />
-      <IconButton
-        label={`Theme: ${app.theme}`}
-        icon="sun"
-        onclick={() => app.cycleTheme()}
-      />
+      <IconButton label={`Theme: ${app.theme}`} icon="sun" onclick={() => app.cycleTheme()} />
+      <!-- The sidebar is a fixed 260 px: occasional actions live here (and in the palette). -->
+      <Menu items={moreItems} label="More actions" align="end" class="more">
+        <Icon name="more" size={16} />
+      </Menu>
     </div>
   </footer>
 </nav>
@@ -457,5 +458,23 @@
   }
   .tools {
     display: flex;
+  }
+  /* The More trigger lives in Menu.svelte; match the footer's icon buttons. */
+  .tools :global(.more) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--icon-button-size);
+    height: var(--icon-button-size);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+  .tools :global(.more:hover),
+  .tools :global(.more[data-state='open']) {
+    background: var(--color-surface-hover);
+    color: var(--color-text-default);
   }
 </style>
