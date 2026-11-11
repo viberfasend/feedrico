@@ -67,7 +67,7 @@ difference (see "Known traps") or dev-server state (next section).
 
 `npx tauri build --no-bundle && npm run perf` runs the Rust query benchmarks and the real app in
 perf mode (`FEEDRICO_PERF_LIBRARY`, see `src-tauri/src/perf.rs`, `src/lib/perf.ts`) against a
-generated 300 Feed / 50k Article Library and prints a Markdown report. CI runs it on `main`.
+generated 300 Feed / 50k Article Library and prints a Markdown report. CI runs it weekly on `main` (`.github/workflows/perf.yml`; start it by hand from the Actions tab after a change that could affect speed).
 
 ## UI glitch that a restart fixes
 

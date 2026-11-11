@@ -20,7 +20,8 @@ shell (`src-tauri`) and a Svelte 5 UI (`src`). All user state lives in one porta
 - Fix bugs test-first: a failing test that reproduces the bug, proven red against the old code.
 - Prefer the simple, predictable rule over clever automation.
 - Batch work on one branch; commit locally and push once per batch. Linux CI runs on billed
-  Blacksmith runners.
+  Blacksmith runners: CI runs on pull requests only (not again on `main`), performance weekly,
+  releases only on `v*` tags. Don't add triggers that rerun billed jobs.
 - Rust needs `PATH=/snap/bin:$PATH` on this machine.
 
 ## Commit messages

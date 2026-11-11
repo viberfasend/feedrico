@@ -1,0 +1,47 @@
+name: Performance
+
+# Spec "Performance budgets": report on main, never gate. Weekly instead of on every push: the
+# release build behind it is the most expensive job on the billed Blacksmith runners.
+on:
+  schedule:
+    - cron: '0 4 * * 1' # Mondays 04:00 UTC, on main
+  workflow_dispatch:
+
+concurrency:
+  group: perf
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  perf:
+    name: Performance (report, not gate)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Linux webview dependencies and a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev xvfb
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Release profile: budgets are about what users run.
+      - run: npx tauri build --no-bundle
+      - name: Query benchmarks and UI timing harness
+        env:
+          # Software rendering: CI runners have no GPU.
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: xvfb-run -a node scripts/perf.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: perf-results
+          path: perf-results.json
