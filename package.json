@@ -24,6 +24,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tauri-apps/cli": "^2.12.4",
     "@tsconfig/svelte": "^5.0.8",
+    "axe-core": "^4.14.0",
     "happy-dom": "^21.0.4",
     "style-dictionary": "^5.8.0",
     "svelte": "^5.57.3",
