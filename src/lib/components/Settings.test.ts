@@ -190,6 +190,24 @@ describe('Settings dialog writes through to the Library', () => {
     expect(document.documentElement.dataset.density).toBe('compact');
   });
 
+  it('hiding unread counts swaps numbers for dots and tells screen readers', async () => {
+    await mountApp();
+    app.sidebar = {
+      allUnread: 7, starred: 2, today: 0, folders: [],
+      feeds: [{ id: 1, title: 'Blog', siteUrl: null, unread: 7, lastError: null, lastSuccessAt: null }],
+    };
+    app.total = 7;
+    flushSync();
+    expect(document.querySelector('#pane-list .total')?.textContent).toBe('7');
+    await app.updateSettings({ ...defaultSettings(), appearance: { theme: 'system', density: 'comfortable', unreadCounts: 'hide' } });
+    flushSync();
+    expect(document.documentElement.dataset.unreadCounts).toBe('hide');
+    expect(lastSetSettings?.appearance.unreadCounts).toBe('hide');
+    expect(document.querySelector('#pane-list .total')).toBeNull();
+    const spoken = [...document.querySelectorAll('#pane-sidebar .count .sr-only')].map((e) => e.textContent);
+    expect(spoken).toEqual(['has unread Articles', 'has unread Articles']);
+  });
+
   it('changing the reader font size sets the reader custom properties on <html>', async () => {
     await mountApp();
     await openViaShortcut();

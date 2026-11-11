@@ -89,6 +89,10 @@ export class AppState {
   perf = false;
   /** Every setting that travels with the Library; null until one is open. */
   settings = $state<Settings | null>(null);
+  /** Numbers are replaced by dots when the Library says so (calm mode for unread counts). */
+  get hideCounts() {
+    return this.settings?.appearance.unreadCounts === 'hide';
+  }
   /** The Settings dialog. */
   settingsOpen = $state(false);
   /** Total size of the Library folder and of its media cache, for the Settings dialog. */
@@ -177,6 +181,7 @@ export class AppState {
     this.theme = settings.appearance.theme;
     applyTheme(settings.appearance.theme);
     applyDensity(settings.appearance.density);
+    document.documentElement.dataset.unreadCounts = settings.appearance.unreadCounts ?? 'show';
     const root = document.documentElement;
     root.style.setProperty('--reader-measure', `${settings.reader.measure}ch`);
     root.style.setProperty('--reader-font-size', `${settings.reader.fontSize}px`);

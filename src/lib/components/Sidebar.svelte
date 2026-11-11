@@ -146,7 +146,7 @@
         {/if}
         {#if feed.unread}
           <span class="count">
-            <span class="sr-only">{feed.unread} unread</span>
+            <span class="sr-only">{app.hideCounts ? 'has unread Articles' : `${feed.unread} unread`}</span>
             <span aria-hidden="true">{feed.unread}</span>
           </span>
         {/if}
@@ -171,9 +171,9 @@
           >
             <Icon name={item.icon} size={16} />
             <span class="title">{item.label}</span>
-            {#if item.count()}
+            {#if item.count() && !(app.hideCounts && item.selection.kind === 'starred')}
               <span class="count">
-                <span class="sr-only">{item.count()} unread</span>
+                <span class="sr-only">{app.hideCounts ? 'has unread Articles' : `${item.count()} ${item.selection.kind === 'starred' ? 'starred' : 'unread'}`}</span>
                 <span aria-hidden="true">{item.count()}</span>
               </span>
             {/if}
@@ -220,7 +220,7 @@
                   {/if}
                   {#if folder.unread}
                     <span class="count">
-                      <span class="sr-only">{folder.unread} unread</span>
+                      <span class="sr-only">{app.hideCounts ? 'has unread Articles' : `${folder.unread} unread`}</span>
                       <span aria-hidden="true">{folder.unread}</span>
                     </span>
                   {/if}
@@ -405,6 +405,18 @@
     font-size: var(--font-size-caption);
     font-variant-numeric: tabular-nums;
     color: var(--color-text-muted);
+  }
+  /* Unread counts hidden (a Library setting): a quiet dot says "something new", no number. */
+  :global([data-unread-counts='hide']) .count [aria-hidden='true'] {
+    display: none;
+  }
+  :global([data-unread-counts='hide']) .count::after {
+    content: '';
+    display: block;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--color-unread-indicator);
   }
   .broken {
     display: inline-flex;

@@ -96,6 +96,8 @@ export type ReaderFontFamily = 'serif' | 'sans';
 export interface AppearanceSettings {
   theme: Theme;
   density: Density;
+  /** Unread numbers in the sidebar and list header; `hide` shows a dot instead. */
+  unreadCounts?: 'show' | 'hide';
 }
 
 export interface ReaderSettings {

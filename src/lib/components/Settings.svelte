@@ -95,6 +95,17 @@
                   <option value="compact">Compact</option>
                 </select>
               </label>
+              <label class="field">
+                <span>Unread counts</span>
+                <select
+                  class="select"
+                  value={s.appearance.unreadCounts ?? 'show'}
+                  onchange={(e) => onSelect(e, (v) => setAppearance({ unreadCounts: v as 'show' | 'hide' }))}
+                >
+                  <option value="show">Show numbers</option>
+                  <option value="hide">Hide (show a dot)</option>
+                </select>
+              </label>
             </section>
 
             <section aria-label="Reader typography">

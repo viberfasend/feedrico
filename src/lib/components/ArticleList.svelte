@@ -53,7 +53,7 @@
   <header class="header">
     <div class="heading">
       <h1>{title}</h1>
-      <span class="total">{app.total.toLocaleString()}</span>
+      {#if !app.hideCounts}<span class="total">{app.total.toLocaleString()}</span>{/if}
     </div>
     <div class="controls">
       <div class="switcher" role="group" aria-label="Layout (v)">

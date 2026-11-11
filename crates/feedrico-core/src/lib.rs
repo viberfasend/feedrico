@@ -31,7 +31,7 @@ pub use lock::LockInfo;
 pub use manifest::Manifest;
 pub use settings::{
     AppearanceSettings, Density, Layout, Layouts, ReaderFontFamily, ReaderSettings,
-    RefreshSettings, Settings, Theme,
+    RefreshSettings, Settings, Theme, UnreadCounts,
 };
 pub use update::UpdateStatus;
 
