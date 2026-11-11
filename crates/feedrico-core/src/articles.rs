@@ -112,8 +112,14 @@ pub enum View {
     Folder {
         id: i64,
     },
-    /// Full-text search, optionally scoped. The query lives in `ListQuery::search`.
-    Search,
+    /// Full-text search; the query lives in `ListQuery::search`. Scoped to one Feed or one
+    /// Folder when set, otherwise the whole Library.
+    Search {
+        #[serde(default)]
+        feed: Option<i64>,
+        #[serde(default)]
+        folder: Option<i64>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -198,12 +204,19 @@ fn view_filter(q: &ListQuery) -> (String, Vec<rusqlite::types::Value>) {
             "a.feed_id IN (SELECT id FROM feed WHERE folder_id = ?)".into(),
             vec![Value::Integer(id)],
         ),
-        View::Search => {
+        View::Search { feed, folder } => {
             let query = fts_query(q.search.as_deref().unwrap_or(""));
-            (
-                "a.id IN (SELECT rowid FROM article_fts WHERE article_fts MATCH ?)".into(),
-                vec![Value::Text(query)],
-            )
+            let mut clause =
+                String::from("a.id IN (SELECT rowid FROM article_fts WHERE article_fts MATCH ?)");
+            let mut args = vec![Value::Text(query)];
+            if let Some(id) = feed {
+                clause.push_str(" AND a.feed_id = ?");
+                args.push(Value::Integer(id));
+            } else if let Some(id) = folder {
+                clause.push_str(" AND a.feed_id IN (SELECT id FROM feed WHERE folder_id = ?)");
+                args.push(Value::Integer(id));
+            }
+            (clause, args)
         }
     }
 }
@@ -512,7 +525,10 @@ mod tests {
         assert_eq!(library.count_articles(&all).unwrap(), 2);
 
         let search = |s: &str| ListQuery {
-            view: View::Search,
+            view: View::Search {
+                feed: None,
+                folder: None,
+            },
             sort: Sort::NewestFirst,
             search: Some(s.into()),
             with_lead_image: false,
@@ -531,6 +547,43 @@ mod tests {
             library.count_articles(&search("\"); DROP")).unwrap(),
             0,
             "input is escaped"
+        );
+
+        // Spec "Search": scoped to everything, a Folder or a Feed.
+        let feed: i64 = library
+            .conn()
+            .query_row("SELECT feed_id FROM article LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        let scoped = |feed: Option<i64>, folder: Option<i64>| ListQuery {
+            view: View::Search { feed, folder },
+            ..search("spinn")
+        };
+        assert_eq!(
+            library.count_articles(&scoped(Some(feed), None)).unwrap(),
+            1
+        );
+        assert_eq!(
+            library
+                .count_articles(&scoped(Some(feed + 99), None))
+                .unwrap(),
+            0,
+            "another Feed"
+        );
+        assert_eq!(
+            library.count_articles(&scoped(None, Some(99))).unwrap(),
+            0,
+            "a Folder without that Feed"
+        );
+        let wire: View = serde_json::from_str(r#"{"kind":"search"}"#).unwrap();
+        assert!(
+            matches!(
+                wire,
+                View::Search {
+                    feed: None,
+                    folder: None
+                }
+            ),
+            "unscoped on the wire"
         );
         library.close().unwrap();
     }

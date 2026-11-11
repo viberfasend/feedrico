@@ -169,12 +169,26 @@ fn query_budgets() {
         ),
         (
             "Search, rare term",
-            q(View::Search, Some("zephyrine"), false),
+            q(
+                View::Search {
+                    feed: None,
+                    folder: None,
+                },
+                Some("zephyrine"),
+                false,
+            ),
         ),
         // Worst case: matches ~90% of the Library, so counting alone touches every row.
         (
             "Search, common words",
-            q(View::Search, Some("rust benchmark"), false),
+            q(
+                View::Search {
+                    feed: None,
+                    folder: None,
+                },
+                Some("rust benchmark"),
+                false,
+            ),
         ),
     ];
 
