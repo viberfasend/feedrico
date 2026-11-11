@@ -190,6 +190,8 @@
   .search {
     flex: 1;
     min-width: 0;
+    /* Grid Layouts span the window: the field must not stretch with them. */
+    max-width: var(--article-list-search-max-width);
     display: flex;
     align-items: center;
     gap: var(--space-inline-xs);

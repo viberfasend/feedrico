@@ -21,6 +21,9 @@
     },
     "maxWidth": {
       "$value": "640px"
+    },
+    "searchMaxWidth": {
+      "$value": "420px"
     }
   },
   "reader": {
