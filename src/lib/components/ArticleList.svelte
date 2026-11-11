@@ -48,7 +48,7 @@
   }
 </script>
 
-<section class="list" aria-label="Articles">
+<section class="list" id="pane-list" aria-label="Articles" tabindex="-1">
   <header class="header">
     <div class="heading">
       <h1>{title}</h1>

@@ -55,7 +55,7 @@
   }
 </script>
 
-<main class="reader" aria-label="Reader" bind:this={scroller}>
+<section class="reader" id="pane-reader" aria-label="Reader" tabindex="-1" bind:this={scroller}>
   {#if article}
     <article>
       <header class="head">
@@ -121,7 +121,7 @@
       Use <kbd>j</kbd> and <kbd>k</kbd> to move through the list.
     </EmptyState>
   {/if}
-</main>
+</section>
 
 <style>
   .reader {
@@ -170,7 +170,7 @@
     font-weight: var(--font-weight-medium);
   }
   h1 {
-    font-family: var(--font-family-reading);
+    font-family: var(--reader-font-family);
     font-size: var(--font-size-title-lg);
     font-weight: var(--font-weight-heading);
     line-height: var(--font-line-height-heading);
@@ -240,9 +240,9 @@
 
   /* Article content: editorial typography for arbitrary feed HTML. */
   .content {
-    font-family: var(--font-family-reading);
-    font-size: var(--font-size-reading);
-    line-height: var(--font-line-height-reading);
+    font-family: var(--reader-font-family);
+    font-size: var(--reader-font-size);
+    line-height: var(--reader-line-height);
     overflow-wrap: break-word;
   }
   .content :global(:where(p, ul, ol, blockquote, pre, figure, table)) {

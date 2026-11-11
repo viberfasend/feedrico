@@ -36,6 +36,7 @@
       { id: 'action:exportOpml', group: 'action', icon: 'export', label: 'Export OPML…', run: () => void app.chooseExportOpml() },
       { id: 'action:markAllRead', group: 'action', icon: 'check', label: 'Mark all as read', run: () => void app.markAllRead() },
       { id: 'action:theme', group: 'action', icon: 'sun', label: `Toggle theme (now ${app.theme})`, run: () => app.cycleTheme() },
+      { id: 'action:settings', group: 'action', icon: 'settings', label: 'Open settings…', run: () => void app.openSettings() },
       { id: 'action:openLibrary', group: 'action', icon: 'library', label: 'Open another Library…', run: () => app.showWelcome() },
       { id: 'action:updates', group: 'action', icon: 'update', label: 'Check for updates', run: () => void app.checkForUpdates() },
     ];
