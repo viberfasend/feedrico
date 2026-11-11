@@ -12,13 +12,14 @@ use std::time::Instant;
 use feedrico_core::feeds::ImportSummary;
 use feedrico_core::{AddOutcome, Discovery};
 use feedrico_core::{
-    ArticleDetail, ArticleRow, Fetcher, Layout, Layouts, Library, ListQuery, OpenOptions, Sidebar,
-    Status, UpdateStatus, opml,
+    ArticleDetail, ArticleRow, Fetcher, Layout, Layouts, Library, ListQuery, OpenOptions, Settings,
+    Sidebar, Status, UpdateStatus, opml,
 };
 use futures::StreamExt;
 use serde::Serialize;
 use tauri::http::{Response, StatusCode, header};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_opener::OpenerExt;
 
 /// Where cached images are served. Baked into sanitized HTML by the core.
@@ -398,6 +399,103 @@ fn set_layout(
     with_library(&state, |l| l.set_layout(view.as_deref(), layout))
 }
 
+/// Every setting that travels with the Library (spec: "What lives in the Library").
+#[tauri::command]
+fn settings(state: State<'_, AppState>) -> CommandResult<Settings> {
+    with_library(&state, |l| l.settings())
+}
+
+/// Validates and stores all Library settings. When the image cache cap was lowered, eviction runs
+/// in the background so the UI never waits on it.
+#[tauri::command]
+async fn set_settings(
+    new: Settings,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    let old_cap = with_library(&state, |l| l.image_cache_cap())?;
+    with_library(&state, |l| l.set_settings(&new))?;
+    if new.image_cache_cap_bytes < old_cap {
+        let cap = new.image_cache_cap_bytes;
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<AppState>();
+            let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(l) = guard.as_ref() {
+                let _ = l.evict_media(cap);
+                let _ = l.remove_unreferenced_media();
+            }
+        });
+    }
+    Ok(())
+}
+
+/// Whether a raw key exists in the Library's `setting` table (the one-time theme migration).
+#[tauri::command]
+fn has_setting(key: String, state: State<'_, AppState>) -> CommandResult<bool> {
+    with_library(&state, |l| l.has_setting(&key))
+}
+
+/// Recursive size of a folder in bytes, computed off the UI thread.
+fn dir_size(dir: &Path) -> std::io::Result<u64> {
+    let mut total = 0;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+        if meta.is_dir() {
+            total += dir_size(&entry.path())?;
+        } else {
+            total += meta.len();
+        }
+    }
+    Ok(total)
+}
+
+/// Total size of the open Library folder, including cached media.
+#[tauri::command]
+async fn library_size(state: State<'_, AppState>) -> CommandResult<u64> {
+    let dir = with_library(&state, |l| Ok(l.dir().to_path_buf()))?;
+    tauri::async_runtime::spawn_blocking(move || dir_size(&dir))
+        .await
+        .map_err(|e| CommandError::new("internal", e.to_string()))?
+        .map_err(CommandError::from)
+}
+
+/// Size of the Library's `media/` cache alone, shown next to the image cache cap.
+#[tauri::command]
+async fn media_size(state: State<'_, AppState>) -> CommandResult<u64> {
+    let dir = with_library(&state, |l| {
+        Ok(l.dir().join(feedrico_core::library::MEDIA_DIR))
+    })?;
+    tauri::async_runtime::spawn_blocking(move || dir_size(&dir).unwrap_or(0))
+        .await
+        .map_err(|e| CommandError::new("internal", e.to_string()))
+}
+
+/// "Start with OS" is machine-local, so it never lives in the Library. In Portable Mode an
+/// autostart entry pointing at a USB stick would break when the stick is gone, so the shell
+/// refuses it there too (the UI also disables the toggle).
+#[tauri::command]
+fn autostart_enabled(app: AppHandle) -> CommandResult<bool> {
+    Ok(app.autolaunch().is_enabled().unwrap_or(false))
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool, app: AppHandle) -> CommandResult<()> {
+    if machine::portable_library().is_some() {
+        return Err(CommandError::new(
+            "portableMode",
+            "start with OS is not available in Portable Mode",
+        ));
+    }
+    let manager = app.autolaunch();
+    let result = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    result.map_err(|e| CommandError::new("io", e.to_string()))
+}
+
 /// Spec "Network policy": asks GitHub Releases for the newest version, only when the user
 /// clicks "Check for updates". Nothing calls this on startup.
 #[tauri::command]
@@ -696,6 +794,10 @@ pub fn run() {
         );
     }
     builder
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(navigation_guard())
@@ -736,6 +838,13 @@ pub fn run() {
             mark_unread,
             layouts,
             set_layout,
+            settings,
+            set_settings,
+            has_setting,
+            library_size,
+            media_size,
+            autostart_enabled,
+            set_autostart,
             check_for_updates,
             open_external,
             refresh,
