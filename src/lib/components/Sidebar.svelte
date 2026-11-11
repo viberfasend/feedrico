@@ -346,6 +346,7 @@
   }
   .scroll {
     overflow-y: auto;
+    overscroll-behavior-y: none;
     padding: var(--space-inset-sm);
     min-height: 0;
   }
