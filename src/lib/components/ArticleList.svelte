@@ -100,7 +100,7 @@
       ><Icon name="refresh" size={16} /></button>
     </div>
     {#if app.hiddenWithoutImage > 0}
-      <p class="note">
+      <p class="note" role="status">
         {app.hiddenWithoutImage.toLocaleString()} Article{app.hiddenWithoutImage === 1 ? '' : 's'} without images not shown
       </p>
     {/if}
@@ -230,7 +230,7 @@
     color: var(--color-text-default);
   }
   .spinning :global(svg) {
-    animation: spin 0.9s linear infinite;
+    animation: spin var(--motion-duration-spin) linear infinite;
   }
   @keyframes spin {
     to {

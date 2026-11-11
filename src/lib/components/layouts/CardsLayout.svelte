@@ -1,5 +1,6 @@
 <script lang="ts">
   import { mediaUrl } from '../../api';
+  import { articleOptionLabel } from '../../aria';
   import { shortDate } from '../../format';
   import { failedImages, hasLeadImage } from '../../images.svelte';
   import { app } from '../../state.svelte';
@@ -40,6 +41,9 @@
             style:height="{cardHeight}px"
             role="option"
             aria-selected={app.selectedIndex === index}
+            aria-setsize={app.total}
+            aria-posinset={index + 1}
+            aria-label={articleOptionLabel(article)}
             onclick={() => app.selectIndex(index)}
           >
             <div class="visual" style:height="{imageHeight}px">

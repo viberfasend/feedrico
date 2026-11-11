@@ -144,7 +144,12 @@
         {#if feed.lastError}
           <span class="broken" title={brokenTitle(feed)}><Icon name="warning" size={14} label="Feed has problems" /></span>
         {/if}
-        {#if feed.unread}<span class="count">{feed.unread}</span>{/if}
+        {#if feed.unread}
+          <span class="count">
+            <span class="sr-only">{feed.unread} unread</span>
+            <span aria-hidden="true">{feed.unread}</span>
+          </span>
+        {/if}
       </button>
     </ContextMenu>
   </li>
@@ -166,7 +171,12 @@
           >
             <Icon name={item.icon} size={16} />
             <span class="title">{item.label}</span>
-            {#if item.count()}<span class="count">{item.count()}</span>{/if}
+            {#if item.count()}
+              <span class="count">
+                <span class="sr-only">{item.count()} unread</span>
+                <span aria-hidden="true">{item.count()}</span>
+              </span>
+            {/if}
           </button>
         </li>
       {/each}
@@ -208,7 +218,12 @@
                   {:else}
                     <span class="title">{folder.name}</span>
                   {/if}
-                  {#if folder.unread}<span class="count">{folder.unread}</span>{/if}
+                  {#if folder.unread}
+                    <span class="count">
+                      <span class="sr-only">{folder.unread} unread</span>
+                      <span aria-hidden="true">{folder.unread}</span>
+                    </span>
+                  {/if}
                 </button>
               </ContextMenu>
             </div>
@@ -368,6 +383,8 @@
   }
   .row[aria-current='page'] {
     background: var(--color-surface-selected);
+    /* 1.4.11: the current View needs a 3:1 indicator, not just a background change. */
+    box-shadow: inset 3px 0 0 var(--color-border-focus);
     color: var(--color-text-default);
     font-weight: var(--font-weight-medium);
   }
@@ -401,7 +418,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: var(--space-inset-lg);
+    width: var(--sidebar-row-height);
     height: var(--sidebar-row-height);
     padding: 0;
     border: 0;

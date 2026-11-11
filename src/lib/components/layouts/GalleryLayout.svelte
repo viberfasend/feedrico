@@ -1,5 +1,6 @@
 <script lang="ts">
   import { mediaUrl } from '../../api';
+  import { articleOptionLabel } from '../../aria';
   import { failedImages, hasLeadImage } from '../../images.svelte';
   import { app } from '../../state.svelte';
   import { tokens } from '../../tokens/runtime.svelte';
@@ -34,8 +35,10 @@
             class:selected={app.selectedIndex === index}
             style:height="{tile}px"
             role="option"
+            aria-setsize={app.total}
+            aria-posinset={index + 1}
+            aria-label={articleOptionLabel(article)}
             aria-selected={app.selectedIndex === index}
-            aria-label={article.title}
             onclick={() => app.selectIndex(index)}
           >
             {#if hasLeadImage(article.leadImage)}
