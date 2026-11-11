@@ -40,6 +40,7 @@ pub const DEFAULT_PRUNE_UNREAD_DAYS: u32 = 365;
 
 const THEME_KEY: &str = "appearance.theme";
 const DENSITY_KEY: &str = "appearance.density";
+const UNREAD_COUNTS_KEY: &str = "appearance.unreadCounts";
 const READER_FONT_FAMILY_KEY: &str = "reader.fontFamily";
 const READER_FONT_SIZE_KEY: &str = "reader.fontSize";
 const READER_MEASURE_KEY: &str = "reader.measure";
@@ -83,6 +84,16 @@ pub enum Density {
     Compact,
 }
 
+/// Unread numbers in the sidebar and list header. `Hide` shows a dot instead, for readers who
+/// find counters nagging; Read state itself is unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UnreadCounts {
+    #[default]
+    Show,
+    Hide,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReaderFontFamily {
@@ -96,6 +107,8 @@ pub enum ReaderFontFamily {
 pub struct AppearanceSettings {
     pub theme: Theme,
     pub density: Density,
+    #[serde(default)]
+    pub unread_counts: UnreadCounts,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -330,6 +343,9 @@ impl Library {
         if let Some(v) = self.setting(DENSITY_KEY)? {
             s.appearance.density = v;
         }
+        if let Some(v) = self.setting(UNREAD_COUNTS_KEY)? {
+            s.appearance.unread_counts = v;
+        }
         if let Some(v) = self.setting(READER_FONT_FAMILY_KEY)? {
             s.reader.font_family = v;
         }
@@ -390,6 +406,7 @@ impl Library {
         }
         write(&tx, THEME_KEY, settings.appearance.theme)?;
         write(&tx, DENSITY_KEY, settings.appearance.density)?;
+        write(&tx, UNREAD_COUNTS_KEY, settings.appearance.unread_counts)?;
         write(&tx, READER_FONT_FAMILY_KEY, settings.reader.font_family)?;
         write(&tx, READER_FONT_SIZE_KEY, settings.reader.font_size)?;
         write(&tx, READER_MEASURE_KEY, settings.reader.measure)?;
@@ -422,6 +439,7 @@ mod tests {
         assert_eq!(settings, Settings::default());
         assert_eq!(settings.appearance.theme, Theme::System);
         assert_eq!(settings.appearance.density, Density::Comfortable);
+        assert_eq!(settings.appearance.unread_counts, UnreadCounts::Show);
         assert_eq!(settings.reader.font_family, ReaderFontFamily::Serif);
         assert_eq!(settings.reader.font_size, 18);
         assert_eq!(settings.reader.measure, 66);
@@ -440,6 +458,7 @@ mod tests {
             appearance: AppearanceSettings {
                 theme: Theme::Dark,
                 density: Density::Compact,
+                unread_counts: UnreadCounts::Hide,
             },
             reader: ReaderSettings {
                 font_family: ReaderFontFamily::Sans,
@@ -616,6 +635,7 @@ mod tests {
             appearance: AppearanceSettings {
                 theme: Theme::Dark,
                 density: Density::Compact,
+                unread_counts: UnreadCounts::Hide,
             },
             reader: ReaderSettings {
                 font_size: 22,
