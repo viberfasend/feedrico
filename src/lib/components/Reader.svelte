@@ -116,7 +116,8 @@
         {@html article.contentHtml}
       </div>
     </article>
-  {:else}
+  {:else if (app.library?.feedCount ?? 0) > 0}
+    <!-- With no Feeds there is nothing to pick: the Article list shows the first step. -->
     <EmptyState title="Pick an Article">
       Use <kbd>j</kbd> and <kbd>k</kbd> to move through the list.
     </EmptyState>

@@ -243,8 +243,8 @@
     {:else}
       <div class="onboarding">
         <p>No Feeds yet.</p>
-        <button class="primary" onclick={() => (app.addFeedOpen = true)}><Icon name="plus" size={16} /> Add Feed…</button>
-        <button onclick={() => void app.chooseImportOpml()}><Icon name="import" size={16} /> Import OPML…</button>
+        <Button variant="primary" onclick={() => (app.addFeedOpen = true)}><Icon name="plus" size={16} /> Add Feed…</Button>
+        <Button onclick={() => void app.chooseImportOpml()}><Icon name="import" size={16} /> Import Feeds…</Button>
       </div>
     {/if}
   </div>
@@ -439,19 +439,6 @@
     justify-items: start;
     padding: var(--space-inset-md) var(--sidebar-row-padding-inline);
     color: var(--color-text-muted);
-  }
-  .primary {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-inline-xs);
-    height: var(--control-height);
-    padding-inline: var(--space-inset-md);
-    border: 0;
-    border-radius: var(--radius-control);
-    background: var(--color-accent-default);
-    color: var(--color-text-on-accent);
-    font-weight: var(--font-weight-strong);
-    cursor: pointer;
   }
   .footer {
     display: flex;

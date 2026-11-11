@@ -2,16 +2,24 @@
   import type { Snippet } from 'svelte';
   import Gossamer from './Gossamer.svelte';
 
-  let { title, children }: { title: string; children?: Snippet } = $props();
+  let { title, children, actions }: { title: string; children?: Snippet; actions?: Snippet } = $props();
 </script>
 
 <div class="empty">
   <Gossamer />
   <h2>{title}</h2>
   {#if children}<p>{@render children()}</p>{/if}
+  {#if actions}<div class="actions">{@render actions()}</div>{/if}
 </div>
 
 <style>
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-inline-sm);
+    margin-block-start: var(--space-stack-sm);
+  }
   .empty {
     display: grid;
     justify-items: center;

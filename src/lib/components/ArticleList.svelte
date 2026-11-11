@@ -1,6 +1,7 @@
 <script lang="ts">
   import { LAYOUTS, type Layout } from '../api';
   import { app } from '../state.svelte';
+  import Button from '../ui/Button.svelte';
   import EmptyState from './EmptyState.svelte';
   import Icon, { type IconName } from './Icon.svelte';
   import CardsLayout from './layouts/CardsLayout.svelte';
@@ -118,7 +119,14 @@
   {#if app.total === 0}
     <div class="empty">
       {#if !hasFeeds}
-        <EmptyState title="No Feeds yet">Import an OPML file from the sidebar to get started.</EmptyState>
+        <EmptyState title="Add your first Feed">
+          Paste the address of a website you like to read. Coming from another reader? Import
+          its list of Feeds (an OPML file).
+          {#snippet actions()}
+            <Button variant="primary" onclick={() => (app.addFeedOpen = true)}>Add a website or Feed…</Button>
+            <Button onclick={() => void app.chooseImportOpml()}>Import a list of Feeds…</Button>
+          {/snippet}
+        </EmptyState>
       {:else if refreshing}
         <EmptyState title="Fetching your Feeds…">Articles will drift in here in a moment.</EmptyState>
       {:else if app.layout === 'gallery' && app.hiddenWithoutImage > 0}
