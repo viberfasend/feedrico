@@ -70,6 +70,13 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
                     .or_else(|| el.get_attribute("data-src"));
                 match src.as_deref().and_then(resolve) {
                     Some(url) => {
+                        // Inert: the webview never loads data-* attributes. The reader links
+                        // to it when the image isn't cached (spec: "stays a remote link").
+                        if matches!(url.scheme(), "http" | "https") {
+                            el.set_attribute("data-remote", url.as_str())?;
+                        } else {
+                            el.remove_attribute("data-remote");
+                        }
                         let url = url.to_string();
                         el.set_attribute("src", &format!("{media_prefix}{}", media_key(&url)))?;
                         images.borrow_mut().push(url);
@@ -91,7 +98,7 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
         .link_rel(Some("noopener noreferrer"))
         .add_allowed_classes("p", ["embed-link"])
         .rm_tags(["picture", "source"])
-        .add_tag_attributes("img", ["alt", "title"]);
+        .add_tag_attributes("img", ["alt", "title", "data-remote"]);
     if let Some(base) = base {
         builder.url_relative(ammonia::UrlRelative::RewriteWithBase(base.clone()));
     }
@@ -231,11 +238,51 @@ mod tests {
             out.html
         );
         assert!(
-            !out.html.contains("blog.example/img"),
-            "no remote image URL left"
+            !without_remote(&out.html).contains("blog.example/img"),
+            "no remote image URL left outside data-remote"
         );
         assert!(!out.html.contains("srcset"));
         assert!(out.html.contains(r#"alt="A""#));
+    }
+
+    /// Drops the inert `data-remote` attributes, the only place a remote image URL may stay.
+    fn without_remote(html: &str) -> String {
+        let mut out = String::new();
+        let mut rest = html;
+        while let Some(start) = rest.find(" data-remote=\"") {
+            out.push_str(&rest[..start]);
+            let after = &rest[start + " data-remote=\"".len()..];
+            rest = after.find('"').map_or("", |end| &after[end + 1..]);
+        }
+        out.push_str(rest);
+        out
+    }
+
+    // Spec: an image that isn't cached (over 5 MB, evicted) "stays a remote link". The original
+    // URL rides along in an attribute the webview never loads; the reader turns a missing image
+    // into a link to it.
+    #[test]
+    fn images_keep_their_original_url_for_a_remote_link() {
+        let out = clean(
+            r#"<img src="/img/a.png" data-remote="https://evil.example/x"><img src="data:image/png;base64,AAAA">"#,
+        );
+        assert!(
+            out.html
+                .contains(r#"data-remote="https://blog.example/img/a.png""#),
+            "{}",
+            out.html
+        );
+        assert!(
+            !out.html.contains("evil.example"),
+            "feed can't set it: {}",
+            out.html
+        );
+        assert_eq!(
+            out.html.matches("data-remote").count(),
+            1,
+            "only http(s) URLs: {}",
+            out.html
+        );
     }
 
     #[test]
@@ -249,7 +296,7 @@ mod tests {
                <svg><image href="https://t.example/s.png"/></svg>
                <p style="background:url(https://t.example/bg.png)">x</p>"#,
         );
-        let html = &out.html;
+        let html = &without_remote(&out.html);
         assert!(!html.contains("t.example"), "{html}");
         assert!(
             !html.contains("srcset") && !html.contains("<source"),
