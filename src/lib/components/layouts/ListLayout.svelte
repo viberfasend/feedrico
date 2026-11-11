@@ -7,7 +7,7 @@
   import VirtualRows from '../VirtualRows.svelte';
 
   let { label }: { label: string } = $props();
-  const rowHeight = $derived(tokens.px('--article-list-row-height') || 76);
+  const rowHeight = $derived(tokens.px('--article-list-row-height') || 84);
 </script>
 
 <VirtualRows {rowHeight} {label}>
