@@ -83,6 +83,8 @@
   .viewport {
     height: 100%;
     overflow-y: auto;
+    /* Scrolling stops here instead of chaining to the window once the list ends. */
+    overscroll-behavior-y: none;
     min-height: 0;
     contain: strict;
     outline: none;

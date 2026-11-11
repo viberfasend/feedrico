@@ -130,6 +130,8 @@
     min-height: 0;
     height: 100%;
     overflow-y: auto;
+    /* Scrolling stops here instead of chaining to the window once the Article ends. */
+    overscroll-behavior-y: none;
     background: var(--color-surface-raised);
     user-select: text;
   }

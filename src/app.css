@@ -14,6 +14,15 @@ body,
   margin: 0;
 }
 
+/* The shell fills the window exactly and clips its own panes, so the document itself must never
+   scroll, and scrolling must never chain out of a pane. The viewport's overscroll behavior is
+   taken from the root element, so it has to be set on html, not only on body. */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   background: var(--color-surface-base);
   color: var(--color-text-default);
@@ -22,8 +31,7 @@ body {
   line-height: var(--font-line-height-ui);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  /* A desktop app, not a web page: no rubber-banding or accidental text selection in chrome. */
-  overscroll-behavior: none;
+  /* A desktop app, not a web page: no accidental text selection in chrome. */
   user-select: none;
 }
 

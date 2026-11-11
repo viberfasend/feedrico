@@ -70,6 +70,7 @@
     height: fit-content;
     max-height: calc(100vh - 2rem);
     overflow-y: auto;
+    overscroll-behavior-y: none;
     padding: var(--dialog-padding);
     border: 1px solid var(--color-border-default);
     border-radius: var(--radius-control);
