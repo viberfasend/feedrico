@@ -82,6 +82,11 @@ patch components for it. Before restarting, collect evidence. After a restart it
   re-optimized).
 - `ls -la --time-style=+%T node_modules/.vite/deps src/lib/tokens/generated` shows when the
   dependency cache and the token CSS were last rewritten.
+- A component that lost some of its styles (often the first rule): check what the server sends
+  for its CSS. `curl -s 'http://localhost:1420/src/App.svelte?svelte&type=style&lang.css' | grep -c '<script'`
+  must print 0; anything else means Vite cached the raw `.svelte` source as CSS (the log shows
+  `failed to load virtual css module`). `touch` the component to clear it. The dev server now
+  ships CSS inside the component JS (`emitCss` only for builds), so this should not recur.
 - Agent worktrees live in `.claude/worktrees/` **inside** the project root. `vite.config.ts` keeps
   the dev server from scanning (`optimizeDeps.entries`) or watching (`server.watch.ignored`)
   them, guarded by `src/lib/dev-server.test.ts`. Keep those guards if you touch the config.
