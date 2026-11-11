@@ -322,4 +322,22 @@ describe('Check for updates', () => {
     await app.start();
     expect(mockApi.checkForUpdates).not.toHaveBeenCalled();
   });
+
+  // Spec "Search": scoped to everything, a Folder or a Feed (#63). It used to ignore the
+  // selected Folder or Feed and always search the whole Library.
+  it('searches inside the selected Folder or Feed until the scope is removed', () => {
+    const app = new AppState();
+    app.selection = { kind: 'folder', id: 3 };
+    app.search = 'rust';
+    expect(app.query().view).toEqual({ kind: 'search', folder: 3 });
+    app.selection = { kind: 'feed', id: 42 };
+    expect(app.query().view).toEqual({ kind: 'search', feed: 42 });
+    void app.searchEverywhere();
+    expect(app.query().view).toEqual({ kind: 'search' });
+    void app.select({ kind: 'feed', id: 42 });
+    app.search = 'rust';
+    expect(app.query().view, 'a new selection scopes again').toEqual({ kind: 'search', feed: 42 });
+    app.selection = { kind: 'allUnread' };
+    expect(app.query().view, 'Smart Views search everything').toEqual({ kind: 'search' });
+  });
 });

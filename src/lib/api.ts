@@ -69,7 +69,7 @@ export type View =
   | { kind: 'today'; since: number }
   | { kind: 'feed'; id: number }
   | { kind: 'folder'; id: number }
-  | { kind: 'search' };
+  | { kind: 'search'; feed?: number; folder?: number };
 
 export type Sort = 'newestFirst' | 'oldestFirst';
 

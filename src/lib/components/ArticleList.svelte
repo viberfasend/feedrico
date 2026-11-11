@@ -16,8 +16,7 @@
     gallery: { label: 'Gallery', icon: 'gallery' },
   };
 
-  const title = $derived.by(() => {
-    if (app.search.trim()) return `Search: ${app.search.trim()}`;
+  const viewName = $derived.by(() => {
     const s = app.selection;
     const sidebar = app.sidebar;
     switch (s.kind) {
@@ -37,6 +36,9 @@
         );
     }
   });
+  const title = $derived(app.search.trim() ? `Search: ${app.search.trim()}` : viewName);
+  let searchFocused = $state(false);
+  const showScope = $derived(app.searchScope !== null && (searchFocused || app.search.trim() !== ''));
 
   const hasFeeds = $derived((app.library?.feedCount ?? 0) > 0);
   const refreshing = $derived(app.refresh !== null && !app.refresh.finished);
@@ -69,13 +71,27 @@
       </div>
       <label class="search">
         <Icon name="search" size={15} />
+        {#if showScope}
+          <button
+            class="scope"
+            title="Search everywhere instead"
+            aria-label={`Searching in ${viewName}. Search everywhere instead`}
+            onmousedown={(e) => e.preventDefault()}
+            onclick={() => void app.searchEverywhere()}
+          ><span class="scope-name">in {viewName}</span><Icon name="close" size={12} /></button>
+        {/if}
         <input
           id="search"
           type="search"
           placeholder="Search"
           value={app.search}
           oninput={onSearch}
+          onfocus={() => (searchFocused = true)}
+          onblur={() => (searchFocused = false)}
           onkeydown={(e) => {
+            if (e.key === 'Backspace' && e.currentTarget.value === '' && app.searchScope) {
+              void app.searchEverywhere();
+            }
             if (e.key === 'Escape') {
               app.setSearch('');
               (e.currentTarget as HTMLInputElement).blur();
@@ -132,7 +148,16 @@
       {:else if app.layout === 'gallery' && app.hiddenWithoutImage > 0}
         <EmptyState title="No images here">This View has no Articles with images. Try Cards or List.</EmptyState>
       {:else if app.search.trim()}
-        <EmptyState title="No matches">Try fewer or shorter words.</EmptyState>
+        {#if app.searchScope}
+          <EmptyState title={`No matches in ${viewName}`}>
+            Try fewer or shorter words.
+            {#snippet actions()}
+              <Button onclick={() => void app.searchEverywhere()}>Search everywhere</Button>
+            {/snippet}
+          </EmptyState>
+        {:else}
+          <EmptyState title="No matches">Try fewer or shorter words.</EmptyState>
+        {/if}
       {:else if app.selection.kind === 'allUnread'}
         <EmptyState title="All caught up">Enjoy the late-summer sun.</EmptyState>
       {:else}
@@ -209,6 +234,27 @@
     border-radius: var(--radius-control);
     background: var(--color-surface-raised);
     color: var(--color-text-muted);
+  }
+  .scope {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-stack-2xs);
+    max-width: 45%;
+    min-height: 24px;
+    padding-inline: var(--space-inset-sm);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-accent-subtle);
+    color: var(--color-text-default);
+    font: inherit;
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+  }
+  .scope-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .search:focus-within {
     border-color: var(--color-border-focus);

@@ -58,6 +58,8 @@ export class AppState {
   selection = $state<Selection>({ kind: 'allUnread' });
   sort = $state<Sort>('newestFirst');
   search = $state('');
+  /** False once the user widened a search from the selected Folder or Feed to everything. */
+  searchScoped = $state(true);
 
   /** Number of Articles in the current list. */
   total = $state(0);
@@ -434,7 +436,16 @@ export class AppState {
   query(): ListQuery {
     const withLeadImage = this.layout === 'gallery';
     const search = this.search.trim();
-    if (search) return { view: { kind: 'search' }, sort: this.sort, search, withLeadImage };
+    if (search) {
+      const scope = this.searchScope;
+      const view: View =
+        scope?.kind === 'feed'
+          ? { kind: 'search', feed: scope.id }
+          : scope?.kind === 'folder'
+            ? { kind: 'search', folder: scope.id }
+            : { kind: 'search' };
+      return { view, sort: this.sort, search, withLeadImage };
+    }
     const s = this.selection;
     const view: View = s.kind === 'today' ? { kind: 'today', since: todaySince() } : s;
     return { view, sort: this.sort, withLeadImage };
@@ -476,7 +487,23 @@ export class AppState {
   select(selection: Selection) {
     this.selection = selection;
     this.search = '';
+    this.searchScoped = true;
     return this.resetList();
+  }
+
+  /**
+   * Spec "Search": searching with a Folder or Feed selected searches inside it, until the user
+   * removes the scope. Smart Views always search everything.
+   */
+  get searchScope(): { kind: 'feed' | 'folder'; id: number } | null {
+    const s = this.selection;
+    return this.searchScoped && (s.kind === 'feed' || s.kind === 'folder') ? s : null;
+  }
+
+  /** Drops the Folder or Feed scope for this search; selecting a View brings it back. */
+  searchEverywhere() {
+    this.searchScoped = false;
+    return this.search.trim() ? this.resetList() : Promise.resolve();
   }
 
   setSearch(search: string) {
