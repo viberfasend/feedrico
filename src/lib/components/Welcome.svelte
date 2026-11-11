@@ -45,7 +45,7 @@
         <button class="primary" disabled={busy} onclick={createDefault}>
           <Icon name="library" /> Create new Library
         </button>
-        <p class="path" title={app.defaultPath}>{app.defaultPath}</p>
+        <p class="where" title={app.defaultPath}>Kept in your app data folder on this computer.</p>
       {/if}
       <div class="row">
         <button disabled={busy} onclick={createElsewhere}>Create in another place…</button>
@@ -146,13 +146,8 @@
   .primary:hover:not(:disabled) {
     background: var(--color-accent-hover);
   }
-  .path {
-    max-width: 30rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .where {
     color: var(--color-text-muted);
-    font-family: var(--font-family-mono);
     font-size: var(--font-size-caption);
   }
   .recent {
