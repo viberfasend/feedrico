@@ -29,7 +29,10 @@ pub use fetch::{Discovery, Fetcher};
 pub use library::{Library, OpenOptions, Status};
 pub use lock::LockInfo;
 pub use manifest::Manifest;
-pub use settings::{Layout, Layouts};
+pub use settings::{
+    AppearanceSettings, Density, Layout, Layouts, ReaderFontFamily, ReaderSettings,
+    RefreshSettings, Settings, Theme,
+};
 pub use update::UpdateStatus;
 
 /// The newest Library format this build can read and write.
