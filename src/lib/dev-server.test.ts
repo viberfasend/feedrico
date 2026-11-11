@@ -7,12 +7,36 @@
 //
 // Bug (no hot reload inside a worktree): the first fix ignored `**/.claude/**`, which also
 // matched every file of a dev server started *inside* a worktree, so it never saw a change.
+//
+// Bug (Magazine, Cards and Gallery squeezed into the 380 px list column until App.svelte
+// changed): component CSS was a separate virtual module. When the webview asked for it before
+// the component's JS was compiled, vite-plugin-svelte logged "failed to load virtual css
+// module", Vite served the raw .svelte source as CSS and cached it. The garbled first rule
+// (`.shell.grid-layout`) was dropped. In dev, CSS now ships inside the component's JS.
+import { createServer } from 'vite';
 import { describe, expect, it } from 'vitest';
-import config, { isAgentCheckout } from '../../vite.config';
+import viteConfig, { isAgentCheckout } from '../../vite.config';
 
 const root = new URL('../../', import.meta.url).pathname;
+const config = viteConfig({ command: 'serve', mode: 'development' });
 
 describe('dev server', () => {
+  it('ships component CSS inside the component, not as a separate module', async () => {
+    const server = await createServer({
+      root,
+      configFile: `${root}vite.config.ts`,
+      server: { middlewareMode: true, hmr: false, ws: false },
+      logLevel: 'silent',
+    });
+    try {
+      const result = await server.transformRequest('/src/App.svelte');
+      expect(result?.code).toContain('.shell.grid-layout');
+      expect(result?.code).not.toContain('type=style');
+    } finally {
+      await server.close();
+    }
+  }, 30_000);
+
   it('scans only our own entry for dependencies', () => {
     expect(config.optimizeDeps?.entries).toEqual(['index.html']);
   });

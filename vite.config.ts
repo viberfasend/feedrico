@@ -15,8 +15,11 @@ const agentCheckouts = slashes(fileURLToPath(new URL('./.claude/', import.meta.u
  */
 export const isAgentCheckout = (path: string) => slashes(path).startsWith(agentCheckouts);
 
-export default defineConfig({
-  plugins: [svelte()],
+export default defineConfig(({ command }) => ({
+  // Dev server: CSS ships inside each component's JS. As a separate virtual module it could be
+  // requested before its component was compiled, and Vite then cached the raw .svelte source as
+  // CSS (see src/lib/dev-server.test.ts). Builds still emit one CSS file.
+  plugins: [svelte({ emitCss: command === 'build' })],
   // Tests need Svelte's client runtime, or $effect never runs. Rune tests also opt into the
   // happy-dom environment so the Svelte plugin compiles them for the client.
   resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
@@ -40,4 +43,4 @@ export default defineConfig({
   test: {
     include: ['scripts/**/*.test.mjs', 'src/**/*.test.ts'],
   },
-});
+}));
