@@ -14,7 +14,7 @@
   });
 
   // Content HTML is sanitized in the Rust core. Links never navigate the app: they open in the
-  // system browser. Images that aren't cached (yet) are hidden instead of showing a broken icon.
+  // system browser.
   function onClick(event: MouseEvent) {
     const link = (event.target as HTMLElement).closest('a');
     if (!link) return;
@@ -23,12 +23,35 @@
     if (href && /^https?:\/\//.test(href)) void app.openExternal(href);
   }
 
-  function hideBrokenImages(node: HTMLElement) {
+  // Images load only from the local cache. One that isn't cached (over 5 MB, evicted, not
+  // fetched yet) "stays a remote link" (spec): the core keeps its original URL in the inert
+  // data-remote attribute. Articles stored before that just hide the broken image.
+  function linkMissingImages(node: HTMLElement) {
     const onError = (event: Event) => {
-      if (event.target instanceof HTMLImageElement) event.target.classList.add('missing');
+      const img = event.target;
+      if (!(img instanceof HTMLImageElement)) return;
+      const remote = img.dataset.remote;
+      if (remote && /^https?:\/\//.test(remote)) img.replaceWith(remoteImage(img, remote));
+      else img.classList.add('missing');
     };
     node.addEventListener('error', onError, true);
     return { destroy: () => node.removeEventListener('error', onError, true) };
+  }
+
+  function remoteImage(img: HTMLImageElement, remote: string): HTMLElement {
+    const card = document.createElement('span');
+    card.className = 'remote-image';
+    const label = `Image on ${hostOf(remote)}${img.alt ? `: ${img.alt}` : ''}`;
+    // Inside a link already: that link stays the target, links can't nest.
+    if (img.closest('a')) {
+      card.textContent = label;
+    } else {
+      const link = document.createElement('a');
+      link.href = remote;
+      link.textContent = label;
+      card.append(link);
+    }
+    return card;
   }
 </script>
 
@@ -88,7 +111,7 @@
       {/if}
 
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-      <div class="content" onclick={onClick} use:hideBrokenImages role="document">
+      <div class="content" onclick={onClick} use:linkMissingImages role="document">
         <!-- Sanitized by feedrico-core (ammonia allow-list) and constrained by the webview CSP. -->
         {@html article.contentHtml}
       </div>
@@ -305,7 +328,11 @@
     padding: var(--space-inset-xs) var(--space-inset-sm);
     border: 1px solid var(--color-border-subtle);
   }
-  .content :global(.embed-link) {
+  .content :global(.remote-image) {
+    display: block;
+    margin-block: 1.2em;
+  }
+  .content :global(:is(.embed-link, .remote-image)) {
     padding: var(--space-inset-md);
     border: 1px dashed var(--color-border-default);
     border-radius: var(--radius-card);
