@@ -21,3 +21,12 @@ export function contrastRatio(a, b) {
   const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
+
+/**
+ * WCAG check for one fg/bg pair: returns null when the ratio meets `min`, otherwise a failure
+ * message. Text pairs use min 4.5 (AA), non-text UI pairs (WCAG 1.4.11) use 3.
+ */
+export function checkPair(fg, bg, min) {
+  const ratio = contrastRatio(fg, bg);
+  return ratio >= min ? null : `${fg} on ${bg} is ${ratio.toFixed(2)}:1, needs ${min}:1`;
+}

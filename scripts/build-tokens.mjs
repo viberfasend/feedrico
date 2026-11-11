@@ -11,7 +11,7 @@
 import { readFile } from 'node:fs/promises';
 import StyleDictionary from 'style-dictionary';
 import { fileHeader, formattedVariables } from 'style-dictionary/utils';
-import { contrastRatio } from './contrast.mjs';
+import { checkPair } from './contrast.mjs';
 
 const OUT = 'src/lib/tokens/generated/';
 const PRIMITIVES = ['tokens/primitive/**/*.json'];
@@ -163,10 +163,8 @@ for (const theme of ['light', 'dark']) {
       failures.push(`${theme}: unknown token in pair ${fg} on ${bg}`);
       continue;
     }
-    const ratio = contrastRatio(colours[fg], colours[bg]);
-    if (ratio < min) {
-      failures.push(`${theme}: ${fg} on ${bg} is ${ratio.toFixed(2)}:1, needs ${min}:1`);
-    }
+    const failure = checkPair(colours[fg], colours[bg], min);
+    if (failure) failures.push(`${theme}: ${failure}`);
   }
 }
 

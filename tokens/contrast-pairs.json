@@ -1,5 +1,5 @@
 {
-  "$description": "Text/background pairs the token build checks against WCAG 2.2 AA in every theme. Text needs 4.5:1, non-text UI 3:1.",
+  "$description": "Text/background pairs the token build checks against WCAG 2.2 AA in every theme, plus non-text pairs (WCAG 1.4.11): focus ring, input borders, the unread dot and selection indicators need 3:1.",
   "pairs": [
     {
       "fg": "color.text.default",
@@ -160,6 +160,51 @@
       "fg": "color.text.default",
       "bg": "color.surface.overlay",
       "min": 4.5
+    },
+    {
+      "fg": "color.border.focus",
+      "bg": "color.surface.base",
+      "min": 3
+    },
+    {
+      "fg": "color.border.focus",
+      "bg": "color.surface.raised",
+      "min": 3
+    },
+    {
+      "fg": "color.border.focus",
+      "bg": "color.surface.sunken",
+      "min": 3
+    },
+    {
+      "fg": "color.border.focus",
+      "bg": "color.surface.selected",
+      "min": 3
+    },
+    {
+      "fg": "color.border.default",
+      "bg": "color.surface.base",
+      "min": 3
+    },
+    {
+      "fg": "color.border.default",
+      "bg": "color.surface.raised",
+      "min": 3
+    },
+    {
+      "fg": "color.border.default",
+      "bg": "color.surface.sunken",
+      "min": 3
+    },
+    {
+      "fg": "color.unread.indicator",
+      "bg": "color.surface.base",
+      "min": 3
+    },
+    {
+      "fg": "color.unread.indicator",
+      "bg": "color.surface.raised",
+      "min": 3
     }
   ]
 }
