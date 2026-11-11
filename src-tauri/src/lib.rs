@@ -68,6 +68,7 @@ impl From<feedrico_core::Error> for CommandError {
             Opml(_) => "invalidOpml",
             NotFound => "notFound",
             Invalid(_) => "invalid",
+            InvalidSetting { .. } => "invalidSetting",
             Feed(_) | Network(_) | Manifest(_) | Database(_) | Io(_) => "internal",
         };
         Self::new(kind, error.to_string())

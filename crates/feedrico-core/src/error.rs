@@ -35,6 +35,9 @@ pub enum Error {
     #[error("{0}")]
     Invalid(String),
 
+    #[error("invalid setting {key}: {message}")]
+    InvalidSetting { key: String, message: String },
+
     #[error("not found")]
     NotFound,
 
