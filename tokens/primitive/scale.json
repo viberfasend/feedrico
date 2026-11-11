@@ -163,6 +163,9 @@
     },
     "slow": {
       "$value": "320ms"
+    },
+    "spin": {
+      "$value": "900ms"
     }
   },
   "easing": {
