@@ -4,7 +4,7 @@
 //! Feedrico Library/
 //! ├── library.json   manifest: format version
 //! ├── library.db     SQLite: Feeds, Folders, Articles, settings, search index
-//! ├── media/         cached images and favicons, by content hash
+//! ├── media/         cached images and favicons, by hash of their source URL
 //! └── .lock          present while open
 //! ```
 
