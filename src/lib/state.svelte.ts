@@ -16,15 +16,16 @@ import {
   type LibraryInfo,
   type ListQuery,
   type RefreshProgress,
+  type Settings,
   type Sidebar,
   type Sort,
   type Status,
   type View,
 } from './api';
-import { applyTheme, type Theme } from './tokens';
+import { applyDensity, applyTheme, type Theme } from './tokens';
 
 export const PAGE_SIZE = 100;
-const AUTO_REFRESH_MS = 30 * 60 * 1000;
+/** Only read once, to migrate a pre-Library theme into the open Library; then removed. */
 const THEME_KEY = 'feedrico.theme';
 
 /** What the user picked in the sidebar. `today` resolves to a concrete `since` per query. */
@@ -86,8 +87,17 @@ export class AppState {
   exportProgress = $state<string | null>(null);
   /** Perf mode (see `perf.ts`): a generated Library, so never touch the network. */
   perf = false;
-  /** The active theme; persisted per machine, not part of the Library. */
-  theme = $state<Theme>((localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
+  /** Every setting that travels with the Library; null until one is open. */
+  settings = $state<Settings | null>(null);
+  /** The Settings dialog. */
+  settingsOpen = $state(false);
+  /** Total size of the Library folder and of its media cache, for the Settings dialog. */
+  librarySize = $state<number | null>(null);
+  mediaSize = $state<number | null>(null);
+  /** "Start with OS" (machine-local); null until read. */
+  autostart = $state<boolean | null>(null);
+  /** The active theme; stored in the Library (spec: "What lives in the Library"). */
+  theme = $state<Theme>('system');
   private toastId = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -152,11 +162,103 @@ export class AppState {
     this.search = '';
     this.phase = 'ready';
     this.layouts = await api.layouts();
+    this.settings = await api.settings();
+    this.theme = this.settings.appearance.theme;
+    this.applySettings();
+    await this.migrateStoredTheme();
     await Promise.all([this.loadSidebar(), this.resetList()]);
+    this.scheduleRefresh();
+  }
+
+  /** Applies theme, density and reader typography from the Library settings to the root. */
+  applySettings() {
+    const settings = this.settings;
+    if (!settings) return;
+    this.theme = settings.appearance.theme;
+    applyTheme(settings.appearance.theme);
+    applyDensity(settings.appearance.density);
+    const root = document.documentElement;
+    root.style.setProperty('--reader-measure', `${settings.reader.measure}ch`);
+    root.style.setProperty('--reader-font-size', `${settings.reader.fontSize}px`);
+    root.style.setProperty('--reader-line-height', String(settings.reader.lineHeight));
+    root.style.setProperty(
+      '--reader-font-family',
+      settings.reader.fontFamily === 'sans' ? 'var(--font-family-ui)' : 'var(--font-family-reading)',
+    );
+  }
+
+  /**
+   * One-time migration: a theme stored per machine in localStorage before themes lived in the
+   * Library moves into the Library, then the key is removed. Runs once per Library open.
+   */
+  async migrateStoredTheme() {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (!stored) return;
+    localStorage.removeItem(THEME_KEY);
+    if (!this.settings || !this.library) return;
+    if (stored !== 'system' && stored !== 'light' && stored !== 'dark') return;
+    if (await api.hasSetting('appearance.theme')) return;
+    await this.updateSettings({
+      ...this.settings,
+      appearance: { ...this.settings.appearance, theme: stored },
+    });
+  }
+
+  /** Writes settings to the Library, applies them locally and reschedules the refresh timer. */
+  async updateSettings(settings: Settings) {
+    const previous = this.settings;
+    this.settings = settings;
+    this.applySettings();
+    try {
+      await api.setSettings(settings);
+    } catch (e) {
+      // Every save writes all settings: keep the screen in step with what the Library holds, or
+      // one rejected value would make every later change fail too.
+      this.settings = previous;
+      this.applySettings();
+      this.notify(errorMessage(e));
+      return;
+    }
+    if (settings.refresh.intervalMinutes !== previous?.refresh.intervalMinutes) this.scheduleRefresh();
+  }
+
+  /** (Re)starts the auto-refresh timer with the interval from the Library settings. */
+  private scheduleRefresh() {
     if (this.timer) clearInterval(this.timer);
-    if (this.perf) return;
-    if (library.feedCount > 0) void this.startRefresh(false);
-    this.timer = setInterval(() => void this.startRefresh(false), AUTO_REFRESH_MS);
+    this.timer = null;
+    if (this.perf || !this.library) return;
+    if (this.library.feedCount > 0) void this.startRefresh(false);
+    const minutes = this.settings?.refresh.intervalMinutes ?? 30;
+    this.timer = setInterval(() => void this.startRefresh(false), minutes * 60 * 1000);
+  }
+
+  /** Opens the Settings dialog with fresh settings and Library facts. */
+  async openSettings() {
+    try {
+      const [settings, librarySize, mediaSize, autostart] = await Promise.all([
+        api.settings(),
+        api.librarySize(),
+        api.mediaSize(),
+        api.autostartEnabled(),
+      ]);
+      this.settings = settings;
+      this.applySettings();
+      this.librarySize = librarySize;
+      this.mediaSize = mediaSize;
+      this.autostart = autostart;
+      this.settingsOpen = true;
+    } catch (e) {
+      this.notify(errorMessage(e));
+    }
+  }
+
+  async setAutostart(enabled: boolean) {
+    try {
+      await api.setAutostart(enabled);
+      this.autostart = enabled;
+    } catch (e) {
+      this.notify(errorMessage(e));
+    }
   }
 
   async importOpml(path: string) {
@@ -273,10 +375,18 @@ export class AppState {
     if (file) await this.exportOpml(file);
   }
 
+  /** The theme lives in the Library now; the footer button and palette action write through. */
   setTheme(theme: Theme) {
-    this.theme = theme;
-    applyTheme(theme);
-    localStorage.setItem(THEME_KEY, theme);
+    if (!this.settings) {
+      // No Library open (welcome screen): follow the OS.
+      this.theme = 'system';
+      applyTheme('system');
+      return;
+    }
+    void this.updateSettings({
+      ...this.settings,
+      appearance: { ...this.settings.appearance, theme },
+    });
   }
 
   cycleTheme() {

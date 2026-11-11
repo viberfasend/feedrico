@@ -35,6 +35,18 @@
     "paddingBlock": {
       "$type": "dimension",
       "$value": "{space.inset.xl}"
+    },
+    "fontFamily": {
+      "$type": "fontFamily",
+      "$value": "{font.family.reading}"
+    },
+    "fontSize": {
+      "$type": "dimension",
+      "$value": "{font.size.reading}"
+    },
+    "lineHeight": {
+      "$type": "number",
+      "$value": "{font.lineHeight.reading}"
     }
   },
   "slideOver": {

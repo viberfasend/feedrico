@@ -5,18 +5,44 @@
   import Attention from './lib/components/Attention.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import Reader from './lib/components/Reader.svelte';
+  import Settings from './lib/components/Settings.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
   import Toasts from './lib/components/Toasts.svelte';
   import Welcome from './lib/components/Welcome.svelte';
   import { app } from './lib/state.svelte';
   import { fade, fly } from 'svelte/transition';
 
-  /** Moves focus into the slide-over and back to where it came from when it closes. */
+  /**
+   * Moves focus into the slide-over on open and back to the selected Article row on close, so
+   * Esc returns focus to where the reader came from.
+   */
   function focusOnOpen(node: HTMLElement) {
     const previous = document.activeElement as HTMLElement | null;
     node.tabIndex = -1;
     node.focus({ preventScroll: true });
-    return { destroy: () => previous?.focus({ preventScroll: true }) };
+    return {
+      destroy: () => {
+        const row = document.querySelector(
+          '#pane-list [role="option"][aria-selected="true"]',
+        ) as HTMLElement | null;
+        (row ?? previous)?.focus({ preventScroll: true });
+      },
+    };
+  }
+
+  /** F6 / Shift+F6 move between the panes: sidebar → Article list → reader. */
+  const PANE_IDS = ['pane-sidebar', 'pane-list', 'pane-reader'];
+  function cyclePanes(forward: boolean) {
+    const panes = PANE_IDS.map((id) => document.getElementById(id)).filter(
+      (el): el is HTMLElement => el !== null,
+    );
+    if (!panes.length) return;
+    const current = panes.findIndex(
+      (el) => el === document.activeElement || el.contains(document.activeElement),
+    );
+    const next =
+      current === -1 ? 0 : (current + (forward ? 1 : -1) + panes.length) % panes.length;
+    panes[next]?.focus({ preventScroll: true });
   }
 
   // Dev-only component gallery at #gallery; statically false in production builds, so the
@@ -42,7 +68,22 @@
       if (!app.addFeedOpen) paletteOpen = !paletteOpen;
       return;
     }
+    // Ctrl/⌘+, toggles the Settings dialog.
+    if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+      event.preventDefault();
+      if (app.settingsOpen) app.settingsOpen = false;
+      else if (!app.addFeedOpen) {
+        paletteOpen = false;
+        void app.openSettings();
+      }
+      return;
+    }
     if (app.phase !== 'ready' || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === 'F6') {
+      event.preventDefault();
+      cyclePanes(!event.shiftKey);
+      return;
+    }
     const target = event.target as HTMLElement;
     if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
     const actions: Record<string, () => void> = {
@@ -81,13 +122,13 @@
 {:else if app.phase === 'attention'}
   <Attention />
 {:else if app.phase === 'ready'}
-  <div class="shell" class:grid-layout={app.isGrid}>
+  <main class="shell" class:grid-layout={app.isGrid}>
     <Sidebar />
     <ArticleList />
     {#if !app.isGrid}
       <Reader />
     {/if}
-  </div>
+  </main>
   {#if app.isGrid && app.readerOpen}
     <button class="backdrop" aria-label="Close reader" tabindex="-1" onclick={() => app.closeReader()} transition:fade={{ duration: 160 }}></button>
     <div class="slide-over" role="dialog" aria-modal="true" aria-label="Reader" transition:fly={{ x: 80, duration: 220 }} use:focusOnOpen>
@@ -98,6 +139,9 @@
 
 {#if app.addFeedOpen && !showGallery}
   <AddFeed />
+{/if}
+{#if app.settingsOpen && !showGallery}
+  <Settings />
 {/if}
 {#if !showGallery}
   <CommandPalette bind:open={paletteOpen} />

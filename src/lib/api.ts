@@ -2,6 +2,7 @@
 
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { Density, Theme } from './tokens';
 
 export interface LockInfo {
   machine: string;
@@ -87,6 +88,53 @@ export interface Layouts {
   default: Layout;
   views: Record<string, Layout>;
 }
+
+// ---- Settings (they travel with the Library; "start with OS" stays on the machine) --------
+
+export type ReaderFontFamily = 'serif' | 'sans';
+
+export interface AppearanceSettings {
+  theme: Theme;
+  density: Density;
+}
+
+export interface ReaderSettings {
+  fontFamily: ReaderFontFamily;
+  /** Font size in px (14–24). */
+  fontSize: number;
+  /** Line width in ch (50–90). */
+  measure: number;
+  /** Line height (1.3–2.0). */
+  lineHeight: number;
+}
+
+export interface RefreshSettings {
+  intervalMinutes: number;
+}
+
+export interface Settings {
+  appearance: AppearanceSettings;
+  reader: ReaderSettings;
+  refresh: RefreshSettings;
+  imageCacheCapBytes: number;
+  pruneReadDays: number;
+  pruneUnreadDays: number;
+}
+
+/** The refresh intervals the Settings dialog offers. */
+export const REFRESH_INTERVALS = [15, 30, 60, 120, 240] as const;
+
+/** Image cache cap options in bytes. */
+export const IMAGE_CACHE_CAPS = [
+  250 * 1024 * 1024,
+  500 * 1024 * 1024,
+  1024 * 1024 * 1024,
+  2 * 1024 * 1024 * 1024,
+  5 * 1024 * 1024 * 1024,
+] as const;
+
+export const PRUNE_READ_OPTIONS = [30, 90, 180, 365] as const;
+export const PRUNE_UNREAD_OPTIONS = [90, 180, 365, 730] as const;
 
 export interface ArticleRow {
   id: number;
@@ -185,6 +233,13 @@ export const api = {
   markUnread: (ids: number[]) => invoke<void>('mark_unread', { ids }),
   layouts: () => invoke<Layouts>('layouts'),
   setLayout: (view: string | null, layout: Layout) => invoke<void>('set_layout', { view, layout }),
+  settings: () => invoke<Settings>('settings'),
+  setSettings: (settings: Settings) => invoke<void>('set_settings', { new: settings }),
+  hasSetting: (key: string) => invoke<boolean>('has_setting', { key }),
+  librarySize: () => invoke<number>('library_size'),
+  mediaSize: () => invoke<number>('media_size'),
+  autostartEnabled: () => invoke<boolean>('autostart_enabled'),
+  setAutostart: (enabled: boolean) => invoke<void>('set_autostart', { enabled }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
   checkForUpdates: () => invoke<UpdateStatus>('check_for_updates'),
   refresh: (force: boolean) => invoke<boolean>('refresh', { force }),

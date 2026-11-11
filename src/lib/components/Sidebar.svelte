@@ -97,7 +97,8 @@
       disabled: app.exportProgress !== null,
       onclick: () => void backUpLibrary(),
     },
-    { label: 'Open another Library…', onclick: () => app.showWelcome(), separatorBefore: true },
+    { label: 'Settings…', onclick: () => void app.openSettings(), separatorBefore: true },
+    { label: 'Open another Library…', onclick: () => app.showWelcome() },
     { label: 'Check for updates', onclick: () => void app.checkForUpdates() },
   ]);
   const feedsLabel = (n: number) => (n === 1 ? '1 Feed' : `${n} Feeds`);
@@ -149,7 +150,7 @@
   </li>
 {/snippet}
 
-<nav class="sidebar" aria-label="Feeds">
+<nav class="sidebar" id="pane-sidebar" aria-label="Feeds" tabindex="-1">
   <header class="brand">
     <span class="wordmark">Feedrico</span>
   </header>
