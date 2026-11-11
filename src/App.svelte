@@ -9,6 +9,7 @@
   import Sidebar from './lib/components/Sidebar.svelte';
   import Toasts from './lib/components/Toasts.svelte';
   import Welcome from './lib/components/Welcome.svelte';
+  import { pageReader } from './lib/paging';
   import { app } from './lib/state.svelte';
   import { tokens } from './lib/tokens/runtime.svelte';
   import { fade, fly } from 'svelte/transition';
@@ -104,6 +105,18 @@
       a: () => (app.addFeedOpen = true),
       '/': () => document.getElementById('search')?.focus(),
     };
+    if (event.key === ' ') {
+      // On a button or link Space is that control's own key.
+      if (target instanceof HTMLElement && target.closest('button, a, summary, [role="tab"], [role="menuitem"]')) return;
+      event.preventDefault();
+      const reader = app.article ? document.getElementById('pane-reader') : null;
+      if (!reader) {
+        if (!event.shiftKey) void app.move(1);
+      } else if (pageReader(reader, !event.shiftKey) === 'end') {
+        void app.move(1);
+      }
+      return;
+    }
     const action = actions[event.key];
     if (action) {
       event.preventDefault();
