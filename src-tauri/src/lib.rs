@@ -149,7 +149,7 @@ enum Startup {
 }
 
 /// Spec "Finding a Library on startup": Portable Mode, then the most recent Library, then the
-/// welcome screen.
+/// welcome screen. An empty Portable Mode folder gets a new Library.
 #[tauri::command]
 fn startup(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Startup> {
     if let Some(library) = state
@@ -168,9 +168,14 @@ fn startup(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Startup>
             library: install(&app, &state, library)?,
         });
     }
-    let candidates = machine::portable_library()
-        .into_iter()
-        .chain(machine::recent(&app));
+    let portable = machine::portable_library();
+    if let Some(path) = portable.as_deref().filter(|p| machine::is_empty_dir(p)) {
+        let library = Library::create(path)?;
+        return Ok(Startup::Opened {
+            library: install(&app, &state, library)?,
+        });
+    }
+    let candidates = portable.into_iter().chain(machine::recent(&app));
     for path in candidates {
         match feedrico_core::library::inspect(&path)? {
             Status::Ready => {
