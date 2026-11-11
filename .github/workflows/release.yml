@@ -1,0 +1,99 @@
+name: Release
+
+# Pushing a tag like v0.2.0 builds every package and attaches it to a *draft* GitHub Release.
+# Nothing is public until someone reviews the draft and publishes it (docs/releasing.md).
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.ref_name }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  draft:
+    name: Check version and draft the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Every file carries the tag version
+        run: node scripts/release.mjs check "$TAG"
+      - name: Release notes from Conventional Commits
+        run: node scripts/release.mjs notes "$TAG" > release-notes.md
+      - name: Create the draft (or reuse it when re-running)
+        run: |
+          gh release view "$TAG" > /dev/null 2>&1 ||
+            gh release create "$TAG" --draft --verify-tag --title "Feedrico ${TAG#v}" --notes-file release-notes.md
+
+  build:
+    name: Package for ${{ matrix.name }}
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04: the oldest glibc we support, so the AppImage runs on older distributions.
+          - name: Linux
+            os: blacksmith-4vcpu-ubuntu-2204
+            args: --bundles appimage,deb
+            out: target/release/bundle
+          - name: Windows
+            os: windows-latest
+            args: --bundles nsis
+            out: target/release/bundle
+          - name: macOS
+            os: macos-latest
+            args: --target universal-apple-darwin --bundles dmg
+            out: target/universal-apple-darwin/release/bundle
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build
+        env:
+          # linuxdeploy is itself an AppImage; runners have no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: npx tauri build ${{ matrix.args }}
+      - name: Collect packages
+        shell: bash
+        run: |
+          version="${TAG#v}"
+          mkdir upload
+          find "${{ matrix.out }}" -maxdepth 2 -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*-setup.exe' -o -name '*.dmg' \) \
+            -exec cp {} upload/ \;
+          if [ "$RUNNER_OS" = Windows ]; then
+            # The plain executable is the portable build: it honours Portable Mode.
+            cp target/release/feedrico.exe "upload/Feedrico_${version}_x64-portable.exe"
+          fi
+          ls -l upload
+          test -n "$(ls upload)"
+      - name: Attach to the draft release
+        shell: bash
+        run: gh release upload "$TAG" upload/* --clobber
