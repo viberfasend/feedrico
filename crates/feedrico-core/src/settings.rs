@@ -244,6 +244,7 @@ impl Settings {
     }
 }
 
+const LAST_VIEW_KEY: &str = "view.last";
 const DEFAULT_KEY: &str = "layout.default";
 const VIEW_PREFIX: &str = "layout.view.";
 
@@ -298,6 +299,16 @@ impl Library {
 
     pub fn set_prune_unread_days(&self, days: u32) -> Result<()> {
         self.set_setting(PRUNE_UNREAD_DAYS_KEY, &days)
+    }
+
+    /// The View that was selected last, as a View key (`allUnread`, `feed:3`, …). Travels with
+    /// the Library, so reading continues where it stopped, on any machine.
+    pub fn last_view(&self) -> Result<Option<String>> {
+        self.setting(LAST_VIEW_KEY)
+    }
+
+    pub fn set_last_view(&self, view: &str) -> Result<()> {
+        self.set_setting(LAST_VIEW_KEY, &view)
     }
 
     pub fn layouts(&self) -> Result<Layouts> {
@@ -449,6 +460,14 @@ mod tests {
         assert_eq!(settings.prune_read_days, DEFAULT_PRUNE_READ_DAYS);
         assert_eq!(settings.prune_unread_days, DEFAULT_PRUNE_UNREAD_DAYS);
         library.close().unwrap();
+    }
+
+    #[test]
+    fn last_view_is_remembered() {
+        let (_root, library) = fresh();
+        assert_eq!(library.last_view().unwrap(), None);
+        library.set_last_view("folder:3").unwrap();
+        assert_eq!(library.last_view().unwrap().as_deref(), Some("folder:3"));
     }
 
     #[test]

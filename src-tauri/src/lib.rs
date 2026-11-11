@@ -404,6 +404,17 @@ fn set_layout(
     with_library(&state, |l| l.set_layout(view.as_deref(), layout))
 }
 
+/// The View selected last (a View key), so the next start continues there.
+#[tauri::command]
+fn last_view(state: State<'_, AppState>) -> CommandResult<Option<String>> {
+    with_library(&state, |l| l.last_view())
+}
+
+#[tauri::command]
+fn set_last_view(view: String, state: State<'_, AppState>) -> CommandResult<()> {
+    with_library(&state, |l| l.set_last_view(&view))
+}
+
 /// Every setting that travels with the Library (spec: "What lives in the Library").
 #[tauri::command]
 fn settings(state: State<'_, AppState>) -> CommandResult<Settings> {
@@ -803,6 +814,8 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Window size, position and maximized state: machine-local, restored on start.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(navigation_guard())
@@ -843,6 +856,8 @@ pub fn run() {
             mark_unread,
             layouts,
             set_layout,
+            last_view,
+            set_last_view,
             settings,
             set_settings,
             has_setting,
