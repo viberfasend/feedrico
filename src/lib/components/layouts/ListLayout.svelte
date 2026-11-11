@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { articleOptionLabel } from '../../aria';
   import { shortDate } from '../../format';
   import { app } from '../../state.svelte';
   import { tokens } from '../../tokens/runtime.svelte';
@@ -18,6 +19,9 @@
       class:selected={app.selectedIndex === index}
       role="option"
       aria-selected={app.selectedIndex === index}
+      aria-setsize={app.total}
+      aria-posinset={index + 1}
+      aria-label={article ? articleOptionLabel(article) : undefined}
       tabindex="-1"
       onclick={() => app.selectIndex(index)}
       onkeydown={(e) => e.key === 'Enter' && app.selectIndex(index)}
@@ -54,6 +58,8 @@
   }
   .row.selected {
     background: var(--color-surface-selected);
+    /* 1.4.11: the selected state needs a 3:1 indicator, not just a background change. */
+    box-shadow: inset 3px 0 0 var(--color-border-focus);
   }
   .meta {
     display: flex;

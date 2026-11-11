@@ -10,6 +10,7 @@
   import Toasts from './lib/components/Toasts.svelte';
   import Welcome from './lib/components/Welcome.svelte';
   import { app } from './lib/state.svelte';
+  import { tokens } from './lib/tokens/runtime.svelte';
   import { fade, fly } from 'svelte/transition';
 
   /**
@@ -84,8 +85,8 @@
       cyclePanes(!event.shiftKey);
       return;
     }
-    const target = event.target as HTMLElement;
-    if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) return;
     const actions: Record<string, () => void> = {
       j: () => app.move(1),
       k: () => app.move(-1),
@@ -130,8 +131,8 @@
     {/if}
   </main>
   {#if app.isGrid && app.readerOpen}
-    <button class="backdrop" aria-label="Close reader" tabindex="-1" onclick={() => app.closeReader()} transition:fade={{ duration: 160 }}></button>
-    <div class="slide-over" role="dialog" aria-modal="true" aria-label="Reader" transition:fly={{ x: 80, duration: 220 }} use:focusOnOpen>
+    <button class="backdrop" aria-label="Close reader" tabindex="-1" onclick={() => app.closeReader()} transition:fade={{ duration: tokens.px('--motion-duration-fast') }}></button>
+    <div class="slide-over" role="dialog" aria-modal="true" aria-label="Reader" transition:fly={{ x: 80, duration: tokens.px('--motion-duration-base') }} use:focusOnOpen>
       <Reader />
     </div>
   {/if}
