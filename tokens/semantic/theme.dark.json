@@ -46,7 +46,7 @@
         "$value": "{palette.dusk.800}"
       },
       "default": {
-        "$value": "{palette.dusk.700}"
+        "$value": "{palette.dusk.400}"
       },
       "strong": {
         "$value": "{palette.dusk.500}"

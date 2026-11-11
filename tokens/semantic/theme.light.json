@@ -46,10 +46,10 @@
         "$value": "{palette.paper.200}"
       },
       "default": {
-        "$value": "{palette.paper.300}"
+        "$value": "{palette.paper.500}"
       },
       "strong": {
-        "$value": "{palette.paper.500}"
+        "$value": "{palette.paper.600}"
       },
       "focus": {
         "$value": "{palette.amber.600}"
