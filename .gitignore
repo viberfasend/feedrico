@@ -12,3 +12,4 @@ src-tauri/gen/
 site-dist/
 .shots/
 perf-results.json
+.claude/worktrees/
