@@ -158,6 +158,9 @@
       },
       "slow": {
         "$value": "{duration.slow}"
+      },
+      "spin": {
+        "$value": "{duration.spin}"
       }
     },
     "easing": {
