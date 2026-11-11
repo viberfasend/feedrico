@@ -67,7 +67,7 @@ vi.mock('./api', async (importOriginal) => ({
   api: mockApi,
 }));
 
-const { AppState } = await import('./state.svelte');
+const { AppState, parseSelection, selectionKey } = await import('./state.svelte');
 
 function rows(count: number, firstId = 1): ArticleRow[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -339,5 +339,14 @@ describe('Check for updates', () => {
     expect(app.query().view, 'a new selection scopes again').toEqual({ kind: 'search', feed: 42 });
     app.selection = { kind: 'allUnread' };
     expect(app.query().view, 'Smart Views search everything').toEqual({ kind: 'search' });
+  });
+
+  // #62: every start opened All Unread. The last View is stored in the Library as a View key.
+  it('turns Selections into View keys and back, rejecting unknown keys', () => {
+    for (const s of [{ kind: 'allUnread' }, { kind: 'today' }, { kind: 'starred' }, { kind: 'feed', id: 7 }, { kind: 'folder', id: 2 }] as const) {
+      expect(parseSelection(selectionKey(s))).toEqual(s);
+    }
+    expect(selectionKey({ kind: 'feed', id: 7 })).toBe('feed:7');
+    for (const bad of [null, '', 'search', 'feed:', 'feed:x', 'tag:1']) expect(parseSelection(bad)).toBeNull();
   });
 });

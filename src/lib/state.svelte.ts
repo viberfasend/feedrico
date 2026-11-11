@@ -36,6 +36,18 @@ export type Selection =
   | { kind: 'feed'; id: number }
   | { kind: 'folder'; id: number };
 
+/** A Selection as a View key (`allUnread`, `feed:3`), the form the Library stores. */
+export function selectionKey(s: Selection): string {
+  return s.kind === 'feed' || s.kind === 'folder' ? `${s.kind}:${s.id}` : s.kind;
+}
+
+/** The Selection for a stored View key, or null if the key is unknown. */
+export function parseSelection(key: string | null | undefined): Selection | null {
+  if (key === 'allUnread' || key === 'starred' || key === 'today') return { kind: key };
+  const match = /^(feed|folder):(\d+)$/.exec(key ?? '');
+  return match ? { kind: match[1] as 'feed' | 'folder', id: Number(match[2]) } : null;
+}
+
 export type Phase = 'loading' | 'welcome' | 'attention' | 'ready';
 
 export interface Toast {
@@ -172,8 +184,33 @@ export class AppState {
     this.theme = this.settings.appearance.theme;
     this.applySettings();
     await this.migrateStoredTheme();
-    await Promise.all([this.loadSidebar(), this.resetList()]);
+    await this.loadSidebar();
+    this.selection = await this.restoredSelection();
+    await this.resetList();
     this.scheduleRefresh();
+  }
+
+  /**
+   * The View that was open last time, if it still exists; otherwise All Unread. A Feed or Folder
+   * that was removed since (on this or another machine) must not leave an empty, nameless View.
+   */
+  private async restoredSelection(): Promise<Selection> {
+    const fallback: Selection = { kind: 'allUnread' };
+    if (this.perf) return fallback;
+    let last: Selection | null = null;
+    try {
+      last = parseSelection(await api.lastView());
+    } catch {
+      return fallback;
+    }
+    if (!last) return fallback;
+    const folders = this.sidebar?.folders ?? [];
+    if (last.kind === 'folder') return folders.some((f) => f.id === last.id) ? last : fallback;
+    if (last.kind === 'feed') {
+      const feeds = [...(this.sidebar?.feeds ?? []), ...folders.flatMap((f) => f.feeds)];
+      return feeds.some((f) => f.id === last.id) ? last : fallback;
+    }
+    return last;
   }
 
   /** Applies theme, density and reader typography from the Library settings to the root. */
@@ -488,6 +525,12 @@ export class AppState {
     this.selection = selection;
     this.search = '';
     this.searchScoped = true;
+    if (!this.perf) {
+      // Best effort: a failed save only means the next start opens All Unread.
+      void Promise.resolve()
+        .then(() => api.setLastView(selectionKey(selection)))
+        .catch(() => {});
+    }
     return this.resetList();
   }
 
