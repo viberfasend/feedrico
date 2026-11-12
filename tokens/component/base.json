@@ -118,6 +118,39 @@
       "$value": "46rem"
     }
   },
+  "settings": {
+    "$type": "dimension",
+    "width": {
+      "$value": "54rem"
+    },
+    "height": {
+      "$value": "40rem"
+    },
+    "navWidth": {
+      "$value": "13rem"
+    },
+    "controlWidth": {
+      "$value": "15rem"
+    }
+  },
+  "slider": {
+    "$type": "dimension",
+    "trackHeight": {
+      "$value": "4px"
+    },
+    "thumbSize": {
+      "$value": "16px"
+    }
+  },
+  "switch": {
+    "$type": "dimension",
+    "width": {
+      "$value": "36px"
+    },
+    "height": {
+      "$value": "20px"
+    }
+  },
   "brokenFeeds": {
     "$type": "dimension",
     "rowHeight": {

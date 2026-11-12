@@ -79,6 +79,17 @@ async function mountApp() {
 
 const dialog = () => document.querySelector('.settings-dialog');
 
+/** Switches the Settings window to one of its sections. */
+async function openSection(name: string) {
+  const item = [...dialog()!.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (el) => el.textContent?.trim() === name,
+  )!;
+  item.click();
+  flushSync();
+  await settle();
+  flushSync();
+}
+
 async function openViaShortcut() {
   press(',', { ctrlKey: true });
   await settle();
@@ -164,11 +175,8 @@ describe('Settings dialog writes through to the Library', () => {
   it('changing the theme calls setSettings and sets data-theme', async () => {
     await mountApp();
     await openViaShortcut();
-    const theme = [...dialog()!.querySelectorAll('select')].find((el) =>
-      [...el.options].some((o) => o.value === 'dark'),
-    )!;
-    theme.value = 'dark';
-    theme.dispatchEvent(new Event('change', { bubbles: true }));
+    const dark = dialog()!.querySelector<HTMLInputElement>('[aria-label="Theme"] input[value="dark"]')!;
+    dark.click();
     await settle();
     flushSync();
     expect(mockApi.setSettings).toHaveBeenCalledTimes(1);
@@ -179,11 +187,8 @@ describe('Settings dialog writes through to the Library', () => {
   it('changing density sets data-density', async () => {
     await mountApp();
     await openViaShortcut();
-    const density = [...dialog()!.querySelectorAll('select')].find((el) =>
-      [...el.options].some((o) => o.value === 'compact'),
-    )!;
-    density.value = 'compact';
-    density.dispatchEvent(new Event('change', { bubbles: true }));
+    const compact = dialog()!.querySelector<HTMLInputElement>('[aria-label="Density"] input[value="compact"]')!;
+    compact.click();
     await settle();
     flushSync();
     expect(lastSetSettings?.appearance.density).toBe('compact');
@@ -211,7 +216,8 @@ describe('Settings dialog writes through to the Library', () => {
   it('changing the reader font size sets the reader custom properties on <html>', async () => {
     await mountApp();
     await openViaShortcut();
-    const size = dialog()!.querySelector('input[type="number"]') as HTMLInputElement;
+    await openSection('Reading');
+    const size = dialog()!.querySelector('input[aria-label="Reader font size in pixels"]') as HTMLInputElement;
     size.value = '20';
     size.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
@@ -223,21 +229,32 @@ describe('Settings dialog writes through to the Library', () => {
 
   // Bug (review): a number outside its range (font size 30) was applied locally while the core
   // rejected it, and since every save writes all settings, each later change failed too.
-  it('keeps typed reader numbers inside their range', async () => {
+  it('keeps reader numbers inside their range', async () => {
     await mountApp();
     await openViaShortcut();
-    const [size, measure] = dialog()!.querySelectorAll<HTMLInputElement>('input[type="number"]');
-    size!.value = '30';
-    size!.dispatchEvent(new Event('change', { bubbles: true }));
-    await settle();
-    measure!.value = '';
-    measure!.dispatchEvent(new Event('change', { bubbles: true }));
+    await openSection('Reading');
+    const size = dialog()!.querySelector<HTMLInputElement>('input[aria-label="Reader font size in pixels"]')!;
+    size.value = '30';
+    size.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
     flushSync();
     expect(lastSetSettings?.reader.fontSize).toBe(24);
-    expect(size!.value).toBe('24');
-    expect(lastSetSettings?.reader.measure).toBe(66);
-    expect(measure!.value).toBe('66');
+    expect(size.value).toBe('24');
+  });
+
+  it('previews slider values while dragging and saves only on release', async () => {
+    await mountApp();
+    await openViaShortcut();
+    await openSection('Reading');
+    const size = dialog()!.querySelector<HTMLInputElement>('input[aria-label="Reader font size in pixels"]')!;
+    size.value = '22';
+    size.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    expect(mockApi.setSettings).not.toHaveBeenCalled();
+    expect(dialog()!.querySelector<HTMLElement>('.page-text')!.style.fontSize).toBe('22px');
+    size.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(lastSetSettings?.reader.fontSize).toBe(22);
   });
 
   it('rolls back to the stored settings when saving fails', async () => {
@@ -253,6 +270,7 @@ describe('Settings dialog writes through to the Library', () => {
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
     await mountApp();
     await openViaShortcut();
+    await openSection('Refresh and storage');
     const interval = [...dialog()!.querySelectorAll('select')].find((el) =>
       [...el.options].some((o) => o.value === '60'),
     )!;
@@ -268,6 +286,7 @@ describe('Settings dialog writes through to the Library', () => {
   it('shows Library location, size and format version', async () => {
     await mountApp();
     await openViaShortcut();
+    await openSection('About this Library');
     const text = dialog()!.textContent ?? '';
     expect(text).toContain('/lib');
     expect(text).toContain('Format version');
