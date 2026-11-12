@@ -3,6 +3,7 @@
   import AddFeed from './lib/components/AddFeed.svelte';
   import ArticleList from './lib/components/ArticleList.svelte';
   import Attention from './lib/components/Attention.svelte';
+  import BrokenFeeds from './lib/components/BrokenFeeds.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import Reader from './lib/components/Reader.svelte';
   import Settings from './lib/components/Settings.svelte';
@@ -156,6 +157,9 @@
 {/if}
 {#if app.settingsOpen && !showGallery}
   <Settings />
+{/if}
+{#if app.brokenFeedsOpen && !showGallery}
+  <BrokenFeeds />
 {/if}
 {#if !showGallery}
   <CommandPalette bind:open={paletteOpen} />

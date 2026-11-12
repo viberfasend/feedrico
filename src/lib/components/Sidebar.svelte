@@ -98,6 +98,9 @@
       disabled: app.exportProgress !== null,
       onclick: () => void backUpLibrary(),
     },
+    ...(app.brokenFeeds.length
+      ? [{ label: `Broken Feeds (${app.brokenFeeds.length})…`, onclick: () => (app.brokenFeedsOpen = true) }]
+      : []),
     { label: 'Settings…', onclick: () => void app.openSettings(), separatorBefore: true },
     { label: 'Open another Library…', onclick: () => app.showWelcome() },
     { label: 'Check for updates', onclick: () => void app.checkForUpdates() },
