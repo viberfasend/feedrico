@@ -28,6 +28,7 @@ const article = (contentHtml: string): ArticleDetail => ({
   isRead: false,
   isStarred: false,
   leadImage: null,
+  favicon: null,
   feedSiteUrl: null,
   url: null,
   author: null,

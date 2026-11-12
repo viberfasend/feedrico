@@ -194,7 +194,7 @@ describe('Settings dialog writes through to the Library', () => {
     await mountApp();
     app.sidebar = {
       allUnread: 7, starred: 2, today: 0, folders: [],
-      feeds: [{ id: 1, title: 'Blog', siteUrl: null, unread: 7, lastError: null, lastSuccessAt: null }],
+      feeds: [{ id: 1, title: 'Blog', siteUrl: null, unread: 7, lastError: null, lastSuccessAt: null, favicon: null }],
     };
     app.total = 7;
     flushSync();

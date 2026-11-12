@@ -59,6 +59,8 @@ pub struct FeedNode {
     /// Set while the Feed is broken (spec: "Broken Feeds").
     pub last_error: Option<String>,
     pub last_success_at: Option<i64>,
+    /// Media key of the cached favicon; `None` until one is cached.
+    pub favicon: Option<String>,
 }
 
 /// What the fetcher needs to know about a Feed.
@@ -314,8 +316,9 @@ impl Library {
 
         let mut feeds_stmt = conn.prepare(
             "SELECT f.id, f.title, f.site_url, f.folder_id, f.last_error, f.last_success_at,
-                    coalesce(u.unread, 0)
+                    coalesce(u.unread, 0), m.hash
              FROM feed f
+             LEFT JOIN media m ON m.hash = f.favicon_hash
              LEFT JOIN (SELECT feed_id, count(*) AS unread FROM article WHERE is_read = 0 GROUP BY feed_id) u
                     ON u.feed_id = f.id
              ORDER BY f.position, f.title COLLATE NOCASE",
@@ -331,6 +334,7 @@ impl Library {
                         last_error: r.get(4)?,
                         last_success_at: r.get(5)?,
                         unread: r.get(6)?,
+                        favicon: r.get(7)?,
                     },
                 ))
             })?

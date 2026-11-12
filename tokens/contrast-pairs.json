@@ -205,6 +205,36 @@
       "fg": "color.unread.indicator",
       "bg": "color.surface.raised",
       "min": 3
+    },
+    {
+      "fg": "color.feedTile.text",
+      "bg": "color.feedTile.1",
+      "min": 4.5
+    },
+    {
+      "fg": "color.feedTile.text",
+      "bg": "color.feedTile.2",
+      "min": 4.5
+    },
+    {
+      "fg": "color.feedTile.text",
+      "bg": "color.feedTile.3",
+      "min": 4.5
+    },
+    {
+      "fg": "color.feedTile.text",
+      "bg": "color.feedTile.4",
+      "min": 4.5
+    },
+    {
+      "fg": "color.feedTile.text",
+      "bg": "color.feedTile.5",
+      "min": 4.5
+    },
+    {
+      "fg": "color.feedTile.text",
+      "bg": "color.feedTile.6",
+      "min": 4.5
     }
   ]
 }

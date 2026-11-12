@@ -11,17 +11,27 @@
 // (see "Known traps") or dev-server state (see "UI glitch that a restart fixes").
 
 const now = Math.floor(Date.now() / 1000);
-const feeds = Array.from({ length: 6 }, (_, i) => ({
-  id: i + 1, title: `Feed ${i + 1}`, siteUrl: null, unread: 5, lastError: null, lastSuccessAt: now,
+// Odd Feeds have a cached favicon (served below as an inline SVG); even ones show the tile.
+const TITLES = ['Ars Technica', 'Bits & Bytes', 'Craft Notes', 'Daring Fireball', 'Eater', 'Field Guide'];
+const favicon = (id) => (id % 2 ? String(id).repeat(32).slice(0, 32) : null);
+const feeds = TITLES.map((title, i) => ({
+  id: i + 1, title, siteUrl: null, unread: 5, lastError: null, lastSuccessAt: now, favicon: favicon(i + 1),
 }));
 const TOTAL = 40;
 const rows = (offset, limit) =>
-  Array.from({ length: Math.max(0, Math.min(limit, TOTAL - offset)) }, (_, i) => ({
-    id: offset + i + 1, feedId: 1, feedTitle: 'Feed 1',
-    title: `Article ${offset + i + 1} with a reasonably long headline`,
-    excerpt: 'Lorem ipsum dolor sit amet', articleDate: now - i * 600,
-    isRead: false, isStarred: false, leadImage: null,
-  }));
+  Array.from({ length: Math.max(0, Math.min(limit, TOTAL - offset)) }, (_, i) => {
+    const feed = feeds[(offset + i) % feeds.length];
+    return {
+      id: offset + i + 1, feedId: feed.id, feedTitle: feed.title,
+      title: `Article ${offset + i + 1} with a reasonably long headline`,
+      excerpt: 'Lorem ipsum dolor sit amet', articleDate: now - i * 600,
+      isRead: false, isStarred: false, leadImage: null, favicon: feed.favicon,
+    };
+  });
+const iconSvg = (key) =>
+  'data:image/svg+xml,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="hsl(${Number(key[0]) * 50} 70% 45%)"/><circle cx="8" cy="8" r="4" fill="white"/></svg>`,
+  );
 const library = { path: '/mock', name: 'Mock Library', formatVersion: 3, feedCount: feeds.length, portable: false };
 
 const handlers = {
@@ -29,6 +39,16 @@ const handlers = {
   library_info: () => library,
   layouts: () => ({ default: 'list', views: {} }),
   set_layout: () => null,
+  settings: () => ({
+    appearance: { theme: 'system', density: 'comfortable', unreadCounts: 'show' },
+    reader: { fontFamily: 'serif', fontSize: 18, measure: 66, lineHeight: 1.65 },
+    refresh: { intervalMinutes: 30 },
+    imageCacheCapBytes: 1024 ** 3, pruneReadDays: 90, pruneUnreadDays: 365,
+  }),
+  set_settings: () => null,
+  has_setting: () => true,
+  last_view: () => null,
+  set_last_view: () => null,
   sidebar: () => ({
     allUnread: 30, starred: 0, today: 3,
     folders: [{ id: 1, name: 'Tech', unread: 15, feeds: feeds.slice(0, 3) }],
@@ -36,6 +56,8 @@ const handlers = {
   }),
   count_articles: () => TOTAL,
   list_articles: ({ offset, limit }) => rows(offset, limit),
+  get_article: ({ id }) => ({ ...rows(id - 1, 1)[0], feedSiteUrl: null, url: null, author: null, contentHtml: '<p>Body</p>', enclosures: [] }),
+  set_read: () => null,
   refresh: () => false,
   'plugin:event|listen': () => 1,
 };
@@ -54,7 +76,7 @@ window.__TAURI_INTERNALS__ = {
     window[`_${id}`] = cb;
     return id;
   },
-  convertFileSrc: (path, protocol) => `${protocol}://localhost/${path}`,
+  convertFileSrc: (path, protocol) => (protocol === 'media' && /^\d/.test(path) ? iconSvg(path) : `${protocol}://localhost/${path}`),
   metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
 };
 window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
