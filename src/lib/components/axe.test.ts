@@ -142,6 +142,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   app.settingsOpen = false;
+  app.brokenFeedsOpen = false;
   app.addFeedOpen = false;
   app.selectedIndex = null;
   app.article = null;
@@ -178,6 +179,20 @@ describe('axe over every screen state', () => {
     flushSync();
     expect(document.querySelector('.settings-dialog')).not.toBeNull();
     await expectNoViolations('settings dialog');
+  });
+
+  it('has no violations with the Broken Feeds dialog open, and while confirming', async () => {
+    await mountReady('list');
+    app.brokenFeedsOpen = true;
+    await settle();
+    flushSync();
+    expect(document.querySelector('.broken-feeds-dialog')).not.toBeNull();
+    await expectNoViolations('broken feeds dialog');
+    document.querySelector<HTMLButtonElement>('[aria-label="Unsubscribe from Rust Blog"]')!.click();
+    await settle();
+    flushSync();
+    await expectNoViolations('broken feeds confirmation');
+    app.brokenFeedsOpen = false;
   });
 
   it('has no violations with the command palette open', async () => {

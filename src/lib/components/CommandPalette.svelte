@@ -34,6 +34,9 @@
       { id: 'action:addFeed', group: 'action', icon: 'plus', label: 'Add Feed…', run: () => (app.addFeedOpen = true) },
       { id: 'action:importOpml', group: 'action', icon: 'import', label: 'Import OPML…', run: () => void app.chooseImportOpml() },
       { id: 'action:exportOpml', group: 'action', icon: 'export', label: 'Export OPML…', run: () => void app.chooseExportOpml() },
+      ...(app.brokenFeeds.length
+        ? [{ id: 'action:brokenFeeds', group: 'action' as const, icon: 'warning' as const, label: `Broken Feeds (${app.brokenFeeds.length})…`, run: () => (app.brokenFeedsOpen = true) }]
+        : []),
       { id: 'action:markAllRead', group: 'action', icon: 'check', label: 'Mark all as read', run: () => void app.markAllRead() },
       { id: 'action:theme', group: 'action', icon: 'sun', label: `Toggle theme (now ${app.theme})`, run: () => app.cycleTheme() },
       { id: 'action:settings', group: 'action', icon: 'settings', label: 'Open settings…', run: () => void app.openSettings() },

@@ -113,6 +113,18 @@
     },
     "padding": {
       "$value": "{space.inset.xl}"
+    },
+    "wideWidth": {
+      "$value": "46rem"
+    }
+  },
+  "brokenFeeds": {
+    "$type": "dimension",
+    "rowHeight": {
+      "$value": "56px"
+    },
+    "listMaxHeight": {
+      "$value": "420px"
     }
   },
   "tooltip": {

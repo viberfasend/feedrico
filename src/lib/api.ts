@@ -50,6 +50,12 @@ export interface FeedNode {
   favicon: string | null;
 }
 
+export interface RetryOutcome {
+  /** The Feed's error after the attempt; null if it worked. */
+  error: string | null;
+  newArticles: number;
+}
+
 export interface FolderNode {
   id: number;
   name: string;
@@ -224,6 +230,10 @@ export const api = {
   deleteFolder: (id: number, unsubscribeFeeds: boolean) =>
     invoke<void>('delete_folder', { id, unsubscribeFeeds }),
   unsubscribe: (id: number) => invoke<void>('unsubscribe', { id }),
+  /** Unsubscribes from several Feeds at once; resolves to how many were removed. */
+  unsubscribeFeeds: (ids: number[]) => invoke<number>('unsubscribe_feeds', { ids }),
+  /** Fetches one Feed now, ignoring its backoff. */
+  retryFeed: (id: number) => invoke<RetryOutcome>('retry_feed', { id }),
   exportOpml: (path: string) => invoke<void>('export_opml', { path }),
   exportLibrary: (path: string) => invoke<void>('export_library', { path }),
   onExportProgress: (cb: (p: ExportProgress) => void): Promise<UnlistenFn> =>

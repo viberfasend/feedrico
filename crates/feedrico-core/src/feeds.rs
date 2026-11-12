@@ -266,6 +266,22 @@ impl Library {
         self.remove_unreferenced_media()
     }
 
+    /// Unsubscribes from several Feeds in one transaction, cleaning up media once. Unknown ids
+    /// are skipped. Returns how many Feeds were removed.
+    pub fn unsubscribe_many(&self, feed_ids: &[i64]) -> Result<usize> {
+        let tx = self.conn().unchecked_transaction()?;
+        let mut removed = 0;
+        {
+            let mut stmt = tx.prepare("DELETE FROM feed WHERE id = ?1")?;
+            for id in feed_ids {
+                removed += stmt.execute([id])?;
+            }
+        }
+        tx.commit()?;
+        self.remove_unreferenced_media()?;
+        Ok(removed)
+    }
+
     pub fn export_opml(&self) -> Result<String> {
         type Row = (String, String, Option<String>, Option<i64>);
         let conn = self.conn();
@@ -407,6 +423,25 @@ impl Library {
             }
         }
         Ok(due)
+    }
+
+    /// One Feed to fetch now, whatever its backoff: *Retry now* on a broken Feed.
+    pub fn feed_to_fetch(&self, feed_id: i64) -> Result<FeedToFetch> {
+        self.conn()
+            .query_row(
+                "SELECT id, url, etag, last_modified FROM feed WHERE id = ?1",
+                [feed_id],
+                |r| {
+                    Ok(FeedToFetch {
+                        id: r.get(0)?,
+                        url: r.get(1)?,
+                        etag: r.get(2)?,
+                        last_modified: r.get(3)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or(Error::NotFound)
     }
 
     /// Stores the result of one fetch. Returns the images new Articles need cached.
@@ -770,6 +805,68 @@ mod tests {
         );
         let node = &library.sidebar(0).unwrap().feeds[0];
         assert_eq!(node.last_error.as_deref(), Some("HTTP 404"));
+        library.close().unwrap();
+    }
+
+    /// Broken Feeds dialog (#66): *Retry now* fetches that one Feed while it is backing off.
+    #[test]
+    fn one_broken_feed_can_be_fetched_despite_its_backoff() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", None),
+                opml_feed("https://b.example", None),
+            ])
+            .unwrap();
+        library
+            .apply_fetch(1, FetchResult::Failed("HTTP 404".into()))
+            .unwrap();
+        assert!(
+            library
+                .feeds_to_fetch(false)
+                .unwrap()
+                .iter()
+                .all(|f| f.id != 1)
+        );
+
+        let feed = library.feed_to_fetch(1).unwrap();
+        assert_eq!((feed.id, feed.url.as_str()), (1, "https://a.example"));
+        assert!(matches!(library.feed_to_fetch(99), Err(Error::NotFound)));
+        library.close().unwrap();
+    }
+
+    /// Broken Feeds dialog (#66): *Unsubscribe from all listed* removes them in one go.
+    #[test]
+    fn unsubscribes_from_several_feeds_at_once() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", None),
+                opml_feed("https://b.example", Some("Tech")),
+                opml_feed("https://c.example", None),
+            ])
+            .unwrap();
+        library
+            .conn()
+            .execute(
+                "INSERT INTO article (feed_id, identity, first_seen_at, article_date) VALUES (2, 'x', 0, 0)",
+                [],
+            )
+            .unwrap();
+
+        assert_eq!(library.unsubscribe_many(&[1, 2, 99]).unwrap(), 2);
+
+        let sidebar = library.sidebar(0).unwrap();
+        assert_eq!(sidebar.feeds.len(), 1);
+        assert_eq!(sidebar.feeds[0].title, "c.example");
+        assert!(sidebar.folders[0].feeds.is_empty(), "the Folder stays");
+        let articles: i64 = library
+            .conn()
+            .query_row("SELECT count(*) FROM article", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(articles, 0);
         library.close().unwrap();
     }
 

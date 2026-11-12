@@ -60,6 +60,17 @@ export class AppState {
   phase = $state<Phase>('loading');
   /** The Add Feed dialog. */
   addFeedOpen = $state(false);
+  /** The Broken Feeds dialog. */
+  brokenFeedsOpen = $state(false);
+  /** Broken Feeds with the name of their Folder, in sidebar order (spec: "Broken Feeds"). */
+  brokenFeeds = $derived.by(() => {
+    const sidebar = this.sidebar;
+    if (!sidebar) return [];
+    return [
+      ...sidebar.folders.flatMap((folder) => folder.feeds.map((feed) => ({ feed, folder: folder.name as string | null }))),
+      ...sidebar.feeds.map((feed) => ({ feed, folder: null })),
+    ].filter(({ feed }) => feed.lastError !== null);
+  });
   library = $state<LibraryInfo | null>(null);
   defaultPath = $state('');
   recent = $state<string[]>([]);
@@ -389,6 +400,40 @@ export class AppState {
       },
       () => (this.selection.kind === 'feed' && this.selection.id === id ? this.select({ kind: 'allUnread' }) : this.resetList()),
     );
+  }
+
+  /** Unsubscribes from several Feeds at once (Broken Feeds dialog). */
+  unsubscribeFeeds(ids: number[]) {
+    return this.manage(
+      async () => {
+        await api.unsubscribeFeeds(ids);
+        this.library = await api.info();
+      },
+      () =>
+        this.selection.kind === 'feed' && ids.includes(this.selection.id)
+          ? this.select({ kind: 'allUnread' })
+          : this.resetList(),
+    );
+  }
+
+  /**
+   * Fetches one broken Feed now. The sidebar reloads, so the Feed's row shows the result.
+   * Resolves to the error after the attempt, or null if the Feed works again.
+   */
+  async retryFeed(id: number): Promise<string | null> {
+    try {
+      const outcome = await api.retryFeed(id);
+      await this.loadSidebar();
+      if (outcome.newArticles > 0) {
+        if (this.selectedIndex === null) void this.resetList();
+        else this.hasNewArticles = true;
+      }
+      return outcome.error;
+    } catch (e) {
+      const message = errorMessage(e);
+      this.notify(message);
+      return message;
+    }
   }
 
   async exportOpml(path: string) {

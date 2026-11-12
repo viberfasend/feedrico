@@ -10,7 +10,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
 use feedrico_core::feeds::ImportSummary;
-use feedrico_core::{AddOutcome, Discovery};
+use feedrico_core::{AddOutcome, Discovery, FetchResult};
 use feedrico_core::{
     ArticleDetail, ArticleRow, Fetcher, Layout, Layouts, Library, ListQuery, OpenOptions, Settings,
     Sidebar, Status, UpdateStatus, opml,
@@ -316,6 +316,50 @@ fn delete_folder(
 #[tauri::command]
 fn unsubscribe(id: i64, state: State<'_, AppState>) -> CommandResult<()> {
     with_library(&state, |l| l.unsubscribe(id))
+}
+
+#[tauri::command]
+fn unsubscribe_feeds(ids: Vec<i64>, state: State<'_, AppState>) -> CommandResult<usize> {
+    with_library(&state, |l| l.unsubscribe_many(&ids))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RetryOutcome {
+    /// The Feed's error after the attempt; `None` if it worked.
+    error: Option<String>,
+    new_articles: usize,
+}
+
+/// *Retry now* in the Broken Feeds dialog: fetches one Feed at once, ignoring its backoff.
+/// New Articles' images are cached in the background, as after a refresh.
+#[tauri::command]
+async fn retry_feed(id: i64, app: AppHandle) -> CommandResult<RetryOutcome> {
+    let state = app.state::<AppState>();
+    let (dir, feed) = with_library(&state, |l| {
+        Ok((l.dir().to_path_buf(), l.feed_to_fetch(id)?))
+    })?;
+    let result = state.fetcher.fetch(&feed).await;
+    let error = match &result {
+        FetchResult::Failed(message) => Some(message.clone()),
+        _ => None,
+    };
+    let outcome = {
+        let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+        match guard.as_ref() {
+            Some(l) if l.dir() == dir => l.apply_fetch(id, result)?,
+            _ => return Err(CommandError::new("noLibrary", "the Library was closed")),
+        }
+    };
+    let new_articles = outcome.new_articles;
+    if !outcome.images.is_empty() {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { cache_images(&app, &dir, outcome.images).await });
+    }
+    Ok(RetryOutcome {
+        error,
+        new_articles,
+    })
 }
 
 #[tauri::command]
@@ -846,6 +890,8 @@ pub fn run() {
             move_feed,
             delete_folder,
             unsubscribe,
+            unsubscribe_feeds,
+            retry_feed,
             sidebar,
             count_articles,
             list_articles,
