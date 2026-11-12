@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 // guard the CSS itself.
 
 const base = readFileSync(new URL('../tokens/generated/base.css', import.meta.url), 'utf8');
+const appCss = readFileSync(new URL('../../app.css', import.meta.url), 'utf8');
 const components = import.meta.glob(['../../**/*.svelte'], { query: '?raw', import: 'default', eager: true }) as Record<
   string,
   string
@@ -60,5 +61,15 @@ describe('Stacking layers', () => {
       .flatMap(([file, source]) => [...source.matchAll(/z-index:\s*([^;]+);/g)].map((m) => `${file}: ${m[1]}`))
       .filter((entry) => !/var\(--layer-[a-z-]+\)$/.test(entry));
     expect(raw).toEqual([]);
+  });
+});
+
+describe('Native controls', () => {
+  // Bug (select boxes dark in the light theme): index.html declares `color-scheme: light dark`,
+  // so with a dark OS the engine drew native controls dark whatever the app's theme was.
+  it('follow the chosen theme, and the OS only when the theme is System', () => {
+    expect(rule(appCss, ':root')).toMatch(/color-scheme:\s*light dark/);
+    expect(rule(appCss, ":root[data-theme='light']")).toMatch(/color-scheme:\s*light;/);
+    expect(rule(appCss, ":root[data-theme='dark']")).toMatch(/color-scheme:\s*dark;/);
   });
 });

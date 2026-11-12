@@ -7,6 +7,18 @@
   box-sizing: border-box;
 }
 
+/* Native controls (select boxes and their popups, scrollbars) follow the app's theme. Without
+   this, index.html's `light dark` lets a dark OS draw them dark in the light theme. */
+:root {
+  color-scheme: light dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
 html,
 body,
 #app {
