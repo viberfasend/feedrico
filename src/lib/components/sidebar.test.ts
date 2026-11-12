@@ -11,3 +11,15 @@ describe('Sidebar footer', () => {
     expect(footer).toMatch(/<Menu\b/);
   });
 });
+
+describe('Sidebar tree', () => {
+  // Bug (found while checking #61): a long Feed title pushed its row wider than the sidebar.
+  // The lists are grids with an `auto` track, whose items never shrink below their content, so
+  // the title didn't ellipsize: the sidebar scrolled sideways and the broken-Feed badge and
+  // unread count were pushed out of sight. The track must be allowed to shrink.
+  it('lets rows shrink to the sidebar width so long titles ellipsize', () => {
+    const ul = /\n {2}ul \{([^}]*)\}/.exec(source)?.[1] ?? '';
+    expect(ul).toMatch(/display:\s*grid/);
+    expect(ul).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  });
+});

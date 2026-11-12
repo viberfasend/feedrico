@@ -356,6 +356,8 @@
     margin: 0;
     padding: 0;
     display: grid;
+    /* Not `auto`: rows must shrink to the sidebar so long titles ellipsize. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 1px;
   }
   .group + .group {
