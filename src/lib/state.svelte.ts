@@ -124,7 +124,7 @@ export class AppState {
   async start() {
     applyTheme(this.theme);
     await api.onRefreshProgress((p) => this.onProgress(p));
-    await api.onMediaCached(() => this.reloadArticle());
+    await api.onMediaCached(() => this.onMediaCached());
     await api.onArticlesPruned(() => this.onPruned());
     try {
       const startup = await api.startup();
@@ -679,6 +679,21 @@ export class AppState {
 
   closeReader() {
     this.readerOpen = false;
+  }
+
+  /** Images and favicons were cached in the background: show them where they are on screen. */
+  async onMediaCached() {
+    await Promise.all([this.reloadArticle(), this.loadSidebar()]);
+    const sidebar = this.sidebar;
+    if (!sidebar) return;
+    const icons = new Map<number, string | null>();
+    for (const feed of [...sidebar.feeds, ...sidebar.folders.flatMap((f) => f.feeds)]) {
+      icons.set(feed.id, feed.favicon);
+    }
+    for (const rows of this.pages.values()) {
+      for (const row of rows) row.favicon = icons.get(row.feedId) ?? row.favicon;
+    }
+    this.pagesVersion++;
   }
 
   private async reloadArticle() {

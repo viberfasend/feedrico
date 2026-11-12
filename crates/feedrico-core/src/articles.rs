@@ -156,6 +156,8 @@ pub struct ArticleRow {
     pub is_starred: bool,
     /// Media key of the Lead Image, if any.
     pub lead_image: Option<String>,
+    /// Media key of the Feed's cached favicon, if any.
+    pub favicon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,6 +174,8 @@ pub struct ArticleDetail {
     pub article_date: i64,
     pub is_read: bool,
     pub is_starred: bool,
+    /// Media key of the Feed's cached favicon, if any.
+    pub favicon: Option<String>,
     pub enclosures: Vec<Enclosure>,
 }
 
@@ -260,8 +264,9 @@ impl Library {
         args.push(offset.into());
         let mut stmt = self.conn().prepare_cached(&format!(
             "SELECT a.id, a.feed_id, f.title, a.title, a.excerpt, a.article_date, a.is_read, a.is_starred,
-                    a.lead_image
+                    a.lead_image, m.hash
              FROM article a JOIN feed f ON f.id = a.feed_id
+             LEFT JOIN media m ON m.hash = f.favicon_hash
              WHERE {clause} ORDER BY {order} LIMIT ? OFFSET ?"
         ))?;
         let rows = stmt
@@ -276,6 +281,7 @@ impl Library {
                     is_read: r.get(6)?,
                     is_starred: r.get(7)?,
                     lead_image: r.get(8)?,
+                    favicon: r.get(9)?,
                 })
             })?
             .collect::<rusqlite::Result<_>>()?;
@@ -287,8 +293,10 @@ impl Library {
         let mut detail = conn
             .query_row(
                 "SELECT a.id, a.feed_id, f.title, f.site_url, a.title, a.url, a.author, a.content_html,
-                        a.article_date, a.is_read, a.is_starred
-                 FROM article a JOIN feed f ON f.id = a.feed_id WHERE a.id = ?1",
+                        a.article_date, a.is_read, a.is_starred, m.hash
+                 FROM article a JOIN feed f ON f.id = a.feed_id
+                 LEFT JOIN media m ON m.hash = f.favicon_hash
+                 WHERE a.id = ?1",
                 [id],
                 |r| {
                     Ok(ArticleDetail {
@@ -303,6 +311,7 @@ impl Library {
                         article_date: r.get(8)?,
                         is_read: r.get(9)?,
                         is_starred: r.get(10)?,
+                        favicon: r.get(11)?,
                         enclosures: Vec::new(),
                     })
                 },

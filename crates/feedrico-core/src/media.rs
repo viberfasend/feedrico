@@ -335,6 +335,41 @@ mod tests {
         library.close().unwrap();
     }
 
+    /// The sidebar, Article rows and the reader carry the Feed's favicon key, but only while
+    /// the icon is actually cached, so the UI never asks for a file that isn't there.
+    #[test]
+    fn feeds_and_articles_carry_the_favicon_only_while_it_is_cached() {
+        use crate::articles::{ListQuery, Sort, View};
+        let (_root, library) = library_with(&[(false, false, 1, 100)]);
+        let query = ListQuery {
+            view: View::AllUnread,
+            sort: Sort::NewestFirst,
+            search: None,
+            with_lead_image: false,
+        };
+        let icons = |library: &Library| {
+            (
+                library.sidebar(0).unwrap().feeds[0].favicon.clone(),
+                library.list_articles(&query, 0, 10).unwrap()[0]
+                    .favicon
+                    .clone(),
+                library.article(1).unwrap().favicon,
+            )
+        };
+        assert_eq!(icons(&library), (None, None, None));
+
+        library
+            .set_favicon(1, "https://x.example/favicon.ico", b"ICO", "image/x-icon")
+            .unwrap();
+        let key = Some(media_key("https://x.example/favicon.ico"));
+        assert_eq!(icons(&library), (key.clone(), key.clone(), key));
+
+        // A favicon_hash whose media row is gone (e.g. a Library copied without media/).
+        library.conn().execute("DELETE FROM media", []).unwrap();
+        assert_eq!(icons(&library), (None, None, None));
+        library.close().unwrap();
+    }
+
     #[test]
     fn stores_and_serves_media_but_rejects_traversal() {
         let root = tempfile::tempdir().unwrap();

@@ -26,6 +26,15 @@
       "$value": "420px"
     }
   },
+  "feedIcon": {
+    "$type": "dimension",
+    "size": {
+      "$value": "16px"
+    },
+    "radius": {
+      "$value": "3px"
+    }
+  },
   "reader": {
     "measure": {
       "$type": "dimension",

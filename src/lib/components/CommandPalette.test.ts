@@ -30,8 +30,8 @@ const sidebar: Sidebar = {
   allUnread: 3,
   starred: 0,
   today: 1,
-  folders: [{ id: 2, name: 'Tech', unread: 2, feeds: [{ id: 5, title: 'Rust Blog', siteUrl: 'https://blog.rust-lang.org', unread: 2, lastError: null, lastSuccessAt: null }] }],
-  feeds: [{ id: 7, title: 'Hacker News', siteUrl: 'https://news.ycombinator.com', unread: 1, lastError: null, lastSuccessAt: null }],
+  folders: [{ id: 2, name: 'Tech', unread: 2, feeds: [{ id: 5, title: 'Rust Blog', siteUrl: 'https://blog.rust-lang.org', unread: 2, lastError: null, lastSuccessAt: null, favicon: null }] }],
+  feeds: [{ id: 7, title: 'Hacker News', siteUrl: 'https://news.ycombinator.com', unread: 1, lastError: null, lastSuccessAt: null, favicon: null }],
 };
 
 function press(key: string, init: KeyboardEventInit = {}) {

@@ -46,6 +46,8 @@ export interface FeedNode {
   unread: number;
   lastError: string | null;
   lastSuccessAt: number | null;
+  /** Media key of the cached favicon; null until one is cached. See mediaUrl(). */
+  favicon: string | null;
 }
 
 export interface FolderNode {
@@ -149,6 +151,8 @@ export interface ArticleRow {
   isStarred: boolean;
   /** Media key of the Lead Image; see mediaUrl(). */
   leadImage: string | null;
+  /** Media key of the Feed's cached favicon; null shows a generated tile. */
+  favicon: string | null;
 }
 
 export interface Enclosure {

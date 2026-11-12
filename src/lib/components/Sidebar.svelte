@@ -7,6 +7,7 @@
   import Dialog from '../ui/Dialog.svelte';
   import IconButton from '../ui/IconButton.svelte';
   import Menu from '../ui/Menu.svelte';
+  import FeedIcon from './FeedIcon.svelte';
   import Icon, { type IconName } from './Icon.svelte';
 
   // Collapsed Folders are a per-machine view preference, not Library data.
@@ -134,6 +135,7 @@
         ondragend={() => (dragging = dropTarget = null)}
         onclick={() => app.select({ kind: 'feed', id: feed.id })}
       >
+        <FeedIcon feedId={feed.id} title={feed.title} favicon={feed.favicon} />
         {#if editing?.kind === 'feed' && editing.id === feed.id}
           <!-- svelte-ignore a11y_autofocus -->
           <input class="rename" aria-label="Feed name" value={feed.title} use:focusSelect

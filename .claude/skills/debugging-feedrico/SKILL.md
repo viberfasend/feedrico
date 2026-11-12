@@ -56,6 +56,9 @@ see layout. So **look at every visible UI change before calling it done**:
 1. With the dev server running, open `http://localhost:1420/` in Chrome (Claude in Chrome).
 2. Run [`mock-ipc.js`](mock-ipc.js) in the page. It fakes the Tauri IPC with canned data and
    remounts the real `<App/>`. Extend its `handlers` for the commands your change uses.
+   Paste the file's text (e.g. `await import(URL.createObjectURL(new Blob([src], { type:
+   'text/javascript' })))`); don't `import('/.claude/…')` from the dev server: Vite ignores
+   `.claude/` and keeps serving the first copy it saw, so your edits silently don't apply.
 3. Screenshot every Layout (List, Cards, Magazine, Gallery) and both themes. Resize down to the
    window's `minWidth` (880 px, `tauri.conf.json`): fixed-width panes (sidebar 260 px, list
    column) are where controls overflow.

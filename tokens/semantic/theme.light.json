@@ -109,6 +109,30 @@
       "caption": {
         "$value": "{palette.paper.0}"
       }
+    },
+    "feedTile": {
+      "$description": "Generated icon tiles for Feeds without a favicon: one background per Feed (by id), text on top.",
+      "text": {
+        "$value": "{palette.paper.0}"
+      },
+      "1": {
+        "$value": "{palette.amber.700}"
+      },
+      "2": {
+        "$value": "{palette.dusk.600}"
+      },
+      "3": {
+        "$value": "{palette.moss.700}"
+      },
+      "4": {
+        "$value": "{palette.rust.700}"
+      },
+      "5": {
+        "$value": "{palette.paper.700}"
+      },
+      "6": {
+        "$value": "{palette.rust.500}"
+      }
     }
   },
   "shadow": {

@@ -74,6 +74,7 @@ function row(i: number): ArticleRow {
     isRead: false,
     isStarred: i === 1,
     leadImage: null,
+    favicon: null,
   };
 }
 
@@ -86,7 +87,7 @@ const sidebar: Sidebar = {
       id: 2,
       name: 'Tech',
       unread: 2,
-      feeds: [{ id: 5, title: 'Rust Blog', siteUrl: null, unread: 2, lastError: 'HTTP 404', lastSuccessAt: null }],
+      feeds: [{ id: 5, title: 'Rust Blog', siteUrl: null, unread: 2, lastError: 'HTTP 404', lastSuccessAt: null, favicon: null }],
     },
   ],
   feeds: [],

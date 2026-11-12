@@ -2,7 +2,7 @@
 // Regression tests for the app state. Each test names the bug it guards against.
 import { flushSync } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ArticleRow, ListQuery } from './api';
+import type { ArticleRow, ListQuery, Sidebar } from './api';
 
 /** A promise we resolve by hand, to replay exact orderings of IPC responses. */
 function deferred<T>() {
@@ -34,7 +34,7 @@ const mockApi = {
   setLayout: vi.fn(async () => {}),
   article: vi.fn(),
   setRead: vi.fn(async () => {}),
-  sidebar: vi.fn(async () => ({ allUnread: 0, starred: 0, today: 0, folders: [], feeds: [] })),
+  sidebar: vi.fn(async (): Promise<Sidebar> => ({ allUnread: 0, starred: 0, today: 0, folders: [], feeds: [] })),
   info: vi.fn(async () => ({ path: '/lib', name: 'Lib', formatVersion: 1, feedCount: 1, portable: false })),
   deleteFolder: vi.fn(async (_id: number, _unsubscribeFeeds: boolean) => {}),
   layouts: vi.fn(async () => ({ default: 'list', views: {} })),
@@ -80,6 +80,7 @@ function rows(count: number, firstId = 1): ArticleRow[] {
     isRead: false,
     isStarred: false,
     leadImage: null,
+    favicon: null,
   }));
 }
 
@@ -171,6 +172,40 @@ describe('Article list loading', () => {
     app.layouts = { default: 'cards', views: { allUnread: 'list' } };
     expect(app.query().withLeadImage).toBe(false);
     expect(app.layout).toBe('list');
+  });
+});
+
+describe('Favicons', () => {
+  // Favicons are cached after a refresh, usually after the list is already on screen. The
+  // rows must pick them up without reloading the list (which would lose the scroll position).
+  it('shows favicons cached after the list loaded, without reloading the list', async () => {
+    const app = new AppState();
+    app.total = 2;
+    void app.ensureRange(0, 2);
+    lists[0]!.d.resolve([...rows(1, 1), { ...rows(1, 2)[0]!, feedId: 2 }]);
+    await settle();
+    const feed = (id: number, favicon: string | null) => ({
+      id,
+      title: `Feed ${id}`,
+      siteUrl: null,
+      unread: 1,
+      lastError: null,
+      lastSuccessAt: null,
+      favicon,
+    });
+    mockApi.sidebar.mockResolvedValueOnce({
+      allUnread: 2,
+      starred: 0,
+      today: 0,
+      folders: [],
+      feeds: [feed(1, 'a'.repeat(32)), feed(2, null)],
+    });
+
+    await app.onMediaCached();
+
+    expect(app.rowAt(0)?.favicon).toBe('a'.repeat(32));
+    expect(app.rowAt(1)?.favicon).toBeNull();
+    expect(lists, 'no list reload').toHaveLength(1);
   });
 });
 

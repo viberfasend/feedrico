@@ -5,6 +5,7 @@
   import { failedImages, hasLeadImage } from '../../images.svelte';
   import { app } from '../../state.svelte';
   import { tokens } from '../../tokens/runtime.svelte';
+  import FeedIcon from '../FeedIcon.svelte';
   import VirtualRows from '../VirtualRows.svelte';
 
   let { label }: { label: string } = $props();
@@ -73,6 +74,7 @@
             {/if}
             <div class="text">
               <div class="meta">
+                <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
                 <span class="feed">{article.feedTitle}</span>
                 <time>{shortDate(article.articleDate)}</time>
               </div>
@@ -169,6 +171,7 @@
   }
   .meta {
     display: flex;
+    align-items: center;
     gap: var(--space-inline-sm);
     min-width: 0;
     color: var(--color-text-accent);

@@ -2,6 +2,7 @@
   import { fileSize, hostOf, longDate } from '../format';
   import { app } from '../state.svelte';
   import EmptyState from './EmptyState.svelte';
+  import FeedIcon from './FeedIcon.svelte';
   import Icon from './Icon.svelte';
 
   let scroller = $state<HTMLElement>();
@@ -65,6 +66,7 @@
           </button>
         {/if}
         <div class="source">
+          <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
           <span>{article.feedTitle}</span>
           {#if article.author}<span>· {article.author}</span>{/if}
         </div>
@@ -167,6 +169,7 @@
   }
   .source {
     display: flex;
+    align-items: center;
     gap: var(--space-inline-xs);
     color: var(--color-text-accent);
     font-size: var(--font-size-small);

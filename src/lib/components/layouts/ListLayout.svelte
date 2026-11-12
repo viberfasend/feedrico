@@ -3,6 +3,7 @@
   import { shortDate } from '../../format';
   import { app } from '../../state.svelte';
   import { tokens } from '../../tokens/runtime.svelte';
+  import FeedIcon from '../FeedIcon.svelte';
   import Icon from '../Icon.svelte';
   import VirtualRows from '../VirtualRows.svelte';
 
@@ -29,6 +30,7 @@
       {#if article}
         <div class="meta">
           <span class="dot" aria-hidden="true"></span>
+          <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
           <span class="feed">{article.feedTitle}</span>
           {#if article.isStarred}<span class="star"><Icon name="star" size={12} filled label="Starred" /></span>{/if}
           <time>{shortDate(article.articleDate)}</time>

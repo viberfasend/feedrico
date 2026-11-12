@@ -36,6 +36,7 @@ function row(i: number): ArticleRow {
     isRead: i % 2 === 1,
     isStarred: i === 1,
     leadImage: null,
+    favicon: null,
   };
 }
 
@@ -48,10 +49,10 @@ const sidebar: Sidebar = {
       id: 2,
       name: 'Tech',
       unread: 2,
-      feeds: [{ id: 5, title: 'Rust Blog', siteUrl: 'https://blog.rust-lang.org', unread: 2, lastError: 'HTTP 404', lastSuccessAt: 1_700_000_000 }],
+      feeds: [{ id: 5, title: 'Rust Blog', siteUrl: 'https://blog.rust-lang.org', unread: 2, lastError: 'HTTP 404', lastSuccessAt: 1_700_000_000, favicon: null }],
     },
   ],
-  feeds: [{ id: 7, title: 'Hacker News', siteUrl: 'https://news.yorker.com', unread: 1, lastError: null, lastSuccessAt: null }],
+  feeds: [{ id: 7, title: 'Hacker News', siteUrl: 'https://news.yorker.com', unread: 1, lastError: null, lastSuccessAt: null, favicon: null }],
 };
 
 const mockApi = {
