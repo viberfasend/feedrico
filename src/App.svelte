@@ -173,7 +173,7 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    z-index: 4;
+    z-index: var(--layer-backdrop);
     border: 0;
     background: var(--color-media-scrim);
     opacity: 0.35;
@@ -183,7 +183,7 @@
     position: fixed;
     inset-block: 0;
     inset-inline-end: 0;
-    z-index: 5;
+    z-index: var(--layer-slide-over);
     width: min(var(--slide-over-width), var(--slide-over-max-width));
     box-shadow: var(--shadow-overlay);
     border-inline-start: 1px solid var(--color-border-default);

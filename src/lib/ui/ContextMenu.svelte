@@ -75,6 +75,8 @@
     display: contents;
   }
   .menu {
+    /* bits-ui copies this onto the positioned wrapper. */
+    z-index: var(--layer-popover);
     min-width: var(--menu-min-width);
     padding: var(--menu-padding);
     border: 1px solid var(--color-border-default);
