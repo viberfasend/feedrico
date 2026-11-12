@@ -306,7 +306,7 @@
   }
   .new-pill {
     position: absolute;
-    z-index: 2;
+    z-index: var(--layer-list);
     inset-block-start: calc(var(--space-inset-2xl) * 2.4);
     inset-inline-start: 50%;
     translate: -50% 0;

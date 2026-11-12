@@ -21,6 +21,6 @@
     translate: -50% 0;
     display: grid;
     gap: var(--space-stack-sm);
-    z-index: 10;
+    z-index: var(--layer-toast);
   }
 </style>

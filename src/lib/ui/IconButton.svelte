@@ -66,6 +66,8 @@
     cursor: default;
   }
   .tooltip {
+    /* bits-ui copies this onto the positioned wrapper. */
+    z-index: var(--layer-popover);
     padding: var(--tooltip-padding-block) var(--tooltip-padding-inline);
     border-radius: var(--radius-control);
     background: var(--color-surface-overlay);

@@ -150,5 +150,30 @@
     "listPadding": {
       "$value": "{space.inset.xs}"
     }
+  },
+  "layer": {
+    "$type": "number",
+    "$description": "Stacking order (z-index), lowest first. Overlays must stay above what they cover: menus and tooltips open inside dialogs.",
+    "list": {
+      "$value": 2
+    },
+    "backdrop": {
+      "$value": 4
+    },
+    "slideOver": {
+      "$value": 5
+    },
+    "scrim": {
+      "$value": 20
+    },
+    "dialog": {
+      "$value": 21
+    },
+    "popover": {
+      "$value": 30
+    },
+    "toast": {
+      "$value": 40
+    }
   }
 }

@@ -59,11 +59,12 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 20;
+    z-index: var(--layer-scrim);
     background: color-mix(in srgb, black 40%, transparent);
   }
   .dialog {
     position: fixed;
+    z-index: var(--layer-dialog);
     inset: 0;
     margin: auto;
     width: min(var(--dialog-width), calc(100vw - 2rem));
