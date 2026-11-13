@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata: what Ubuntu's App Center and GNOME Software show for the .deb
+     (name, summary, icon, licence). The version comes from the package itself. -->
+<component type="desktop-application">
+  <id>de.andi1984.feedrico</id>
+  <name>Feedrico</name>
+  <summary>Fast, local-only RSS reader</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="de.andi1984">
+    <name>Feedrico contributors</name>
+  </developer>
+  <description>
+    <p>Feedrico keeps all your feeds, articles and reading state in one portable Library folder. No account, no sync service, no telemetry.</p>
+    <ul>
+      <li>Fast, even with thousands of articles</li>
+      <li>Everything stays on your computer</li>
+      <li>Move your Library between computers by copying one folder</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">Feedrico.desktop</launchable>
+  <icon type="stock">feedrico</icon>
+  <url type="homepage">https://viberfasend.github.io/feedrico/</url>
+  <url type="bugtracker">https://github.com/viberfasend/feedrico/issues</url>
+  <categories>
+    <category>Network</category>
+    <category>News</category>
+  </categories>
+  <provides>
+    <binary>feedrico</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>
