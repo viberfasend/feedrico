@@ -14,6 +14,12 @@ draft, and "Check for updates" in the app only sees published releases.
 | Windows | portable `.exe` (the plain executable) | yes |
 | macOS 11+ | universal `.dmg` (Apple silicon and Intel) | no, see the spec |
 
+Ubuntu's App Center can install the `.deb` but not upgrade it: if any version of `feedrico` is
+installed, it greys out the button ([ubuntu/app-center#2190](https://github.com/ubuntu/app-center/issues/2190)).
+`apt` and `dpkg` upgrade in place, so the release notes tell users to update with
+`sudo apt install ./Feedrico_<version>_amd64.deb`. Keep the package name `feedrico` and the
+version rising, or apt can't upgrade either.
+
 Portable Mode: a `Feedrico Library` folder next to the AppImage or portable `.exe` is opened on
 start; an empty one gets a new Library. See "Finding a Library on startup" in
 [`spec/v1.md`](spec/v1.md).
@@ -50,7 +56,8 @@ Gatekeeper.
 5. When all three builds are attached, check the draft:
    - five files: AppImage, `.deb`, `-setup.exe`, `-portable.exe`, `.dmg`
    - rewrite the generated notes where a subject doesn't make sense to a reader
-   - smoke-test at least the package for your own system, and Portable Mode with an empty
+   - smoke-test at least the package for your own system (for the `.deb`: upgrade over the
+     previous release with `sudo apt install ./…deb`), and Portable Mode with an empty
      `Feedrico Library` folder next to the AppImage or portable `.exe`
 6. Publish the draft.
 
