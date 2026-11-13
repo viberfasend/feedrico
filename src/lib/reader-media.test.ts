@@ -4,6 +4,7 @@ import {
   contentHasPicture,
   enclosureKind,
   enclosureName,
+  formatDuration,
   formatLabel,
   hasContent,
   intendedSize,
@@ -166,5 +167,13 @@ describe('enclosures', () => {
     expect(formatLabel('audio/x-m4a', 'x')).toBe('M4A');
     expect(formatLabel(null, 'https://x.example/a.pdf')).toBe('PDF');
     expect(formatLabel(null, 'https://x.example/a')).toBeNull();
+  });
+
+  it('formats play time as m:ss, and h:mm:ss over an hour', () => {
+    expect(formatDuration(754)).toBe('12:34');
+    expect(formatDuration(3725)).toBe('1:02:05');
+    expect(formatDuration(5)).toBe('0:05');
+    expect(formatDuration(null)).toBeNull();
+    expect(formatDuration(0)).toBeNull();
   });
 });

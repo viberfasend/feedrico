@@ -418,7 +418,7 @@ mod tests {
             inspect(&dir).unwrap(),
             Status::NeedsUpgrade {
                 found: 2,
-                target: 3
+                target: crate::FORMAT_VERSION
             }
         );
 

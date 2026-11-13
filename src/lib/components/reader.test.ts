@@ -200,7 +200,7 @@ describe('Attachments', () => {
   // guard blocks the webview from leaving the app, so clicking an attachment did nothing.
   it('open in the browser when clicked', () => {
     const pane = renderArticle({
-      enclosures: [{ url: 'https://cdn.example/ep88.mp3?utm=rss', mimeType: 'audio/mpeg', length: 58_400_000 }],
+      enclosures: [{ url: 'https://cdn.example/ep88.mp3?utm=rss', mimeType: 'audio/mpeg', length: 58_400_000, durationSecs: null, kind: 'audio', playerUrl: null }],
     });
     const link = pane.querySelector('a[href="https://cdn.example/ep88.mp3?utm=rss"]') as HTMLAnchorElement;
     link.click();
@@ -211,14 +211,44 @@ describe('Attachments', () => {
     const pane = renderArticle({
       leadImage: 'cover',
       enclosures: [
-        { url: 'https://cdn.example/audio/ep%2088.mp3?utm=rss', mimeType: 'audio/mpeg', length: 58_400_000 },
-        { url: 'https://cdn.example/art/88.jpg', mimeType: 'image/jpeg', length: 412_000 },
+        { url: 'https://cdn.example/audio/ep%2088.mp3?utm=rss', mimeType: 'audio/mpeg', length: 58_400_000, durationSecs: null, kind: 'audio', playerUrl: null },
+        { url: 'https://cdn.example/art/88.jpg', mimeType: 'image/jpeg', length: 412_000, durationSecs: null, kind: 'document', playerUrl: null },
       ],
     });
     const items = [...pane.querySelectorAll('[aria-label="Attachments"] li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim());
     expect(items).toHaveLength(1);
     expect(items[0]).toContain('ep 88.mp3');
     expect(items[0]).toContain('Audio · MP3 · 55.7 MB');
+  });
+});
+
+describe('Attachment details from MediaRSS / JSON Feed metadata', () => {
+  // The Archivist (Henrik) wants the episode length at a glance (#76).
+  const items = (pane: HTMLElement) =>
+    [...pane.querySelectorAll('[aria-label="Attachments"] li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim());
+
+  it('show kind, duration, format and size next to the name', () => {
+    const pane = renderArticle({
+      enclosures: [{ url: 'https://pod.example/ep12.mp3', mimeType: 'audio/mpeg', length: 12_000_000, durationSecs: 754, kind: 'audio', playerUrl: null }],
+    });
+    expect(items(pane)[0]).toContain('ep12.mp3');
+    expect(items(pane)[0]).toContain('Audio · MP3 · 12:34 · 11.4 MB');
+  });
+
+  it('format durations over an hour as h:mm:ss', () => {
+    const pane = renderArticle({
+      enclosures: [{ url: 'https://v.example/lecture.mp4', mimeType: 'video/mp4', length: null, durationSecs: 3725, kind: 'video', playerUrl: null }],
+    });
+    expect(items(pane)[0]).toContain('Video · MP4 · 1:02:05');
+  });
+
+  it('open the media:player page when there is no direct media URL', () => {
+    const pane = renderArticle({
+      enclosures: [{ url: 'https://cdn.example/v/xyz', mimeType: null, length: null, durationSecs: null, kind: 'document', playerUrl: 'https://player.example/watch?v=xyz' }],
+    });
+    const link = pane.querySelector('[aria-label="Attachments"] a') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('https://player.example/watch?v=xyz');
+    expect(items(pane)[0]).toContain('Player');
   });
 });
 

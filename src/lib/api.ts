@@ -166,6 +166,12 @@ export interface Enclosure {
   url: string;
   mimeType: string | null;
   length: number | null;
+  /** Play time in seconds (MediaRSS duration / JSON Feed duration_in_seconds). */
+  durationSecs: number | null;
+  /** Readable kind derived from the MediaRSS medium / MIME type / file extension. */
+  kind: 'audio' | 'video' | 'document';
+  /** media:player page; the "open" target when there is no direct media URL. */
+  playerUrl: string | null;
 }
 
 export interface ArticleDetail extends ArticleRow {
