@@ -118,6 +118,24 @@
         "$value": "{palette.paper.100}"
       }
     },
+    "code": {
+      "$description": "Syntax highlighting inside pre blocks (issue #77). Always on color.surface.sunken, the code block background; the token build checks AA in both themes.",
+      "keyword": {
+        "$value": "{palette.dusk.300}"
+      },
+      "string": {
+        "$value": "{palette.moss.300}"
+      },
+      "comment": {
+        "$value": "{palette.paper.300}"
+      },
+      "number": {
+        "$value": "{palette.amber.300}"
+      },
+      "function": {
+        "$value": "{palette.rust.300}"
+      }
+    },
     "feedTile": {
       "$description": "Generated icon tiles for Feeds without a favicon: one background per Feed (by id), text on top.",
       "text": {
