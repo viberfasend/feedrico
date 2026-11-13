@@ -301,3 +301,45 @@ describe('Reader code blocks', () => {
     expect(getComputedStyle(pre.querySelector('code')!).overflowWrap).toBe('normal');
   });
 });
+
+// Math in Articles (issue #78, ADR 0004): the Rust core passes inert MathML through the
+// sanitizer (role "math" is implicit in the webview, the accessible name comes from alttext),
+// and the reader styles it. Raw TeX delimiters stay literal selectable text — no renderer.
+describe('Reader math', () => {
+  it('renders MathML equations with their alttext name and display mode', () => {
+    const content = render(
+      '<p>Energy:</p>' +
+        '<math alttext="E equals m c squared" display="block"><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow></math>' +
+        '<p>Inline <math alttext="a squared plus b squared equals c squared"><mrow><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></mrow></math> stays in flow.</p>',
+    );
+    const block = content.querySelector('math[display="block"]');
+    expect(block).not.toBeNull();
+    // The screen-reader path: alttext is the accessible name of role "math".
+    expect(block!.getAttribute('alttext')).toBe('E equals m c squared');
+    expect(block!.querySelector('msup mn')?.textContent).toBe('2');
+    // Inline math has no display attribute and stays in the text flow.
+    const inline = content.querySelectorAll('math:not([display="block"])');
+    expect(inline.length).toBe(1);
+    expect(inline.item(0).getAttribute('alttext')).toBe('a squared plus b squared equals c squared');
+  });
+
+  it('keeps raw TeX delimiters as literal selectable text', () => {
+    const content = render('<p>Inline $E = mc^2$ and $$x = \\\\frac{1}{2}$$ stay text.</p>');
+    expect(content.querySelector('math')).toBeNull();
+    expect(content.textContent).toContain('$E = mc^2$');
+    expect(content.textContent).toContain('$$x = \\\\frac{1}{2}$$');
+  });
+
+  it('styles math: display math centered as a block, colored with the AA text token', () => {
+    render('<math display="block"><mrow><mi>x</mi></mrow></math>');
+    const css = Array.from(document.querySelectorAll('style'))
+      .map((s) => s.textContent ?? '')
+      .join('\n');
+    // Display math: own block line, centered, scrollable instead of breaking the measure.
+    expect(css).toMatch(/math\[display="block"\]\s*\{[^}]*display:\s*block/s);
+    expect(css).toMatch(/math\[display="block"\]\s*\{[^}]*text-align:\s*center/s);
+    // Math glyphs use the text color token, AA-checked against the reader surface in both
+    // themes, and inherit the reader font size (em), so equations scale with the typography.
+    expect(css).toMatch(/math\s*\{[^}]*color:\s*var\(--color-text-default\)/s);
+  });
+});
