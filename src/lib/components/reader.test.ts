@@ -229,3 +229,75 @@ describe('Title-only Articles', () => {
     expect(pane.querySelector('.end')?.textContent).toContain('Open on blog.example');
   });
 });
+
+// Issue #77: code blocks in the reader keep their language-* class (sanitizer), get highlighted
+// locally by the bundled highlighter (no CDN, no network), and each pre block gets a copy button.
+// Personas: the Archivist (Henrik) reads dev blogs in batches; the accessibility spectrum needs
+// the button keyboard-operable with a visible focus ring and an accessible name.
+describe('Reader code blocks', () => {
+  const RUST_BLOCK =
+    '<p>Intro</p><pre><code class="language-rust">fn main() {\n    greet("hi"); // greet\n}</code></pre>';
+  const RUST_CODE = 'fn main() {\n    greet("hi"); // greet\n}';
+
+  function mockClipboard() {
+    const writeText = vi.fn(async (_text: string) => {});
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    return writeText;
+  }
+
+  it('keeps the language class and highlights the block locally with token spans', () => {
+    const content = render(RUST_BLOCK);
+    const code = content.querySelector('pre code') as HTMLElement;
+    expect(code.className).toBe('language-rust');
+    expect(code.querySelector('.tok-keyword')?.textContent).toBe('fn');
+    const functions = [...code.querySelectorAll('.tok-function')].map((n) => n.textContent);
+    expect(functions).toContain('greet');
+    expect(functions).toContain('main');
+    expect(code.querySelector('.tok-string')?.textContent).toBe('"hi"');
+    expect(code.querySelector('.tok-comment')?.textContent).toBe('// greet');
+    // Highlighting must not change the code text (copy + search rely on it).
+    expect(code.textContent).toBe(RUST_CODE);
+  });
+
+  it('adds a keyboard-operable copy button with an accessible name to each pre block', async () => {
+    const writeText = mockClipboard();
+    const content = render(RUST_BLOCK);
+    const button = content.querySelector('pre button.code-copy') as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.type).toBe('button');
+    expect(button.getAttribute('aria-label')).toBe('Copy rust code block');
+    // Keyboard-operable: focusable via Tab, activated with Enter/Space (native button behavior).
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    button.click();
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    // Copies the code only, never the button label.
+    expect(writeText).toHaveBeenCalledWith(RUST_CODE);
+    await vi.waitFor(() => expect(button.textContent).toBe('Copied'));
+  });
+
+  it('wraps a bare pre in code and still offers a copy button', () => {
+    const content = render('<pre>plain code</pre>');
+    const pre = content.querySelector('pre') as HTMLElement;
+    expect(pre.querySelector('code')?.textContent).toBe('plain code');
+    // No language class: no highlighting, but the boxed block and button are still there.
+    expect(pre.querySelectorAll('[class^="tok-"]').length).toBe(0);
+    const button = pre.querySelector('button.code-copy') as HTMLButtonElement;
+    expect(button.getAttribute('aria-label')).toBe('Copy code block');
+  });
+
+  it('never breaks the reader width: the pre scrolls horizontally instead of wrapping', () => {
+    const content = render(
+      '<pre><code class="language-rust">let x = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";</code></pre>',
+    );
+    const pre = content.querySelector('pre') as HTMLElement;
+    const style = getComputedStyle(pre);
+    expect(style.overflowX).toBe('auto');
+    expect(getComputedStyle(pre.querySelector('code')!).whiteSpace).toBe('pre');
+    expect(getComputedStyle(pre.querySelector('code')!).overflowWrap).toBe('normal');
+  });
+});

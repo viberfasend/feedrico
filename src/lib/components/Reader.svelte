@@ -286,12 +286,68 @@
     font-family: var(--font-family-mono);
     font-size: 0.85em;
   }
+  /* A shaded monospace box. Long lines scroll inside the block (overflow-x) and never break the
+     reader width: wrapping is disabled inside pre, so the block grows its own scrollbar instead. */
   .content :global(pre) {
+    position: relative;
+    max-width: 100%;
     overflow-x: auto;
+    overflow-wrap: normal;
     padding: var(--space-inset-md);
+    /* Room for the copy button in the top-right corner. */
+    padding-inline-end: calc(var(--space-inset-md) + 4.5em);
     border-radius: var(--radius-card);
     background: var(--color-surface-sunken);
     line-height: var(--font-line-height-body);
+  }
+  .content :global(pre code) {
+    display: block;
+    white-space: pre;
+    overflow-wrap: normal;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+  /* Bundled highlighter output (issue #77). Colors are code tokens; the token build enforces
+     WCAG 2.2 AA on the code block background in both themes. */
+  .content :global(.tok-keyword) {
+    color: var(--color-code-keyword);
+  }
+  .content :global(.tok-string) {
+    color: var(--color-code-string);
+  }
+  .content :global(.tok-comment) {
+    color: var(--color-code-comment);
+    font-style: italic;
+  }
+  .content :global(.tok-number) {
+    color: var(--color-code-number);
+  }
+  .content :global(.tok-function) {
+    color: var(--color-code-function);
+  }
+  /* Copy button per pre block: a real <button>, so it is keyboard-operable (Tab, Enter/Space)
+     and gets the global :focus-visible ring. */
+  .content :global(.code-copy) {
+    position: absolute;
+    top: var(--space-inset-xs);
+    right: var(--space-inset-xs);
+    padding: var(--space-inset-xs) var(--space-inset-sm);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-raised);
+    color: var(--color-text-muted);
+    font-family: var(--font-family-ui);
+    font-size: var(--font-size-caption);
+    line-height: 1.2;
+    cursor: pointer;
+  }
+  .content :global(.code-copy:hover) {
+    background: var(--color-surface-hover);
+    color: var(--color-text-default);
+  }
+  .content :global(.code-copy.copied) {
+    color: var(--color-status-success-text);
   }
   .content :global(:not(pre) > code) {
     padding: 0.1em 0.3em;
