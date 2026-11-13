@@ -369,7 +369,8 @@
     overflow-x: auto;
     border-collapse: collapse;
     font-family: var(--font-family-ui);
-    font-size: var(--font-size-body);
+    /* Follow the reader font size setting (set on .content), not the fixed UI body size. */
+    font-size: 1em;
   }
   .content :global(:where(th, td)) {
     padding: var(--space-inset-xs) var(--space-inset-sm);
