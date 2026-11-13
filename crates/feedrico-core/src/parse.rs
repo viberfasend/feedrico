@@ -1,12 +1,14 @@
 //! Parsing fetched feed bytes (RSS, Atom, JSON Feed) into sanitized entries, ready to store.
 //! Runs off the database lock: it's pure CPU work.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
+use lol_html::{RewriteStrSettings, element, rewrite_str};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::sanitize::{self, Sanitized};
+use crate::sanitize::{self, Sanitized, VideoHost, video_identity};
 use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
@@ -32,6 +34,8 @@ pub struct ParsedEntry {
     /// Source URL of the Lead Image (see GLOSSARY.md), if any. Also listed in `images`.
     pub lead_image: Option<String>,
     pub enclosures: Vec<ParsedEnclosure>,
+    /// The video this Article is about or embeds, if any (video Feeds and video embeds).
+    pub video: Option<ParsedVideo>,
 }
 
 /// Readable kind of an enclosure. The MediaRSS `medium` attribute is dropped by feed-rs 3.0,
@@ -75,6 +79,25 @@ pub struct ParsedEnclosure {
     /// Play time in seconds: MediaRSS `media:content duration` / JSON Feed `duration_in_seconds`.
     pub duration_secs: Option<i64>,
     pub kind: EnclosureKind,
+}
+
+/// A video identity plus the metadata the Feed itself carries. Stored as JSON on the Article
+/// (schema V4) and rendered as a card in the reader; never a live player (spec v1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParsedVideo {
+    pub host: VideoHost,
+    pub id: String,
+    /// Seconds, from `media:content/@duration`.
+    #[serde(default)]
+    pub duration: Option<u64>,
+    /// From `media:community/media:statistics/@views` (triage signal for the Archivist).
+    #[serde(default)]
+    pub views: Option<u64>,
+    /// Source URL of the Feed's own thumbnail (`media:thumbnail`); cached like any image and
+    /// the Lead Image of a video Feed's Articles.
+    #[serde(default)]
+    pub thumbnail: Option<String>,
 }
 
 const EXCERPT_CHARS: usize = 220;
@@ -141,6 +164,7 @@ pub fn parse(bytes: &[u8], feed_url: &str, media_prefix: &str) -> Result<ParsedF
             {
                 images.push(thumb.clone());
             }
+            let video = entry_video(&entry, base.as_ref(), &raw_html, thumbnail.as_deref());
             let lead_image = thumbnail.or_else(|| images.first().cloned());
             let content_text = sanitize::plain_text(&html);
 
@@ -201,6 +225,7 @@ pub fn parse(bytes: &[u8], feed_url: &str, media_prefix: &str) -> Result<ParsedF
                 images,
                 lead_image,
                 enclosures,
+                video,
             }
         })
         .collect();
@@ -415,6 +440,65 @@ fn resolve(base: Option<&Url>, href: &str) -> Option<String> {
         None => Url::parse(href.trim()).ok()?,
     };
     matches!(url.scheme(), "http" | "https").then(|| url.to_string())
+}
+
+/// The video of an entry, if any: the `yt:video:` id prefix first, then watch/youtu.be links,
+/// then a video embed iframe in the content. Duration and view count come from `entry.media`.
+fn entry_video(
+    entry: &feed_rs::model::Entry,
+    base: Option<&Url>,
+    raw_html: &str,
+    thumbnail: Option<&str>,
+) -> Option<ParsedVideo> {
+    let (host, id) = sanitize::yt_video_id(&entry.id)
+        .map(|id| (VideoHost::YouTube, id.to_owned()))
+        .or_else(|| {
+            entry.links.iter().find_map(|l| {
+                resolve(base, &l.href)
+                    .and_then(|s| Url::parse(&s).ok())
+                    .and_then(|u| video_identity(&u))
+            })
+        })
+        .or_else(|| first_iframe_video(raw_html, base))?;
+    let duration = entry.media.iter().find_map(|m| {
+        m.duration.map(|d| d.as_secs()).or_else(|| {
+            m.content
+                .iter()
+                .find_map(|c| c.duration.map(|d| d.as_secs()))
+        })
+    });
+    let views = entry
+        .media
+        .iter()
+        .find_map(|m| m.community.as_ref().and_then(|c| c.stats_views));
+    Some(ParsedVideo {
+        host,
+        id,
+        duration,
+        views,
+        thumbnail: thumbnail.map(str::to_owned),
+    })
+}
+
+/// The first video embed iframe in the raw content HTML (pass 1 of the sanitizer replaces it
+/// with a placeholder later).
+fn first_iframe_video(html: &str, base: Option<&Url>) -> Option<(VideoHost, String)> {
+    let found: RefCell<Option<(VideoHost, String)>> = RefCell::new(None);
+    let _ = rewrite_str(
+        html,
+        RewriteStrSettings::new().append_element_content_handler(element!("iframe", |el| {
+            let mut found = found.borrow_mut();
+            if found.is_none()
+                && let Some(src) = el.get_attribute("src")
+            {
+                *found = resolve(base, &src)
+                    .and_then(|s| Url::parse(&s).ok())
+                    .and_then(|u| video_identity(&u));
+            }
+            Ok(())
+        })),
+    );
+    found.into_inner()
 }
 
 /// Feed summaries are often plain text with significant line breaks (see feed-rs docs).
@@ -658,6 +742,135 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn extracts_video_identity_from_youtube_channel_feed() {
+        // The feed-rs YouTube fixture shape (atom_mediarss_youtube_1.xml), plus a duration.
+        let atom = br#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+    <id>yt:channel:UC7_gcs09iThXybpVgjHZ_7g</id>
+    <title>PBS Space Time</title>
+    <updated>2020-12-25T23:12:12+00:00</updated>
+    <entry>
+        <id>yt:video:0A1ouV7iD8o</id>
+        <yt:videoId>0A1ouV7iD8o</yt:videoId>
+        <title>Navigating with Quantum Entanglement</title>
+        <link rel="alternate" href="https://www.youtube.com/watch?v=0A1ouV7iD8o"/>
+        <published>2020-12-22T19:15:01+00:00</published>
+        <updated>2020-12-25T23:12:12+00:00</updated>
+        <media:group>
+            <media:title>Navigating with Quantum Entanglement</media:title>
+            <media:content url="https://www.youtube.com/v/0A1ouV7iD8o?version=3" type="application/x-shockwave-flash" width="640" height="390" duration="754"/>
+            <media:thumbnail url="https://i1.ytimg.com/vi/0A1ouV7iD8o/hqdefault.jpg" width="480" height="360"/>
+            <media:description>Check Out Weathered</media:description>
+            <media:community>
+                <media:starRating count="15020" average="4.95" min="1" max="5"/>
+                <media:statistics views="304321" favorites="42"/>
+            </media:community>
+        </media:group>
+    </entry>
+</feed>"#;
+        let feed = parse(
+            atom,
+            "https://www.youtube.com/feeds/videos.xml?channel_id=UC7_gcs09iThXybpVgjHZ_7g",
+            PREFIX,
+        )
+        .unwrap();
+        let e = &feed.entries[0];
+        let video = e.video.as_ref().expect("a yt: video Feed entry is a video");
+        assert_eq!(video.host, crate::sanitize::VideoHost::YouTube);
+        assert_eq!(video.id, "0A1ouV7iD8o", "the id prefix wins over the link");
+        assert_eq!(video.duration, Some(754), "media:content/@duration");
+        assert_eq!(video.views, Some(304_321), "media:community statistics");
+        assert_eq!(
+            video.thumbnail.as_deref(),
+            Some("https://i1.ytimg.com/vi/0A1ouV7iD8o/hqdefault.jpg")
+        );
+        assert_eq!(
+            e.lead_image.as_deref(),
+            Some("https://i1.ytimg.com/vi/0A1ouV7iD8o/hqdefault.jpg"),
+            "media:thumbnail stays the Lead Image and gets cached"
+        );
+    }
+
+    #[test]
+    fn extracts_video_identity_from_watch_and_short_links() {
+        let rss = br#"<?xml version="1.0"?>
+<rss version="2.0"><channel><title>T</title>
+  <item><title>watch</title><guid>w1</guid>
+    <link>https://www.youtube.com/watch?v=dQw4w9WgXcQ&amp;t=42</link><description>x</description></item>
+  <item><title>short</title><guid>w2</guid>
+    <link>https://youtu.be/dQw4w9WgXcQ</link><description>x</description></item>
+  <item><title>plain</title><guid>w3</guid>
+    <link>https://blog.example/post</link><description>x</description></item>
+</channel></rss>"#;
+        let feed = parse(rss, "https://blog.example/feed", PREFIX).unwrap();
+        let video = |i: usize| {
+            feed.entries[i]
+                .video
+                .as_ref()
+                .map(|v| (v.host, v.id.clone()))
+        };
+        assert_eq!(
+            video(0),
+            Some((
+                crate::sanitize::VideoHost::YouTube,
+                "dQw4w9WgXcQ".to_owned()
+            ))
+        );
+        assert_eq!(
+            video(1),
+            Some((
+                crate::sanitize::VideoHost::YouTube,
+                "dQw4w9WgXcQ".to_owned()
+            ))
+        );
+        assert_eq!(feed.entries[2].video, None);
+    }
+
+    #[test]
+    fn extracts_video_identity_from_embed_iframes_in_content() {
+        let rss = br#"<?xml version="1.0"?>
+<rss version="2.0"><channel><title>T</title>
+  <item><title>yt</title><guid>e1</guid><link>https://blog.example/e1</link>
+    <description><![CDATA[<p>Watch:</p><iframe src="https://www.youtube.com/embed/0A1ouV7iD8o" width="560" height="315"></iframe>]]></description></item>
+  <item><title>vimeo</title><guid>e2</guid><link>https://blog.example/e2</link>
+    <description><![CDATA[<iframe src="https://player.vimeo.com/video/76979871"></iframe>]]></description></item>
+  <item><title>other</title><guid>e3</guid><link>https://blog.example/e3</link>
+    <description><![CDATA[<iframe src="https://widgets.example.com/player"></iframe>]]></description></item>
+</channel></rss>"#;
+        let feed = parse(rss, "https://blog.example/feed", PREFIX).unwrap();
+        let yt = feed.entries[0].video.as_ref().unwrap();
+        assert_eq!(
+            (yt.host, yt.id.as_str()),
+            (crate::sanitize::VideoHost::YouTube, "0A1ouV7iD8o")
+        );
+        assert_eq!(yt.duration, None, "no media: carried on a blog embed");
+        let vimeo = feed.entries[1].video.as_ref().unwrap();
+        assert_eq!(
+            (vimeo.host, vimeo.id.as_str()),
+            (crate::sanitize::VideoHost::Vimeo, "76979871")
+        );
+        assert!(feed.entries[2].video.is_none());
+        // The iframe itself is replaced by a placeholder in the sanitized content.
+        assert!(
+            feed.entries[0].content_html.contains("embed-card"),
+            "{}",
+            feed.entries[0].content_html
+        );
+        assert!(!feed.entries[0].content_html.contains("<iframe"));
+    }
+
+    #[test]
+    fn yt_video_id_prefix_wins_over_a_content_iframe() {
+        let rss = br#"<?xml version="1.0"?>
+<rss version="2.0"><channel><title>T</title>
+  <item><title>both</title><guid>yt:video:AAAAAAAAAAA</guid><link>https://blog.example/both</link>
+    <description><![CDATA[<iframe src="https://www.youtube.com/embed/BBBBBBBBBBB"></iframe>]]></description></item>
+</channel></rss>"#;
+        let feed = parse(rss, "https://blog.example/feed", PREFIX).unwrap();
+        assert_eq!(feed.entries[0].video.as_ref().unwrap().id, "AAAAAAAAAAA");
     }
 }
 

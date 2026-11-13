@@ -1,7 +1,9 @@
 //! Turning untrusted feed HTML into something safe to render (spec: "Content safety and
 //! privacy").
 //!
-//! - iframes, embeds and videos become link cards ("Embedded content on youtube.com").
+//! - iframes, embeds and videos become link cards ("Embedded content on youtube.com"); known
+//!   video embeds (YouTube, Vimeo) become rich card placeholders carrying the video id, host
+//!   and original src in inert data attributes (the reader renders the card from them).
 //! - Everything executable or layout-breaking is removed by ammonia's allow-list.
 //! - Relative URLs are resolved against the Article's URL.
 //! - Image sources are rewritten to the local media cache, so rendering an Article never makes
@@ -12,12 +14,102 @@ use std::collections::HashSet;
 
 use lol_html::html_content::ContentType;
 use lol_html::{RewriteStrSettings, element, rewrite_str};
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 pub struct Sanitized {
     pub html: String,
     /// Absolute image URLs referenced by the content, in order of appearance.
     pub images: Vec<String>,
+}
+
+/// The platform a video points at. Serialized lowercase; that string is what the Library's
+/// `article.video` JSON and the card's `data-video-host` carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VideoHost {
+    YouTube,
+    Vimeo,
+}
+
+impl VideoHost {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            VideoHost::YouTube => "youtube",
+            VideoHost::Vimeo => "vimeo",
+        }
+    }
+
+    /// Host name for the card's label, e.g. "Video on youtube.com".
+    pub fn label(self) -> &'static str {
+        match self {
+            VideoHost::YouTube => "youtube.com",
+            VideoHost::Vimeo => "vimeo.com",
+        }
+    }
+}
+
+/// Classifies a URL as a video page or embed: YouTube (`watch?v=`, `youtu.be/ID`, `/embed/ID`
+/// on youtube.com and youtube-nocookie.com) and Vimeo (`vimeo.com/ID`,
+/// `player.vimeo.com/video/ID`). Returns the platform and the video id.
+pub fn video_identity(url: &Url) -> Option<(VideoHost, String)> {
+    let host = url
+        .host_str()?
+        .trim_start_matches("www.")
+        .to_ascii_lowercase();
+    let path = url.path();
+    match host.as_str() {
+        "youtube.com" | "m.youtube.com" | "music.youtube.com" | "youtube-nocookie.com" => {
+            if let Some(rest) = path.strip_prefix("/embed/") {
+                let id = rest.split('/').next().unwrap_or_default();
+                valid_youtube_id(id).then(|| (VideoHost::YouTube, id.to_owned()))
+            } else if path == "/watch" {
+                url.query_pairs()
+                    .find(|(k, _)| k == "v")
+                    .map(|(_, v)| v.into_owned())
+                    .filter(|id| valid_youtube_id(id))
+                    .map(|id| (VideoHost::YouTube, id))
+            } else {
+                None
+            }
+        }
+        "youtu.be" => path
+            .strip_prefix('/')
+            .and_then(|rest| rest.split('/').next())
+            .filter(|id| valid_youtube_id(id))
+            .map(|id| (VideoHost::YouTube, id.to_owned())),
+        "vimeo.com" => path
+            .strip_prefix('/')
+            .and_then(|rest| rest.split('/').next())
+            .filter(|id| valid_vimeo_id(id))
+            .map(|id| (VideoHost::Vimeo, id.to_owned())),
+        "player.vimeo.com" => path
+            .strip_prefix("/video/")
+            .and_then(|rest| rest.split('/').next())
+            .filter(|id| valid_vimeo_id(id))
+            .map(|id| (VideoHost::Vimeo, id.to_owned())),
+        _ => None,
+    }
+}
+
+/// The video id of a `yt:video:ID` entry id, if well-formed (YouTube channel Feeds).
+pub fn yt_video_id(entry_id: &str) -> Option<&str> {
+    entry_id
+        .strip_prefix("yt:video:")
+        .filter(|id| valid_youtube_id(id))
+}
+
+/// YouTube video ids are exactly 11 chars of [A-Za-z0-9_-].
+fn valid_youtube_id(id: &str) -> bool {
+    id.len() == 11
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Vimeo ids are numeric.
+fn valid_vimeo_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 20 && id.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Name of a cached media file: a hash of the source URL, so the reader can reference an image
@@ -85,6 +177,19 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
     let embed_card = |src: Option<String>| -> String {
         match src.as_deref().and_then(resolve) {
             Some(url) => {
+                // A known video embed becomes a rich card placeholder: the video id, host and
+                // original src ride in inert data attributes for the reader's card; the link
+                // inside is the no-JS fallback and never loads anything. No live iframe (spec).
+                if let Some((host, id)) = video_identity(&url) {
+                    return format!(
+                        r#"<p class="embed-card" data-video-host="{}" data-video-id="{}" data-video-src="{}"><a href="{}">Video on {}: open in browser</a></p>"#,
+                        host.as_str(),
+                        escape_attr(&id),
+                        escape_attr(url.as_str()),
+                        escape_attr(url.as_str()),
+                        escape_text(host.label()),
+                    );
+                }
                 let host = url
                     .host_str()
                     .unwrap_or("the web")
@@ -140,7 +245,7 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
     builder
         .add_url_schemes(["media"])
         .link_rel(Some("noopener noreferrer"))
-        .add_allowed_classes("p", ["embed-link"])
+        .add_allowed_classes("p", ["embed-link", "embed-card"])
         .rm_tags(["picture", "source"])
         .add_tag_attributes("img", ["alt", "title", "data-remote"])
         // Code blocks keep their GFM language class (issue #77, miniflux/v2#4587) so the reader
@@ -166,7 +271,9 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
         // everywhere else. Only plain-text attributes survive: alttext (the accessible name screen
         // readers voice for role "math") and display (block vs inline) on math itself.
         .add_tags(MATHML_TAGS)
-        .add_tag_attributes("math", ["alttext", "display"]);
+        .add_tag_attributes("math", ["alttext", "display"])
+        // Video embed cards (issue #75) carry their identity in data-* attributes on the card.
+        .add_tag_attributes("p", ["data-video-host", "data-video-id", "data-video-src"]);
     if let Some(base) = base {
         builder.url_relative(ammonia::UrlRelative::RewriteWithBase(base.clone()));
     }
@@ -300,11 +407,88 @@ mod tests {
 
     #[test]
     fn iframes_become_link_cards() {
+        // "abc" is not a well-formed video id, so this stays the generic card.
         let out = clean(r#"<iframe src="https://www.youtube.com/embed/abc"></iframe>"#);
         assert!(out.html.contains(r#"class="embed-link""#), "{}", out.html);
         assert!(out.html.contains("Embedded content on youtube.com"));
         assert!(out.html.contains("https://www.youtube.com/embed/abc"));
         assert!(!out.html.contains("<iframe"));
+    }
+
+    #[test]
+    fn video_iframes_become_rich_card_placeholders() {
+        let out = clean(
+            r#"<iframe src="https://www.youtube.com/embed/0A1ouV7iD8o?rel=0" width="560"></iframe>"#,
+        );
+        assert!(!out.html.contains("<iframe"), "{}", out.html);
+        assert!(out.html.contains(r#"class="embed-card""#), "{}", out.html);
+        assert!(
+            out.html.contains(r#"data-video-host="youtube""#),
+            "{}",
+            out.html
+        );
+        assert!(
+            out.html.contains(r#"data-video-id="0A1ouV7iD8o""#),
+            "{}",
+            out.html
+        );
+        assert!(
+            out.html
+                .contains(r#"data-video-src="https://www.youtube.com/embed/0A1ouV7iD8o?rel=0""#),
+            "{}",
+            out.html
+        );
+        assert!(
+            out.html.contains("Video on youtube.com: open in browser"),
+            "{}",
+            out.html
+        );
+        assert!(
+            out.html
+                .contains(r#"href="https://www.youtube.com/embed/0A1ouV7iD8o?rel=0""#),
+            "{}",
+            out.html
+        );
+        // No remote load: no attribute a webview would fetch points off-box. The original URL
+        // rides in the inert data-video-src and in the link, which only opens on click.
+        assert!(!out.html.contains(r#" src="http"#), "{}", out.html);
+    }
+
+    #[test]
+    fn nocookie_and_vimeo_embeds_become_video_cards() {
+        let out = clean(
+            r#"<iframe src="https://www.youtube-nocookie.com/embed/0A1ouV7iD8o"></iframe>
+               <iframe src="https://player.vimeo.com/video/76979871?h=8272103f6e"></iframe>"#,
+        );
+        assert!(
+            out.html.contains(r#"data-video-host="youtube""#),
+            "{}",
+            out.html
+        );
+        assert!(
+            out.html.contains(r#"data-video-host="vimeo""#),
+            "{}",
+            out.html
+        );
+        assert!(
+            out.html.contains(r#"data-video-id="76979871""#),
+            "{}",
+            out.html
+        );
+        assert!(
+            out.html.contains("Video on vimeo.com: open in browser"),
+            "{}",
+            out.html
+        );
+        assert!(!out.html.contains("<iframe"), "{}", out.html);
+    }
+
+    #[test]
+    fn non_video_iframes_stay_generic_link_cards() {
+        let out = clean(r#"<iframe src="https://widgets.example.com/player/1"></iframe>"#);
+        assert!(out.html.contains(r#"class="embed-link""#), "{}", out.html);
+        assert!(!out.html.contains("embed-card"), "{}", out.html);
+        assert!(out.html.contains("Embedded content on widgets.example.com"));
     }
 
     #[test]
