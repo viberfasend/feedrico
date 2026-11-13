@@ -106,9 +106,14 @@ jobs:
             }
             if (files.length === 0) checklist.push('- [ ] Empty diff: nothing to review.');
 
-            // Risky added lines, from the file patches. dbg!/println!/.unwrap()/.expect() in
-            // added Rust, console.log/@ts-ignore in added TS, TODO/FIXME anywhere.
+            // Risky added lines, from the file patches. dbg!/println! in added Rust,
+            // console.log/@ts-ignore in added TS, TODO/FIXME in added code. Comment lines
+            // are skipped (the patterns themselves live in comments here). .unwrap()/
+            // .expect() are only flagged in production Rust: this repo keeps tests in
+            // #[cfg(test)] modules at the end of each file, so anything after the last
+            // #[cfg(test)] marker is test code, where unwrap is idiomatic.
             const risky = [];
+            const unwraps = [];
             for (const f of files) {
               if (!f.patch) continue;
               const isRust = /\.rs$/.test(f.filename);
@@ -121,15 +126,35 @@ jobs:
                 if (!inHunk) continue;
                 if (raw.startsWith('+') && !raw.startsWith('+++')) {
                   const code = raw.slice(1);
+                  const trimmed = code.trimStart();
+                  if (trimmed.startsWith('//') || trimmed.startsWith('#')) { lineNo++; continue; }
                   const hit = (re) => re.test(code);
-                  if ((isRust && hit(/\bdbg!|\bprintln!|\.unwrap\(|\.expect\(/)) || (isTs && hit(/\bconsole\.log|@ts-ignore/)) || hit(/TODO|FIXME/)) {
+                  if ((isRust && hit(/\bdbg!|\bprintln!/)) || (isTs && hit(/\bconsole\.log|@ts-ignore/)) || ((isRust || isTs) && hit(/TODO|FIXME/))) {
                     risky.push(f.filename + ':' + lineNo + ' `' + code.trim().slice(0, 100) + '`');
+                  } else if (isRust && hit(/\.unwrap\(|\.expect\(/)) {
+                    unwraps.push({ filename: f.filename, lineNo, code: code.trim().slice(0, 100) });
                   }
                   lineNo++;
                 } else if (!raw.startsWith('-')) {
                   lineNo++;
                 }
               }
+            }
+            const testStartAt = {};
+            for (const u of unwraps) {
+              if (!(u.filename in testStartAt)) {
+                // Integration tests live in tests/ and are test code throughout.
+                let start = /(^|\/)tests\//.test(u.filename) ? 0 : Infinity;
+                if (start !== 0) {
+                  try {
+                    const c = await github.rest.repos.getContent({ owner, repo, path: u.filename, ref: pr.head.sha });
+                    const text = Buffer.from(c.data.content, 'base64').toString('utf8');
+                    text.split('\n').forEach((l, i) => { if (l.includes('#[cfg(test)]')) start = i + 1; });
+                  } catch (e) { core.warning('could not fetch ' + u.filename + ' to locate test code: ' + e.message); }
+                }
+                testStartAt[u.filename] = start;
+              }
+              if (u.lineNo < testStartAt[u.filename]) risky.push(u.filename + ':' + u.lineNo + ' `' + u.code + '`');
             }
 
             // Render ONE comment (updated in place on every push).
