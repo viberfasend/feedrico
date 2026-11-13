@@ -3,10 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-0oIViIhCcAbc7Dfb3E8qfgQmRtP2mzlaSCrXsQ1Lnrk=' font-src 'self'; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
-<title>Feedrico: a calm reader for the Feeds you follow</title>
-<meta name="description" content="Feedrico is a desktop feed reader for Linux, Windows and macOS. No algorithm, no account, nothing phones home: everything you read stays in one Library folder on your machine.">
+<title>Feedrico: a calm RSS reader for the Feeds you follow</title>
+<meta name="description" content="A free, local-first RSS reader for Linux, Windows and macOS. No algorithm, no account, no tracking — read offline; everything stays in one folder on your machine.">
+<meta name="keywords" content="RSS reader, feed reader, desktop RSS reader, best RSS reader, offline RSS reader, private RSS reader, local-first RSS reader, RSS reader no account, free open source RSS reader, RSS reader Linux Windows macOS, feed reader no algorithm">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <link rel="canonical" href="https://viberfasend.github.io/feedrico/">
 
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -18,14 +20,86 @@
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Feedrico">
-<meta property="og:title" content="Feedrico: a calm reader for the Feeds you follow">
-<meta property="og:description" content="No algorithm, no account, nothing phones home. Everything stays in one Library folder on your machine.">
+<meta property="og:title" content="Feedrico: a calm RSS reader for the Feeds you follow">
+<meta property="og:description" content="A free, local-first RSS reader for desktop. No algorithm, no account, nothing phones home.">
 <meta property="og:url" content="https://viberfasend.github.io/feedrico/">
 <meta property="og:image" content="https://viberfasend.github.io/feedrico/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Feedrico: a calm reader for the Feeds you follow.">
+<meta property="og:image:alt" content="Feedrico: a calm RSS reader for the Feeds you follow.">
 <meta name="twitter:card" content="summary_large_image">
+
+<!-- Structured data for search engines. The CSP allows exactly this block via its sha256 hash;
+     if the JSON below changes, recompute: node -e "…crypto.createHash('sha256')…" over the script's text. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://viberfasend.github.io/feedrico/#website",
+      "url": "https://viberfasend.github.io/feedrico/",
+      "name": "Feedrico",
+      "description": "A calm RSS reader for the Feeds you follow. Free, local-first and private.",
+      "inLanguage": "en",
+      "publisher": { "@type": "Organization", "name": "Feedrico", "url": "https://github.com/viberfasend/feedrico" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://viberfasend.github.io/feedrico/#app",
+      "name": "Feedrico",
+      "description": "A calm, local-first RSS reader for Linux, Windows and macOS. No algorithm, no account, no telemetry: reads offline and keeps everything in one portable Library folder on your machine.",
+      "operatingSystem": "Linux, Windows, macOS",
+      "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "featureList": [
+        "Chronological feed, no algorithm",
+        "No account, no sync, no telemetry",
+        "Offline reading with cached images",
+        "Portable Library folder on a USB stick",
+        "Four layouts: List, Cards, Magazine, Gallery",
+        "Full keyboard control"
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://viberfasend.github.io/feedrico/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is an RSS reader?",
+          "acceptedAnswer": { "@type": "Answer", "text": "An RSS reader — also called a feed reader — follows the websites, blogs and newsletters you choose and shows their new articles in one list. You pick the sources; no algorithm decides what you see." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Feedrico work offline?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Images are saved when Feeds refresh, and opening an Article makes no network request, so everything you have fetched is readable on a train or a plane." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Feedrico have an account or sync?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. There is no account, no sign-up and no sync service. Everything lives in one Library folder on your machine; copy it to a USB stick to take your reading to another computer." }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I import my Feeds from another reader?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Import the OPML file your current reader exports, or paste the address of a website you like — Feedrico finds its Feed." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Feedrico free? Is it open source?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes and yes. When version 1 is released it will be a free download for Linux, Windows and macOS — no subscription, no paid tier — and the source is public under the GPL-3.0." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Feedrico track me?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No telemetry, no analytics, no crash reporting. Feedrico talks only to the Feeds you follow when they refresh, and to GitHub if you click Check for updates." }
+        }
+      ]
+    }
+  ]
+}
+</script>
 
 <link rel="preload" href="fonts/literata-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="css/tokens/base.css">
@@ -51,7 +125,7 @@
         <li><a href="#window">The window</a></li>
         <li><a href="#library">The Library</a></li>
         <li><a href="#privacy">Privacy</a></li>
-        <li><a href="#who">Who it’s for</a></li>
+        <li><a href="#faq">FAQ</a></li>
         <li><a class="masthead__get" href="#get">Get Feedrico</a></li>
       </ul>
     </nav>
@@ -64,7 +138,7 @@
   <div class="wrap hero__inner">
     <div class="hero__text">
       <h1 id="hero-title" tabindex="-1">A calm reader for the Feeds you follow.</h1>
-      <p class="hero__lede">A desktop app for Linux, Windows and macOS that reads the sites you choose, in the order they publish. No algorithm in the way, no account, nothing phoning home. Everything you read stays in one Library folder on your machine.</p>
+      <p class="hero__lede">Feedrico is a desktop RSS reader for Linux, Windows and macOS. It shows the new Articles from the sites you choose in one chronological list — no algorithm in the way, no account, nothing phoning home. Everything stays in one Library folder on your machine.</p>
       <p class="hero__actions">
         <a class="button button--primary" href="#window">See what reading looks like</a>
         <a class="button" href="https://github.com/viberfasend/feedrico">Follow on GitHub</a>
@@ -76,22 +150,22 @@
       <svg class="sky__svg" viewBox="0 -110 640 530" aria-hidden="true" focusable="false">
         <defs>
           <radialGradient id="halo">
-            <stop offset="0" stop-color="var(--color-accent-default)" stop-opacity="0.55"/>
-            <stop offset="0.35" stop-color="var(--color-accent-default)" stop-opacity="0.18"/>
+            <stop offset="0" stop-color="var(--color-accent-default)" stop-opacity="0.5"/>
+            <stop offset="0.45" stop-color="var(--color-accent-default)" stop-opacity="0.14"/>
             <stop offset="1" stop-color="var(--color-accent-default)" stop-opacity="0"/>
           </radialGradient>
         </defs>
-        <!-- The sun's path through the day, drawn as one strand of silk: thick in the middle,
-             needle-thin at the ends, a loose end curling off to the right. -->
-        <path class="sky__path" d="M40 420C100 -240 540 -240 600 420C540 -231 100 -231 40 420Z"/>
+        <!-- The sun's path through the day: one hairline of silk across the sky,
+             a loose end curling off to the right, dew hanging below the line. -->
+        <path class="sky__path" d="M40 420C100 -240 540 -240 600 420"/>
         <path class="sky__loose" d="M600 420c10-18 26-24 34-14"/>
-        <circle class="sky__dew" cx="115.5" cy="109.8" r="3"/>
-        <circle class="sky__dew" cx="394.2" cy="-48.6" r="2.2"/>
-        <circle class="sky__dew" cx="450.6" cy="-4" r="3.4"/>
+        <circle class="sky__dew" cx="115.5" cy="113.8" r="3"/>
+        <circle class="sky__dew" cx="394.2" cy="-44.6" r="2.2"/>
+        <circle class="sky__dew" cx="450.6" cy="0" r="3.4"/>
         <g class="sky__sun" data-sun transform="translate(513.3 80.2)">
-          <circle class="sky__halo" r="150" fill="url(#halo)"/>
-          <circle class="sky__drop" r="17"/>
-          <text class="sky__time" data-sun-time x="26" y="-26" text-anchor="start">17:30</text>
+          <circle class="sky__halo" r="170" fill="url(#halo)"/>
+          <circle class="sky__drop" r="20"/>
+          <text class="sky__time" data-sun-time x="28" y="-28" text-anchor="start">17:30</text>
         </g>
       </svg>
     </figure>
@@ -124,11 +198,7 @@
     <ul class="claims">
       <li>
         <h3>Your order, not an algorithm’s</h3>
-        <p>Articles arrive in the order the Feeds publish them. Nothing is ranked, recommended or hidden, and there are no streaks or badges pulling at your attention.</p>
-      </li>
-      <li>
-        <h3>No account, because there’s no server</h3>
-        <p>There is nothing to sign up for and nothing to log into. Your reading is not a profile on somebody else’s machine.</p>
+        <p>Articles arrive in one chronological list, in the order the Feeds publish them. Nothing is ranked, recommended or hidden, and there are no streaks or badges pulling at your attention.</p>
       </li>
       <li>
         <h3>Reads offline</h3>
@@ -137,6 +207,18 @@
       <li>
         <h3>Fast at any size</h3>
         <p>Twenty Feeds or two thousand: the list scrolls at full speed, and search covers every Article in your Library.</p>
+      </li>
+      <li>
+        <h3>No account, because there’s no server</h3>
+        <p>There is nothing to sign up for and nothing to log into. Your reading is not a profile on somebody else’s machine.</p>
+      </li>
+      <li>
+        <h3>Private by design</h3>
+        <p>Reading makes no network request, so no one learns what you read. Here is <a href="#privacy">everyone Feedrico talks to</a>.</p>
+      </li>
+      <li>
+        <h3>Free, no subscription</h3>
+        <p>When version 1 ships it will be a free download — no paid tier, no ads. The source is public under the <span class="nowrap">GPL-3.0</span>, so the promise is checkable.</p>
       </li>
     </ul>
   </div>
@@ -325,24 +407,16 @@
   </div>
 </section>
 
-<section class="chapter chapter--folder" id="folder" data-section aria-labelledby="folder-title">
+<section class="chapter chapter--local" id="local" data-section aria-labelledby="local-title">
   <div class="wrap">
     <div class="prose-grid">
       <div class="prose">
-        <h2 id="folder-title" tabindex="-1">One folder, plain files.</h2>
-        <p>Everything Feedrico saves is in that one folder, as ordinary files you can see, copy and back up with any file manager. Nothing hides in a system directory, and no absolute paths are stored inside, so the same folder opens the same on Linux, Windows and macOS — and on FAT32 or exFAT sticks.</p>
+        <h2 id="local-title" tabindex="-1">Your data stays on your machine.</h2>
+        <p>Everything Feedrico saves — your Feeds, Articles, what you’ve Read and Starred, the images, your settings — lives in one folder on your computer. Nothing is uploaded anywhere, and there is no account to sign into. It’s your reading, on your disk: copy it, back it up, take it with you.</p>
       </div>
-    </div>
-
-    <div class="folder">
-      <div>
-        <h3>Travels with the Library</h3>
-        <p>Feeds, Folders, Articles, Read and Starred state, saved images — and your settings: theme, text size, refresh interval, how long old Articles are kept.</p>
-      </div>
-      <div>
-        <h3>Stays on each machine</h3>
-        <p>Window size and position, the Libraries you opened recently, and whether Feedrico starts with your computer.</p>
-      </div>
+      <aside class="margin" aria-label="Note">
+        <p class="note">Any backup tool or USB stick works — there is no export step and nothing hidden in a system directory.</p>
+      </aside>
     </div>
   </div>
 </section>
@@ -414,6 +488,44 @@
       <div class="who__entry">
         <dt>“If it makes a request I didn’t ask for, I’ll notice.”</dt>
         <dd>Good. Here is <a href="#privacy">everyone Feedrico talks to</a>.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<section class="chapter chapter--faq" id="faq" data-section aria-labelledby="faq-title">
+  <div class="wrap">
+    <div class="prose-grid">
+      <div class="prose">
+        <h2 id="faq-title" tabindex="-1">Questions people ask.</h2>
+        <p>Short answers, no fine print.</p>
+      </div>
+    </div>
+
+    <dl class="faq">
+      <div>
+        <dt>What is an RSS reader?</dt>
+        <dd>An RSS reader — also called a feed reader — follows the websites, blogs and newsletters you choose and shows their new articles in one list. You pick the sources; no algorithm decides what you see.</dd>
+      </div>
+      <div>
+        <dt>Does Feedrico work offline?</dt>
+        <dd>Yes. Images are saved when Feeds refresh, and opening an Article makes no network request, so everything you’ve fetched is readable on a train or a plane.</dd>
+      </div>
+      <div>
+        <dt>Does Feedrico have an account or sync?</dt>
+        <dd>No. There is no account, no sign-up and no sync service. Everything lives in one Library folder on your machine; copy it to a USB stick to take your reading to another computer.</dd>
+      </div>
+      <div>
+        <dt>Can I import my Feeds from another reader?</dt>
+        <dd>Yes. Import the OPML file your current reader exports, or paste the address of a website you like — Feedrico finds its Feed.</dd>
+      </div>
+      <div>
+        <dt>Is Feedrico free? Is it open source?</dt>
+        <dd>Yes and yes. When version 1 is released it will be a free download for Linux, Windows and macOS — no subscription, no paid tier — and the source is public under the <span class="nowrap">GPL-3.0</span>.</dd>
+      </div>
+      <div>
+        <dt>Does Feedrico track me?</dt>
+        <dd>No telemetry, no analytics, no crash reporting. Feedrico talks only to the Feeds you follow when they refresh, and to GitHub if you click <i>Check for updates</i>. This page counts its own requests at the bottom, and you can check.</dd>
       </div>
     </dl>
   </div>

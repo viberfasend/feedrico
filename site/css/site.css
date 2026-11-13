@@ -348,13 +348,16 @@ kbd {
   overflow: visible;
 }
 .sky__path {
-  fill: var(--color-motif-gossamer);
+  fill: none;
+  stroke: var(--color-motif-gossamer);
+  stroke-width: 1.2;
+  stroke-linecap: round;
   animation: drift 28s var(--motion-easing-standard) infinite alternate;
 }
 .sky__loose {
   fill: none;
   stroke: var(--color-motif-gossamer);
-  stroke-width: 0.9;
+  stroke-width: 1.2;
   stroke-linecap: round;
 }
 .sky__dew {
@@ -1362,30 +1365,25 @@ html:not(.js) .sky__time {
   }
 }
 
-/* --- One folder, plain files ------------------------------------------------------------------- */
+/* --- Questions people ask ---------------------------------------------------------------------- */
 
-.folder {
+.faq {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2.5rem 5rem;
-  max-width: 60rem;
-  margin-top: clamp(2.5rem, 5vw, 4rem);
+  gap: 2rem 4rem;
+  max-width: 54rem;
+  margin: clamp(2.5rem, 5vw, 3.5rem) 0 0;
 }
-.folder h3 {
+.faq dt {
   margin-bottom: 0.5rem;
-  font-size: 1.375rem;
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.3;
 }
-.folder p {
+.faq dd {
   margin: 0;
   color: var(--color-text-muted);
   font-size: 1.0625rem;
   line-height: 1.6;
-}
-
-@media (max-width: 48rem) {
-  .folder {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 /* --- Who Feedrico talks to ------------------------------------------------------------------- */
