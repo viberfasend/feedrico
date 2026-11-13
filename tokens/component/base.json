@@ -187,6 +187,10 @@
   "layer": {
     "$type": "number",
     "$description": "Stacking order (z-index), lowest first. Overlays must stay above what they cover: menus and tooltips open inside dialogs.",
+    "sticky": {
+      "$description": "Sticky bars inside a pane, above the pane's own scrolling content (reader toolbar).",
+      "$value": 1
+    },
     "list": {
       "$value": 2
     },
@@ -201,6 +205,9 @@
     },
     "dialog": {
       "$value": 21
+    },
+    "viewer": {
+      "$value": 25
     },
     "popover": {
       "$value": 30
