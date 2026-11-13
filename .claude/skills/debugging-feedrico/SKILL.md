@@ -59,9 +59,14 @@ see layout. So **look at every visible UI change before calling it done**:
    Paste the file's text (e.g. `await import(URL.createObjectURL(new Blob([src], { type:
    'text/javascript' })))`); don't `import('/.claude/…')` from the dev server: Vite ignores
    `.claude/` and keeps serving the first copy it saw, so your edits silently don't apply.
+   For the reader, use [`mock-reader.js`](mock-reader.js) instead: eleven real-world Articles
+   (emoji and tracking-pixel images, photo sets, comics, summary-only, podcasts, offline images,
+   embeds, title-only). Open each one and check it.
 3. Screenshot every Layout (List, Cards, Magazine, Gallery) and both themes. Resize down to the
    window's `minWidth` (880 px, `tauri.conf.json`): fixed-width panes (sidebar 260 px, list
-   column) are where controls overflow.
+   column) are where controls overflow. If the browser window won't resize (tiling window manager),
+   constrain the app root instead: `Object.assign(document.getElementById('app').style,
+   { width: '880px', height: '640px' })` (works for the panes, not for fixed overlays).
 
 Chrome is not WebKitGTK. If the mock looks right but the app doesn't, suspect an engine
 difference (see "Known traps") or dev-server state (next section).
