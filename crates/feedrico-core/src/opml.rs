@@ -191,6 +191,26 @@ mod tests {
     }
 
     #[test]
+    fn title_falls_back_to_text_and_a_blank_xmlurl_makes_a_folder() {
+        let xml = r#"<?xml version="1.0"?><opml version="2.0"><body>
+            <outline text="FromText" xmlUrl="https://a.example/f"/>
+            <outline title="FromTitle" text="T" xmlUrl="https://b.example/f"/>
+            <outline text="Folder" xmlUrl="  ">
+              <outline text="Inner" xmlUrl="https://c.example/f"/>
+            </outline>
+        </body></opml>"#;
+        let feeds = parse(xml).unwrap();
+        assert_eq!(feeds[0].title, "FromText", "text is the fallback title");
+        assert_eq!(feeds[1].title, "FromTitle", "title wins over text");
+        assert_eq!(feeds[2].url, "https://c.example/f");
+        assert_eq!(
+            feeds[2].folder.as_deref(),
+            Some("Folder"),
+            "a blank xmlUrl is a Folder, not a Feed"
+        );
+    }
+
+    #[test]
     fn rejects_non_opml() {
         assert!(parse("<rss><channel/></rss>").is_err());
         assert!(parse("not xml at all <<<").is_err());
