@@ -2,7 +2,7 @@
   // Enclosures as calm, readable cards: what it is, how big, where it opens. Nothing plays or
   // downloads inline: opening one is an explicit click that hands it to the system.
   import { fileSize, hostOf } from '../../format';
-  import { enclosureKind, enclosureName, formatLabel, type EnclosureKind } from '../../reader-media';
+  import { enclosureName, formatDuration, formatLabel, type EnclosureKind } from '../../reader-media';
   import type { Enclosure } from '../../api';
   import Icon from '../Icon.svelte';
 
@@ -11,13 +11,17 @@
   const KIND_LABEL: Record<EnclosureKind, string> = { audio: 'Audio', video: 'Video', image: 'Image', file: 'File' };
   const items = $derived(
     enclosures.map((e) => {
-      const kind = enclosureKind(e.mimeType, e.url);
+      // The core derives the kind from the MediaRSS medium / MIME type / extension (#76); a
+      // media:player page is the "open" target when there is no direct media URL.
+      const kind: EnclosureKind = e.kind === 'audio' || e.kind === 'video' ? e.kind : 'file';
+      const href = e.playerUrl ?? e.url;
+      const label = e.playerUrl ? 'Player' : KIND_LABEL[kind];
       return {
-        url: e.url,
+        url: href,
         kind,
-        name: enclosureName(e.url),
-        details: [KIND_LABEL[kind], formatLabel(e.mimeType, e.url), fileSize(e.length)].filter(Boolean).join(' · '),
-        host: hostOf(e.url),
+        name: enclosureName(href),
+        details: [label, formatLabel(e.mimeType, href), formatDuration(e.durationSecs), fileSize(e.length)].filter(Boolean).join(' · '),
+        host: hostOf(href),
       };
     }),
   );

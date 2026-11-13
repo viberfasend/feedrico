@@ -157,3 +157,13 @@ export function formatLabel(mimeType: string | null, url: string): string | null
   const ext = /\.([a-z0-9]{2,4})(?:$|[?#])/i.exec(url)?.[1];
   return ext ? ext.toUpperCase() : null;
 }
+
+/** Play time from MediaRSS duration / JSON Feed duration_in_seconds: 754 → "12:34", 3725 → "1:02:05". */
+export function formatDuration(secs: number | null): string | null {
+  if (!secs || secs <= 0) return null;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}

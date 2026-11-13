@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::parse::ParsedEntry;
+use crate::parse::{EnclosureKind, ParsedEntry};
 use crate::{Error, Library, Result};
 
 /// Anything before this is treated as a missing or bogus date (1995-01-01).
@@ -77,8 +77,17 @@ pub(crate) fn upsert(
             let id = conn.last_insert_rowid();
             for enc in &e.enclosures {
                 conn.execute(
-                    "INSERT INTO enclosure (article_id, url, mime_type, length) VALUES (?1, ?2, ?3, ?4)",
-                    params![id, enc.url, enc.mime_type, enc.length],
+                    "INSERT INTO enclosure (article_id, url, mime_type, length, duration_secs, kind, player_url)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        id,
+                        enc.url,
+                        enc.mime_type,
+                        enc.length,
+                        enc.duration_secs,
+                        enc.kind.as_str(),
+                        enc.player_url
+                    ],
                 )?;
             }
             for url in &e.images {
@@ -179,12 +188,17 @@ pub struct ArticleDetail {
     pub enclosures: Vec<Enclosure>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Enclosure {
     pub url: String,
     pub mime_type: Option<String>,
     pub length: Option<i64>,
+    /// Play time in seconds (MediaRSS `duration` / JSON Feed `duration_in_seconds`).
+    pub duration_secs: Option<i64>,
+    pub kind: EnclosureKind,
+    /// Player page (`media:player`) when the URL is not a direct media file.
+    pub player_url: Option<String>,
 }
 
 /// SQL `WHERE` clause and parameters for a query. Columns refer to `article a`.
@@ -319,14 +333,18 @@ impl Library {
             .optional()?
             .ok_or(Error::NotFound)?;
         let mut stmt = conn.prepare_cached(
-            "SELECT url, mime_type, length FROM enclosure WHERE article_id = ?1 ORDER BY id",
+            "SELECT url, mime_type, length, duration_secs, kind, player_url FROM enclosure WHERE article_id = ?1 ORDER BY id",
         )?;
         detail.enclosures = stmt
             .query_map([id], |r| {
+                let kind: String = r.get(4)?;
                 Ok(Enclosure {
                     url: r.get(0)?,
                     mime_type: r.get(1)?,
                     length: r.get(2)?,
+                    duration_secs: r.get(3)?,
+                    kind: EnclosureKind::from_db(&kind),
+                    player_url: r.get(5)?,
                 })
             })?
             .collect::<rusqlite::Result<_>>()?;
@@ -389,7 +407,7 @@ mod tests {
     use crate::feeds::FetchResult;
     use crate::library::DIR_NAME;
     use crate::opml::OpmlFeed;
-    use crate::parse::{ParsedEntry, ParsedFeed};
+    use crate::parse::{EnclosureKind, ParsedEnclosure, ParsedEntry, ParsedFeed};
 
     fn entry(identity: &str, title: &str, published_at: Option<i64>) -> ParsedEntry {
         ParsedEntry {
@@ -506,6 +524,64 @@ mod tests {
         let sidebar = library.sidebar(0).unwrap();
         assert_eq!((sidebar.all_unread, sidebar.starred), (1, 1));
         assert_eq!(sidebar.folders[0].unread, 1);
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn enclosures_round_trip_with_metadata() {
+        // The Archivist (Henrik) checks episode length at a glance; the Offline Reader (Paul)
+        // relies on the download staying a plain local link.
+        let (_root, library) = library_with_feed();
+        let mut e = entry("a", "Alpha", None);
+        e.enclosures = vec![
+            ParsedEnclosure {
+                url: "https://x.example/ep12.mp3".into(),
+                player_url: None,
+                mime_type: Some("audio/mpeg".into()),
+                length: Some(12_000_000),
+                duration_secs: Some(754),
+                kind: EnclosureKind::Audio,
+            },
+            ParsedEnclosure {
+                url: "https://x.example/watch?v=1".into(),
+                player_url: Some("https://x.example/watch?v=1".into()),
+                mime_type: None,
+                length: None,
+                duration_secs: None,
+                kind: EnclosureKind::Document,
+            },
+        ];
+        library.apply_fetch(1, fetched(vec![e])).unwrap();
+        let rows = library
+            .list_articles(
+                &ListQuery {
+                    view: View::AllUnread,
+                    sort: Sort::NewestFirst,
+                    search: None,
+                    with_lead_image: false,
+                },
+                0,
+                10,
+            )
+            .unwrap();
+        let detail = library.article(rows[0].id).unwrap();
+        assert_eq!(detail.enclosures.len(), 2);
+        assert_eq!(
+            detail.enclosures[0],
+            Enclosure {
+                url: "https://x.example/ep12.mp3".into(),
+                mime_type: Some("audio/mpeg".into()),
+                length: Some(12_000_000),
+                duration_secs: Some(754),
+                kind: EnclosureKind::Audio,
+                player_url: None,
+            }
+        );
+        assert_eq!(detail.enclosures[1].kind, EnclosureKind::Document);
+        assert_eq!(
+            detail.enclosures[1].player_url.as_deref(),
+            Some("https://x.example/watch?v=1")
+        );
         library.close().unwrap();
     }
 
