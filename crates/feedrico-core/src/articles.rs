@@ -775,6 +775,7 @@ mod edge_tests {
             images: vec![],
             lead_image: None,
             enclosures: vec![],
+            video: None,
         }
     }
 
@@ -890,6 +891,9 @@ mod edge_tests {
             url: "https://x.example/ep.mp3".into(),
             mime_type: Some("audio/mpeg".into()),
             length: Some(42),
+            duration_secs: None,
+            kind: crate::parse::EnclosureKind::Audio,
+            player_url: None,
         }];
         library.apply_fetch(1, fetched(vec![e])).unwrap();
 

@@ -995,6 +995,8 @@ mod edge_tests {
             images: vec![],
             lead_image: None,
             enclosures: vec![],
+
+            video: None,
         };
         library
             .apply_fetch(
