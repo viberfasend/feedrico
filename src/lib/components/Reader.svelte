@@ -371,6 +371,24 @@
     border: 1px solid var(--color-border-subtle);
   }
 
+  /* MathML equations (issue #78, ADR 0004): the webview renders them natively and screen
+     readers voice them (implicit role "math", accessible name from alttext). Glyphs inherit
+     the reader font size, so equations scale with the reader typography, and use the text
+     color token, which the token build AA-checks against the reader surface in both themes. */
+  .content :global(math) {
+    color: var(--color-text-default);
+    overflow-wrap: normal;
+  }
+  /* Display math gets its own centered line; a long equation scrolls instead of breaking
+     the measure. */
+  .content :global(math[display="block"]) {
+    display: block;
+    margin-block: 1.1em;
+    padding-block: 0.2em;
+    text-align: center;
+    overflow-x: auto;
+  }
+
   /* Cards for what the reader can't show inline: uncached images and embeds. */
   .content :global(:is(.embed-link, .remote-image)) {
     display: flex;
