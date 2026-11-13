@@ -4,7 +4,7 @@
 // Lead Image, podcast (audio + cover art enclosures), technical post (huge screenshot,
 // transparent diagram, inline icon, code, table), images missing from the cache, embed card +
 // linked image, a very long German title without URL, a title-only Article and a photo
-// enclosure. Use it for every change to the reader (both themes, List and a grid Layout).
+// enclosure, and a news teaser whose pictures carry `align`. Use it for every change to the reader (both themes, List and a grid Layout).
 //
 // Run it like mock-ipc.js. Set `window.__mockLayout = 'list'` before running for the List
 // Layout (default: Cards). It imports the App module URL the page first loaded, so reload the
@@ -41,6 +41,7 @@ const IMG = {
   smallPhoto: photo(320, 200, 120, 'small'),
   linked: photo(1000, 600, 60, 'linked'),
   flickr: photo(2048, 1365, 100, 'enclosure'),
+  teaser: photo(268, 201, 15, 'teaser'),
 };
 const img = (k, attrs = '') => `<img src="${IMG[k]}" ${attrs}>`;
 const remote = (url, attrs = '') => `<img src="media://localhost/0000missing" data-remote="${url}" ${attrs}>`;
@@ -80,6 +81,9 @@ const A = [
   { feed: 1, title: 'Title only', author: null, lead: null, url: 'https://garden.example/title-only', html: '' },
   { feed: 2, title: 'Photo of the day: valley fog', author: 'Flickr user', lead: 'flickr', url: 'https://lens.example/fog',
     html: '', enclosures: [{ url: 'https://live.staticflickr.example/65535/fog_b.jpg', mimeType: 'image/jpeg', length: 1_840_000 }] },
+  // Regional news teasers: `align` survives the sanitizer and would float the picture.
+  { feed: 4, title: 'Nations League: Oranje mit 7:0-Spektakel', author: null, lead: 'teaser', url: 'https://ledger.example/oranje',
+    html: `${img('teaser', 'align="left"')}\n      Die Niederlande lassen in der Gruppe keine Chance. Oranje sammelt Selbstvertrauen für das „Finale“ am Montag.${lorem(1)}<p>${img('smallPhoto', 'align="right" width="320" height="200" alt="Right-aligned"')}Second paragraph with a right-aligned picture at its start.</p>` },
 ];
 
 const rowOf = (a, i) => {
