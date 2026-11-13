@@ -109,3 +109,107 @@ contrast check plus the screenshots above.
 - If the repo description on GitHub should also change (it currently reads
   like a dev project), that needs the web UI or a token with repo-admin
   scope; the connector here has no repo-settings capability.
+
+---
+
+# HANDOFF — issue #77: code blocks in the reader
+
+**Branch:** `feat/code-blocks-reader` (worktree `vibe-embeds-77`), based on `origin/main` @ `5beeb5e`.
+**Status:** done, all checks green, branch pushed once, PR open (see below).
+
+## Commits
+
+- `2ec84af` — feat(core): keep language-* classes on pre/code through the sanitizer
+- `d18d0ab` — feat(tokens): add code syntax colors with AA-checked contrast pairs
+- `1237d04` — feat(ui): highlight reader code blocks locally and add a copy button
+- (this file) — docs: handoff for issue #77
+
+## What was built
+
+1. **Sanitizer** (`crates/feedrico-core/src/sanitize.rs`): `class` is whitelisted on `pre`/`code`
+   (`add_tag_attributes`) and an ammonia `attribute_filter` keeps only `language-*`/`lang-*`
+   tokens (id charset-limited to `[A-Za-z0-9\-_+#.]`, ≤ 32 chars). Every other class/attribute
+   stays stripped exactly as before. `plain_text`/`content_text` are untouched, so FTS is
+   unaffected. No schema change → no migration, no Library version bump, version matrix A–E not
+   applicable.
+2. **Bundled highlighter** (no CDN, no new network surface, CSP unchanged): a small rule-based
+   tokenizer compiled into the UI, living in `src/lib/components/reader/content.ts` and run by
+   `enhanceContent` on the sanitized DOM per Article (`{#key article.contentHtml}`). Covers
+   rust, js/ts, go, c/cpp/csharp/java/kotlin/swift, python, bash, json, yaml, toml, ini, sql,
+   css, markup, diff, markdown (+ aliases); unknown languages render plain. Tokens become
+   `tok-keyword/string/comment/number/function` spans.
+3. **Reader styling** (`Reader.svelte`, where all `.content :global(...)` rules live):
+   shaded monospace `pre` box (`color.surface.sunken`), `overflow-x: auto` + `white-space: pre`
+   + `overflow-wrap: normal` inside pre so long lines scroll inside the block and never break
+   the reader width; `tok-*` colors from the new `color.code.*` tokens; `.code-copy` button
+   (absolute top-right) as a real `<button type="button">` — keyboard-operable, global
+   `:focus-visible` ring, `aria-label` "Copy rust code block" / "Copy code block" — copies the
+   `code` text only via `navigator.clipboard` with an `execCommand` fallback, shows "Copied".
+4. **Tokens** (`tokens/semantic/theme.{light,dark}.json`, `tokens/contrast-pairs.json`):
+   `color.code.{keyword,string,comment,number,function}` from the existing palette; each pair
+   against `color.surface.sunken` (the pre background) is enforced at 4.5:1 by the token build in
+   both themes (106 pairs pass).
+
+## Personas
+
+- **Archivist (Henrik):** dev-blog code now reads as code in batch reading; copy button is
+  keyboard-reachable like everything else (`j`/`k` unaffected).
+- **Accessibility spectrum:** AA contrast enforced at token build in both themes (WCAG 2.2 AA,
+  4.5:1 text); copy button has an accessible name, is a native button (Tab/Enter/Space) and gets
+  the visible focus ring; highlighting never changes the code text (copy/search intact).
+- **Offline Reader (Paul):** highlighter is bundled; opening an Article still makes no network
+  request; CSP untouched. **Skimmer:** unaffected.
+
+## Tests added and how each was proven red
+
+- `sanitize.rs` (red first, all 3 failed before the implementation, green after):
+  `keeps_language_class_on_pre_and_code` (miniflux-style fixture: `class="language-rust"` on code,
+  `lang-python` on pre), `strips_every_other_class` (Prism `token keyword` spans, class on p/span,
+  mixed `language-c++ bad!`, unsafe `language-rust<script>`), `code_block_text_still_reaches_plain_text`
+  (`plain_text(raw) == plain_text(sanitized)`, code text searchable → FTS unchanged).
+- `reader.test.ts` "Reader code blocks" (red first: stashed `Reader.svelte`/`content.ts` changes →
+  4 failed, restored → green): language class kept + `tok-*` spans + code text unchanged;
+  copy button present, `<button type="button">`, aria-label, focusable (`document.activeElement`),
+  click copies exactly the code text (mocked clipboard) and flips to "Copied"; bare `<pre>` is
+  wrapped in `<code>` and still gets a button; `getComputedStyle` asserts `overflow-x: auto`,
+  `white-space: pre`, `overflow-wrap: normal` (long lines scroll, never wrap).
+- Token build: `npm run tokens` fails the build if any `color.code.*`-on-`color.surface.sunken`
+  pair misses AA — 106 pairs pass in light and dark.
+
+## Deviations from the issue
+
+- Highlighter lives in the UI (`reader/content.ts`), not in the Rust core at parse time — the
+  issue allowed either; UI-side keeps stored `content_html` small and the sanitizer diff minimal.
+  After the reader redesign on main (fbc7b65), the logic was moved from `Reader.svelte` into
+  `reader/content.ts` (`enhanceContent`), matching the new shape; only the `.content` CSS stays in
+  `Reader.svelte` where all content styles live.
+- Server-side highlighted markup (Prism/Pygments `span.token`) still renders as plain text —
+  only `language-*` classes survive, per the issue.
+
+## Open questions
+
+- Clipboard in some Linux webviews may deny `navigator.clipboard`; the `execCommand` fallback
+  covers it, but it is untested on a real WebKitGTK build.
+- The highlighter is intentionally small (~15 languages); extending it is a data-only change in
+  `LANGS`.
+
+## Final check output (PATH=/snap/bin:$PATH, CARGO_TARGET_DIR=…/shared-target)
+
+```
+=== cargo fmt --all ===
+(clean)
+=== cargo clippy --workspace --all-targets -- -D warnings ===
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.10s
+=== cargo test --workspace ===
+test result: ok. 4 passed; 0 failed; …
+test result: ok. 102 passed; 0 failed; …
+test result: ok. 1 passed; 0 failed; …
+(… all suites ok)
+=== npm run check ===
+svelte-check found 0 errors and 0 warnings
+=== npm test ===
+ Test Files 22 passed (22)
+      Tests 200 passed (200)
+=== npm run tokens (AA) ===
+Tokens built; 106 contrast pairs pass WCAG 2.2 AA in light and dark.
+```
