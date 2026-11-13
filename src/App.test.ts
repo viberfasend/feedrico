@@ -237,6 +237,21 @@ describe('keyboard reading (j/k/s/m/o/r)', () => {
     expect(app.readerOpen).toBe(false);
   });
 
+  it('v keeps the open Article open while cycling the Layout', async () => {
+    await mountReady();
+    press('j');
+    await settle();
+    expect(app.article).not.toBeNull();
+    // list -> cards -> magazine -> gallery -> list
+    for (const expected of ['cards', 'magazine', 'gallery', 'list']) {
+      press('v');
+      await settle();
+      expect(app.layout).toBe(expected);
+      expect(app.article).not.toBeNull();
+      expect(app.readerOpen).toBe(true);
+    }
+  });
+
   it('Space at the end of an Article moves to the next one', async () => {
     await mountReady();
     press('j');
