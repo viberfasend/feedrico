@@ -9,6 +9,8 @@
     onclick,
     disabled = false,
     title,
+    pressed,
+    filled = false,
     class: klass = '',
   }: {
     /** Required: the accessible name of an icon-only button. */
@@ -18,6 +20,10 @@
     disabled?: boolean;
     /** Longer tooltip text; falls back to `label`. */
     title?: string;
+    /** A toggle (Star, Read): sets aria-pressed and the active colour. */
+    pressed?: boolean;
+    /** Draws the icon filled, e.g. a set star. */
+    filled?: boolean;
     class?: string;
   } = $props();
 </script>
@@ -26,8 +32,8 @@
   <Tooltip.Root>
     <Tooltip.Trigger>
       {#snippet child({ props })}
-        <button {...props} type="button" class="icon-button {klass}" aria-label={label} {disabled} {onclick}>
-          <Icon name={icon} size={16} />
+        <button {...props} type="button" class="icon-button {klass}" class:active={pressed} aria-label={label} aria-pressed={pressed} {disabled} {onclick}>
+          <Icon name={icon} size={16} {filled} />
         </button>
       {/snippet}
     </Tooltip.Trigger>
@@ -60,6 +66,9 @@
   .icon-button:hover:not(:disabled) {
     background: var(--color-surface-hover);
     color: var(--color-text-default);
+  }
+  .icon-button.active {
+    color: var(--color-text-accent);
   }
   .icon-button:disabled {
     opacity: 0.6;

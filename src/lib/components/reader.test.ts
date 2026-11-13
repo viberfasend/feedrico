@@ -13,6 +13,7 @@ const mockApi = { openExternal: vi.fn(async (_url: string) => {}) };
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: mockApi,
+  mediaUrl: (key: string) => `media://localhost/${key}`,
 }));
 
 const { app } = await import('../state.svelte');
@@ -69,7 +70,7 @@ describe('Reader images that are not cached', () => {
     const link = content.querySelector('.remote-image a') as HTMLAnchorElement;
     expect(link.getAttribute('href')).toBe('https://blog.example/a.png');
     expect(link.textContent).toContain('blog.example');
-    expect(link.textContent).toContain('Chart');
+    expect(content.querySelector('.remote-image')?.textContent).toContain('Chart');
 
     link.click();
     expect(mockApi.openExternal).toHaveBeenCalledWith('https://blog.example/a.png');
@@ -83,7 +84,7 @@ describe('Reader images that are not cached', () => {
 
     const outer = content.querySelector('a') as HTMLAnchorElement;
     expect(outer.querySelector('a')).toBeNull();
-    expect(outer.querySelector('.remote-image')?.textContent).toContain('blog.example');
+    expect(outer.querySelector('.remote-image')?.textContent).toContain('not saved for offline reading');
   });
 
   it('stay hidden when the Article predates the original URL being kept', () => {
@@ -102,18 +103,129 @@ describe('Reader images that are not cached', () => {
   });
 });
 
+const detail = (overrides: Partial<ArticleDetail>): ArticleDetail => ({ ...article(''), ...overrides });
+
+function renderArticle(overrides: Partial<ArticleDetail>) {
+  app.article = detail(overrides);
+  mounted = mount(Reader, { target: document.body });
+  flushSync();
+  return document.getElementById('pane-reader') as HTMLElement;
+}
+
+describe('Reader images by size', () => {
+  it('turn emoji images back into text (WordPress wp-smiley)', () => {
+    const content = render('<p>We loved it <img src="media://localhost/e" alt="😀" width="72" height="72"> really</p>');
+    expect(content.querySelector('img')).toBeNull();
+    expect(content.querySelector('.emoji')?.textContent).toBe('😀');
+  });
+
+  it('hide tracking pixels and keep share icons in the line of text', () => {
+    const content = render(
+      '<p>Share: <img src="media://localhost/s" width="24" height="24" alt="Share"></p><img src="media://localhost/p" width="1" height="1">',
+    );
+    const [icon, pixel] = content.querySelectorAll('img');
+    expect(icon!.classList.contains('img-inline')).toBe(true);
+    expect(icon!.getAttribute('role')).toBeNull();
+    expect(pixel!.classList.contains('img-pixel')).toBe(true);
+    expect(pixel!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('show comic title text as a caption, but not twice under a figure caption', () => {
+    const content = render(
+      '<p><img src="media://localhost/c" width="740" height="2400" title="The joke" alt="Comic"></p>' +
+        '<figure><img src="media://localhost/f" width="800" height="500" title="Hover"><figcaption>Caption</figcaption></figure>',
+    );
+    expect([...content.querySelectorAll('.img-caption')].map((c) => c.textContent)).toEqual(['The joke']);
+    // A tall comic is meant to be scrolled: no height cap.
+    expect(content.querySelector('img')!.classList.contains('img-cap')).toBe(false);
+  });
+});
+
+describe('Image viewer', () => {
+  it('opens on Enter, browses with arrows, and Esc closes only the viewer', async () => {
+    app.readerOpen = true;
+    const content = render(
+      '<img src="media://localhost/a" width="1600" height="1000" alt="First"><img src="media://localhost/b" width="1600" height="1000" alt="Second">',
+    );
+    const first = content.querySelector('img')!;
+    expect(first.getAttribute('role')).toBe('button');
+    expect(first.getAttribute('aria-label')).toBe('View image: First');
+
+    first.focus();
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    flushSync();
+    const viewer = document.querySelector('.viewer[role="dialog"]') as HTMLElement;
+    expect(viewer).not.toBeNull();
+    expect(viewer.querySelector('.count')?.textContent).toContain('1 / 2');
+
+    const windowKeys = vi.fn();
+    window.addEventListener('keydown', windowKeys);
+    viewer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    flushSync();
+    expect(viewer.querySelector('img')?.getAttribute('alt')).toBe('Second');
+
+    viewer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    flushSync();
+    window.removeEventListener('keydown', windowKeys);
+    expect(document.querySelector('.viewer')).toBeNull();
+    // The reader behind it never saw the keys: it stays open on the same Article.
+    expect(windowKeys).not.toHaveBeenCalled();
+    expect(app.readerOpen).toBe(true);
+    app.readerOpen = false;
+  });
+
+  it('leaves linked images to their link (links open in the browser)', () => {
+    const content = render('<a href="https://blog.example/full"><img src="media://localhost/l" width="1200" height="800"></a>');
+    expect(content.querySelector('img')!.getAttribute('role')).toBeNull();
+  });
+});
+
+describe('Lead Image in the reader', () => {
+  it('leads a summary-only Article, so the reader shows what the card showed', () => {
+    const pane = renderArticle({ leadImage: 'lead1', contentHtml: '<p>Read the full story on our website.</p>' });
+    expect(pane.querySelector('.lead img')).not.toBeNull();
+  });
+
+  it('is not shown twice when the content has its own picture', () => {
+    const pane = renderArticle({
+      leadImage: 'lead1',
+      contentHtml: '<p><img src="media://localhost/other" width="1024" height="683"></p><p>Text</p>',
+    });
+    expect(pane.querySelector('.lead')).toBeNull();
+  });
+});
+
 describe('Attachments', () => {
   // Bug: enclosure links sat outside the content's click handler, and the shell's navigation
   // guard blocks the webview from leaving the app, so clicking an attachment did nothing.
   it('open in the browser when clicked', () => {
-    app.article = {
-      ...article(''),
+    const pane = renderArticle({
       enclosures: [{ url: 'https://cdn.example/ep88.mp3?utm=rss', mimeType: 'audio/mpeg', length: 58_400_000 }],
-    };
-    mounted = mount(Reader, { target: document.body });
-    flushSync();
-    const link = document.querySelector('a[href="https://cdn.example/ep88.mp3?utm=rss"]') as HTMLAnchorElement;
+    });
+    const link = pane.querySelector('a[href="https://cdn.example/ep88.mp3?utm=rss"]') as HTMLAnchorElement;
     link.click();
     expect(mockApi.openExternal).toHaveBeenCalledWith('https://cdn.example/ep88.mp3?utm=rss');
+  });
+
+  it('read as name and kind, and hide an image enclosure that is the Lead Image', () => {
+    const pane = renderArticle({
+      leadImage: 'cover',
+      enclosures: [
+        { url: 'https://cdn.example/audio/ep%2088.mp3?utm=rss', mimeType: 'audio/mpeg', length: 58_400_000 },
+        { url: 'https://cdn.example/art/88.jpg', mimeType: 'image/jpeg', length: 412_000 },
+      ],
+    });
+    const items = [...pane.querySelectorAll('[aria-label="Attachments"] li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim());
+    expect(items).toHaveLength(1);
+    expect(items[0]).toContain('ep 88.mp3');
+    expect(items[0]).toContain('Audio · MP3 · 55.7 MB');
+  });
+});
+
+describe('Title-only Articles', () => {
+  it('say so instead of showing an empty page', () => {
+    const pane = renderArticle({ url: 'https://blog.example/post', contentHtml: '' });
+    expect(pane.querySelector('.no-text')?.textContent).toContain('only a title');
+    expect(pane.querySelector('.end')?.textContent).toContain('Open on blog.example');
   });
 });

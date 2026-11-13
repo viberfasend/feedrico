@@ -13,8 +13,9 @@ const OVERLAP_PX = 40;
  * is already at the bottom (the caller then moves to the next Article). Paging back at the top
  * just stays. Jumps without animation, so it needs no reduced-motion case.
  */
-export function pageReader(scroller: Scroller, forward: boolean): 'scrolled' | 'end' {
-  const step = Math.max(scroller.clientHeight - OVERLAP_PX, OVERLAP_PX);
+export function pageReader(scroller: Scroller, forward: boolean, topInset = 0): 'scrolled' | 'end' {
+  // `topInset`: height of a sticky toolbar that covers the top of the pane.
+  const step = Math.max(scroller.clientHeight - topInset - OVERLAP_PX, OVERLAP_PX);
   const bottom = scroller.scrollHeight - scroller.clientHeight;
   if (forward) {
     if (scroller.scrollTop >= bottom - 1) return 'end';
