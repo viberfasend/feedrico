@@ -1,0 +1,14 @@
+# Labels applied by the labeler job in .github/workflows/review.yml.
+# One label per top-level area, kept small on purpose: src/ -> ui, crates/ + src-tauri/
+# -> core, .github/ -> ci, docs/ -> docs, site/ -> site.
+ui:
+  - 'src/**'
+core:
+  - 'crates/**'
+  - 'src-tauri/**'
+ci:
+  - '.github/**'
+docs:
+  - 'docs/**'
+site:
+  - 'site/**'

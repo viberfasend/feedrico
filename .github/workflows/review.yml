@@ -1,0 +1,173 @@
+name: Review
+
+# PR review automation: lint the workflow files themselves, label the PR by changed area,
+# post ONE review-checklist comment tailored to the diff, and report test coverage.
+#
+# GitHub-hosted ubuntu-latest only, like commits.yml: these jobs are cheap and must never
+# land on the billed Blacksmith runners that ci.yml/perf.yml/release.yml use. Pull requests
+# only (plus manual dispatch): GitHub merges by rebase, so a push to main is the PR that
+# just passed — re-running here would double the work without new information.
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: review-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: Lint workflow files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Lints every .github/workflows/*.yml in the checkout, so a broken workflow fails
+      # on the PR that changes it.
+      - uses: rhysd/actionlint@v1
+
+  labeler:
+    name: Label by changed area
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/labeler@v6
+        with:
+          configuration-path: .github/labeler.yml
+
+  review:
+    name: Post review checklist comment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const MARKER = '<!-- feedrico-pr-review-v1 -->';
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.info('No pull request in the event payload; nothing to comment on.');
+              return;
+            }
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Changed files, paginated (caps at 3000; patches may be absent for huge files).
+            const files = [];
+            for (let page = 1; page <= 30; page++) {
+              const res = await github.rest.pulls.listFiles({ owner, repo, pull_number: pr.number, per_page: 100, page });
+              files.push(...res.data);
+              if (res.data.length < 100) break;
+            }
+
+            const paths = files.map((f) => f.filename);
+            const any = (re) => paths.some((p) => re.test(p));
+            const areaOf = (name) => (name.includes('/') ? name.split('/')[0] : '(root)');
+            const areas = [...new Set(paths.map(areaOf))].sort();
+
+            // Which CI jobs this diff triggers. ci.yml ignores **/*.md, docs/**, brand/**, LICENSE.
+            const docsOnly = files.length > 0 && paths.every((p) => p.endsWith('.md') || p.startsWith('docs/') || p.startsWith('brand/') || p === 'LICENSE');
+            const jobs = [];
+            if (any(/^src\//) || any(/^(tokens|scripts)\//) || any(/^(package\.json|package-lock\.json|vite\.config\.ts|tsconfig.*\.json|svelte\.config\.js|index\.html)$/)) {
+              jobs.push('`ci.yml` **frontend** — npm run check, test, build');
+            }
+            if (any(/^crates\//) || any(/^src-tauri\//) || any(/\.rs$/) || any(/^Cargo\.(toml|lock)$/)) {
+              jobs.push('`ci.yml` **rust** (fmt/clippy/test) and **build** (tauri build) on Linux, Windows, macOS');
+            }
+            if (any(/^\.github\//)) jobs.push('`ci.yml` (workflows are not path-ignored), this `review.yml`, `codeql.yml`');
+            jobs.push('`commits.yml` (commitlint) and this `review.yml`');
+            if (docsOnly) jobs.push('`ci.yml` is **skipped** (docs-only diff, paths-ignore)');
+
+            // Review checklist tailored to the diff.
+            const checklist = [];
+            if (any(/^crates\/feedrico-core\/src\/(library|lock|manifest|schema|update)\.rs$/) || any(/^src-tauri\/src\/main\.rs$/)) {
+              checklist.push('- [ ] **Library format, locking or startup changed** — walk the version scenario matrix **A–E** in `docs/personas.md` with The Carrier and The Host. The format version in `library.json` is a compatibility contract (ADR 0002): upgrades back up first (A), a newer Library on an older app is refused without writes (B).');
+            }
+            if (any(/^src\//)) {
+              checklist.push('- [ ] **UI changed** — check `docs/accessibility.md` (WCAG 2.2 AA): keyboard operation, visible/ordered focus, contrast in both themes, live-region status. `npm run check` runs axe-core over every Layout.');
+            }
+            if (any(/perf|bench/i) || any(/^src\/lib\/(paging|perf)\./) || any(/^crates\/feedrico-core\/src\/(fetch|parse|sanitize|prune|articles|feeds|schema)\.rs$/)) {
+              checklist.push('- [ ] **Perf-relevant** — cite the budgets in `docs/spec/v1.md` (cold start < 500 ms, View switch < 50 ms, list scrolling 60 fps, refresh 300 Feeds < 30 s, idle memory < 150 MB) and say how this change stays inside them.');
+            }
+            if (any(/^crates\//) || any(/^src-tauri\//)) {
+              checklist.push('- [ ] Core change: `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` pass; heavy work stays in the Rust core, off the UI thread (spec v1).');
+            }
+            if (any(/^\.github\/workflows\//)) {
+              checklist.push('- [ ] Workflow change: the `actionlint` job in this file lints it. No new triggers that rerun billed Blacksmith jobs on `main` pushes (see the `ci.yml` header).');
+            }
+            if (files.length === 0) checklist.push('- [ ] Empty diff: nothing to review.');
+
+            // Risky added lines, from the file patches. dbg!/println!/.unwrap()/.expect() in
+            // added Rust, console.log/@ts-ignore in added TS, TODO/FIXME anywhere.
+            const risky = [];
+            for (const f of files) {
+              if (!f.patch) continue;
+              const isRust = /\.rs$/.test(f.filename);
+              const isTs = /\.(ts|mts|cts|svelte|mjs|cjs)$/.test(f.filename);
+              let lineNo = 0;
+              let inHunk = false;
+              for (const raw of f.patch.split('\n')) {
+                const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+                if (hunk) { lineNo = Number(hunk[1]); inHunk = true; continue; }
+                if (!inHunk) continue;
+                if (raw.startsWith('+') && !raw.startsWith('+++')) {
+                  const code = raw.slice(1);
+                  const hit = (re) => re.test(code);
+                  if ((isRust && hit(/\bdbg!|\bprintln!|\.unwrap\(|\.expect\(/)) || (isTs && hit(/\bconsole\.log|@ts-ignore/)) || hit(/TODO|FIXME/)) {
+                    risky.push(f.filename + ':' + lineNo + ' `' + code.trim().slice(0, 100) + '`');
+                  }
+                  lineNo++;
+                } else if (!raw.startsWith('-')) {
+                  lineNo++;
+                }
+              }
+            }
+
+            // Render ONE comment (updated in place on every push).
+            const out = [];
+            out.push(MARKER);
+            out.push('## PR review checklist (auto-generated by `review.yml`)');
+            out.push('');
+            out.push('**Changed areas** (' + files.length + ' files): ' + (areas.map((a) => '`' + a + '`').join(', ') || 'none'));
+            out.push('');
+            out.push('**CI this diff triggers:**');
+            for (const j of jobs) out.push('- ' + j);
+            out.push('');
+            out.push('**Checklist:**');
+            for (const c of checklist) out.push(c);
+            out.push('');
+            if (risky.length > 0) {
+              out.push('**Risky added lines** (' + risky.length + '):');
+              for (const r of risky.slice(0, 15)) out.push('- ' + r);
+              if (risky.length > 15) out.push('- … and ' + (risky.length - 15) + ' more');
+            } else {
+              out.push('**Risky added lines:** none (`dbg!`, `console.log`, `println!`, `TODO`/`FIXME`, `.unwrap()`/`.expect()`, `@ts-ignore` in added lines).');
+            }
+            out.push('');
+            out.push('_One comment per PR, updated on every push (marker ' + MARKER + ')._');
+
+            const body = out.join('\n').slice(0, 60000);
+            const comments = [];
+            for (let page = 1; page <= 5; page++) {
+              const res = await github.rest.issues.listComments({ owner, repo, issue_number: pr.number, per_page: 100, page });
+              comments.push(...res.data);
+              if (res.data.length < 100) break;
+            }
+            const existing = comments.find((c) => c.user && c.user.type === 'Bot' && typeof c.body === 'string' && c.body.includes(MARKER));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.info('Updated review comment ' + existing.id);
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+              core.info('Created review comment');
+            }
+
