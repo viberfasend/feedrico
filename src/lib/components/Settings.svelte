@@ -12,6 +12,7 @@
   import { fileSize } from '../format';
   import { app } from '../state.svelte';
   import type { Density, Theme } from '../tokens';
+  import Button from '../ui/Button.svelte';
   import Dialog from '../ui/Dialog.svelte';
   import IconButton from '../ui/IconButton.svelte';
   import Segmented from '../ui/Segmented.svelte';
@@ -25,6 +26,7 @@
     { value: 'storage', label: 'Refresh and storage' },
     { value: 'library', label: 'About this Library' },
     { value: 'machine', label: 'This computer' },
+    { value: 'about', label: 'About Feedrico' },
   ] as const;
   type Section = (typeof SECTIONS)[number]['value'];
 
@@ -343,6 +345,42 @@
                         <dd>{app.library?.formatVersion}</dd>
                       </div>
                     </dl>
+                  {:else if item.value === 'about'}
+                    <div class="group">
+                      <div class="row">
+                        <div class="row-text">
+                          <span class="label">Version</span>
+                          <span class="desc value about-version">{app.appVersion ?? ''}</span>
+                        </div>
+                      </div>
+                      <div class="row">
+                        <div class="row-text">
+                          <span class="label">Updates</span>
+                          <span class="desc about-updates" role="status">
+                            {#if app.updateChecking}
+                              Checking GitHub Releases…
+                            {:else if app.updateStatus?.kind === 'available'}
+                              Feedrico {app.updateStatus.latest} is available.
+                            {:else if app.updateStatus?.kind === 'upToDate'}
+                              You're up to date.
+                            {:else if app.updateStatus?.kind === 'noReleases'}
+                              No release published yet.
+                            {:else}
+                              Feedrico only looks when you ask. Nothing is sent about you.
+                            {/if}
+                          </span>
+                        </div>
+                        <div class="about-actions">
+                          {#if app.updateStatus?.kind === 'available'}
+                            {@const url = app.updateStatus.url}
+                            <Button variant="primary" onclick={() => app.openExternal(url)}>Download</Button>
+                          {/if}
+                          <Button disabled={app.updateChecking} onclick={() => void app.checkForUpdates()}>
+                            Check for updates
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   {:else}
                     <div class="group">
                       <div class="row">
@@ -507,6 +545,12 @@
   .desc {
     color: var(--color-text-muted);
     font-size: var(--font-size-small);
+  }
+  .about-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-inline-md);
   }
   .desc.value {
     font-variant-numeric: tabular-nums;

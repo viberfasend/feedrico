@@ -25,6 +25,7 @@ const mockApi = {
   setRead: vi.fn(async () => {}),
   deleteFolder: vi.fn(async () => {}),
   openExternal: vi.fn(async () => {}),
+  appVersion: vi.fn(async () => '0.1.0'),
   checkForUpdates: vi.fn(),
   settings: vi.fn(async () => ({
     appearance: { theme: 'system', density: 'comfortable' },

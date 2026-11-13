@@ -60,6 +60,11 @@ const handlers = {
   set_read: () => null,
   refresh: () => false,
   'plugin:event|listen': () => 1,
+  'plugin:app|version': () => '0.1.0',
+  check_for_updates: () => ({ kind: 'available', current: '0.1.0', latest: '0.2.0', url: 'https://example.com' }),
+  library_size: () => 1234567,
+  media_size: () => 65432,
+  autostart_enabled: () => false,
 };
 
 window.__TAURI_INTERNALS__ = {
