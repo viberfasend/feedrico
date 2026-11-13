@@ -14,7 +14,9 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 /** The app version lives in all of these; the release workflow checks they agree. */
 const JSON_FILES = ['package.json', 'package-lock.json', 'src-tauri/tauri.conf.json'];
 const CARGO_FILES = ['src-tauri/Cargo.toml', 'crates/feedrico-core/Cargo.toml'];
-const OWN_CRATES = ['feedrico', 'feedrico-core'];
+/** AppStream metadata for the .deb; its newest `<release>` is the app version too. */
+const METAINFO = 'src-tauri/linux/de.andi1984.feedrico.metainfo.xml';
+const OWN_CRATES =['feedrico', 'feedrico-core'];
 
 function assertVersion(version) {
   if (!VERSION.test(version)) throw new Error(`${version} is not x.y.z`);
@@ -41,6 +43,21 @@ export function setCargoLockVersion(text, names, version) {
   return text.replace(/name = "([^"]+)"\nversion = "[^"]*"/g, (entry, name) =>
     names.includes(name) ? `name = "${name}"\nversion = "${version}"` : entry,
   );
+}
+
+const RELEASE = /<release version="([^"]*)" date="([^"]*)"\/>/;
+
+/** The newest release listed in the AppStream metainfo (the first one). */
+export function latestMetainfoVersion(text) {
+  return RELEASE.exec(text)?.[1];
+}
+
+/** Lists `version` as the newest AppStream release; a repeat of the latest only gets a new date. */
+export function setMetainfoRelease(text, version, date) {
+  assertVersion(version);
+  const entry = `<release version="${version}" date="${date}"/>`;
+  if (latestMetainfoVersion(text) === version) return text.replace(RELEASE, entry);
+  return text.replace(/(<releases>\n)(\s*)/, `$1$2${entry}\n$2`);
 }
 
 /** Problems with releasing `tag` given the version found in each file; empty when fine. */
@@ -110,6 +127,7 @@ function currentVersions() {
   for (const file of CARGO_FILES) {
     versions[file] = /\[package\][^[]*?\nversion = "([^"]*)"/.exec(read(file))?.[1];
   }
+  versions[`${METAINFO} (newest release)`] = latestMetainfoVersion(read(METAINFO));
   const lock = read('Cargo.lock');
   for (const name of OWN_CRATES) {
     versions[`Cargo.lock ${name}`] = new RegExp(`name = "${name}"\\nversion = "([^"]*)"`).exec(lock)?.[1];
@@ -144,6 +162,8 @@ function main([command, arg]) {
     for (const file of JSON_FILES) write(file, setJsonVersion(read(file), arg));
     for (const file of CARGO_FILES) write(file, setCargoPackageVersion(read(file), arg));
     write('Cargo.lock', setCargoLockVersion(read('Cargo.lock'), OWN_CRATES, arg));
+    const today = new Date().toISOString().slice(0, 10);
+    write(METAINFO, setMetainfoRelease(read(METAINFO), arg, today));
     console.log(`Version set to ${arg}.`);
   } else if (command === 'check' && arg) {
     const errors = checkTag(arg, currentVersions());

@@ -6,6 +6,8 @@ import {
   setCargoLockVersion,
   setCargoPackageVersion,
   setJsonVersion,
+  setMetainfoRelease,
+  latestMetainfoVersion,
 } from './release.mjs';
 
 const cargoToml = `[package]
@@ -56,6 +58,32 @@ describe('setting the version', () => {
   it('rejects anything that is not x.y.z', () => {
     expect(() => setJsonVersion('{"version":"0.1.0"}', 'v0.2.0')).toThrow();
     expect(() => setCargoPackageVersion(cargoToml, '0.2')).toThrow();
+  });
+});
+
+const metainfo = `<component>
+  <releases>
+    <release version="0.1.0" date="2026-11-13"/>
+  </releases>
+</component>
+`;
+
+describe('AppStream releases', () => {
+  it('puts a new release first and keeps the older ones', () => {
+    const next = setMetainfoRelease(metainfo, '0.2.0', '2026-12-01');
+    expect(next).toContain('<release version="0.2.0" date="2026-12-01"/>');
+    expect(next.indexOf('0.2.0')).toBeLessThan(next.indexOf('0.1.0'));
+    expect(latestMetainfoVersion(next)).toBe('0.2.0');
+  });
+
+  it('only refreshes the date when the version is already the latest', () => {
+    const next = setMetainfoRelease(metainfo, '0.1.0', '2026-11-20');
+    expect(next).toContain('<release version="0.1.0" date="2026-11-20"/>');
+    expect(next.match(/<release /g)).toHaveLength(1);
+  });
+
+  it('rejects anything that is not x.y.z', () => {
+    expect(() => setMetainfoRelease(metainfo, '1.0', '2026-12-01')).toThrow();
   });
 });
 

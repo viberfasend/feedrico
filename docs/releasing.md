@@ -34,7 +34,9 @@ Gatekeeper.
    ```
 
    It updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json` (the version the
-   update check compares), both `Cargo.toml` files and `Cargo.lock`.
+   update check compares), both `Cargo.toml` files and `Cargo.lock`. It also adds a `<release>`
+   entry (today's date) to the `.deb`'s AppStream metainfo, which App Center shows as the
+   version history; the tag check fails if that entry is missing.
 3. Tag the merged commit on `main` and push the tag:
 
    ```sh
