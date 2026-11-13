@@ -37,3 +37,69 @@ impl Manifest {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest() -> Manifest {
+        Manifest {
+            format_version: 3,
+            created_with: "0.1.0".into(),
+            created_at: 1762547640,
+        }
+    }
+
+    #[test]
+    fn write_then_read_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        manifest().write(dir.path()).unwrap();
+        assert_eq!(Manifest::read(dir.path()).unwrap(), manifest());
+        assert!(
+            !dir.path().join(format!("{FILE_NAME}.tmp")).exists(),
+            "the atomic write leaves no temporary file behind"
+        );
+    }
+
+    #[test]
+    fn the_json_on_disk_is_camel_case_and_human_readable() {
+        let dir = tempfile::tempdir().unwrap();
+        manifest().write(dir.path()).unwrap();
+        let text = fs::read_to_string(dir.path().join(FILE_NAME)).unwrap();
+        assert!(text.contains("\"formatVersion\": 3"));
+        assert!(text.contains("\"createdWith\": \"0.1.0\""));
+        assert!(text.contains("\"createdAt\": 1762547640"));
+        assert!(text.ends_with('\n'));
+    }
+
+    #[test]
+    fn an_existing_manifest_is_replaced_not_appended() {
+        let dir = tempfile::tempdir().unwrap();
+        manifest().write(dir.path()).unwrap();
+        let newer = Manifest {
+            format_version: 4,
+            ..manifest()
+        };
+        newer.write(dir.path()).unwrap();
+        assert_eq!(Manifest::read(dir.path()).unwrap().format_version, 4);
+        assert_eq!(
+            fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "only library.json remains"
+        );
+    }
+
+    #[test]
+    fn a_missing_or_broken_manifest_fails_clearly() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            Manifest::read(dir.path()).unwrap_err(),
+            crate::Error::Io(_)
+        ));
+        fs::write(dir.path().join(FILE_NAME), b"{not json").unwrap();
+        assert!(matches!(
+            Manifest::read(dir.path()).unwrap_err(),
+            crate::Error::Manifest(_)
+        ));
+    }
+}

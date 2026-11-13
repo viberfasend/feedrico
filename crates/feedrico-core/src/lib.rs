@@ -37,3 +37,15 @@ pub use update::UpdateStatus;
 
 /// The newest Library format this build can read and write.
 pub const FORMAT_VERSION: u32 = schema::MIGRATIONS.len() as u32;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The format version is a compatibility contract (ADR 0002): it must always equal the
+    /// number of migrations, or `library.json` and `PRAGMA user_version` would disagree.
+    #[test]
+    fn format_version_is_the_number_of_migrations() {
+        assert_eq!(FORMAT_VERSION, schema::MIGRATIONS.len() as u32);
+    }
+}
