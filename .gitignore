@@ -13,3 +13,4 @@ site-dist/
 .shots/
 perf-results.json
 .claude/worktrees/
+coverage/
