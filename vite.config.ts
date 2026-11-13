@@ -42,5 +42,13 @@ export default defineConfig(({ command }) => ({
   },
   test: {
     include: ['scripts/**/*.test.mjs', 'src/**/*.test.ts'],
+    // `npm run test:coverage`. lcov.info + coverage-summary.json feed the coverage
+    // comment on PRs (.github/workflows/review.yml); text prints the table locally.
+    coverage: {
+      provider: 'v8',
+      // Vitest 5 spells the key `reporter` (singular); `reporters` is silently ignored.
+      reporter: ['text', 'json-summary', 'lcov'],
+      include: ['src/**', 'scripts/**'],
+    },
   },
 }));
