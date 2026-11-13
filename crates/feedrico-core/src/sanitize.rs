@@ -98,7 +98,24 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
         .link_rel(Some("noopener noreferrer"))
         .add_allowed_classes("p", ["embed-link"])
         .rm_tags(["picture", "source"])
-        .add_tag_attributes("img", ["alt", "title", "data-remote"]);
+        .add_tag_attributes("img", ["alt", "title", "data-remote"])
+        // Code blocks keep their GFM language class (issue #77, miniflux/v2#4587) so the reader
+        // can highlight them locally. `class` must be whitelisted on the tag for ammonia to hand
+        // it to the attribute filter at all; the filter then lets only language-*/lang-* tokens
+        // through, on pre/code only. Every other class stays stripped as before.
+        .add_tag_attributes("pre", ["class"])
+        .add_tag_attributes("code", ["class"])
+        .attribute_filter(|tag, attr, value| {
+            if attr == "class" && matches!(tag, "pre" | "code") {
+                let kept: Vec<&str> = value
+                    .split_ascii_whitespace()
+                    .filter(|c| is_language_class(c))
+                    .collect();
+                (!kept.is_empty()).then(|| kept.join(" ").into())
+            } else {
+                Some(value.into())
+            }
+        });
     if let Some(base) = base {
         builder.url_relative(ammonia::UrlRelative::RewriteWithBase(base.clone()));
     }
@@ -111,6 +128,23 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
         .filter(|u| seen.insert(u.clone()))
         .collect();
     Sanitized { html, images }
+}
+
+/// A GFM code-block language class token: `language-rust`, `lang-py`, `language-c++`, … The id is
+/// limited to characters that are safe in a CSS class selector and to a sane length, so a class
+/// value can never smuggle markup or an absurd string through the allow-list.
+fn is_language_class(class: &str) -> bool {
+    let Some(id) = class
+        .strip_prefix("language-")
+        .or_else(|| class.strip_prefix("lang-"))
+    else {
+        return false;
+    };
+    !id.is_empty()
+        && id.len() <= 32
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'+' | b'#' | b'.'))
 }
 
 /// Plain text of an HTML fragment, for search, excerpts and titles.
@@ -322,6 +356,67 @@ mod tests {
     fn style_attributes_are_dropped() {
         let out = clean(r#"<p style="position:fixed;inset:0">x</p>"#);
         assert!(!out.html.contains("style"));
+    }
+
+    // Issue #77 (miniflux/v2#4587): GFM code blocks carry the language in a class on pre/code.
+    #[test]
+    fn keeps_language_class_on_pre_and_code() {
+        let out = clean(
+            r#"<pre><code class="language-rust">fn main() { println!("hi"); }</code></pre><pre class="lang-python">print(1)</pre>"#,
+        );
+        assert!(
+            out.html.contains(r#"<code class="language-rust">"#),
+            "{}",
+            out.html
+        );
+        assert!(
+            out.html.contains(r#"<pre class="lang-python">"#),
+            "{}",
+            out.html
+        );
+        // The code text itself is untouched.
+        assert!(
+            out.html.contains(r#"fn main() { println!("hi"); }"#),
+            "{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn strips_every_other_class() {
+        let out = clean(
+            r#"<pre class="highlight"><code class="token keyword">x</code></pre><p class="language-rust">y</p><span class="language-js">z</span><code class="language-c++ bad!">w</code><code class="language-rust&lt;script&gt;">v</code>"#,
+        );
+        // Server-side highlighted markup (Prism/Pygments spans) loses its classes as today.
+        assert!(!out.html.contains("highlight"), "{}", out.html);
+        assert!(!out.html.contains("token"), "{}", out.html);
+        // language-* is allowed on pre/code only, never on other tags.
+        assert!(
+            !out.html.contains(r#"<p class="language-rust">"#),
+            "{}",
+            out.html
+        );
+        assert!(
+            !out.html.contains(r#"<span class="language-js">"#),
+            "{}",
+            out.html
+        );
+        // Mixed values keep only the language token; unsafe "languages" are dropped entirely.
+        assert!(out.html.contains(r#"class="language-c++""#), "{}", out.html);
+        assert!(!out.html.contains("language-rust&lt;"), "{}", out.html);
+    }
+
+    #[test]
+    fn code_block_text_still_reaches_plain_text() {
+        // FTS reads content_text = plain_text(sanitized html); the class allow-list must not
+        // change it, so search still finds code content.
+        let raw = r#"<p>Intro</p><pre><code class="language-rust">fn main() { println!("hi"); }</code></pre>"#;
+        let out = clean(raw);
+        assert_eq!(plain_text(raw), plain_text(&out.html));
+        assert_eq!(
+            plain_text(&out.html),
+            "Introfn main() { println!(\"hi\"); }"
+        );
     }
 
     #[test]
