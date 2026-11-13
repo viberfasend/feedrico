@@ -22,6 +22,14 @@ Feedrico creates your Library in it on the first start; if it holds a Library, F
   under *System Settings → Privacy & Security*.
 - **Linux AppImage:** make it executable (`chmod +x Feedrico_{{version}}_amd64.AppImage`).
 
+**Updating the `.deb`:** Ubuntu's App Center won't install a newer `.deb` over an older one (it
+only shows "Installed"). Install the update from a terminal instead; it replaces the old version
+and keeps your Library:
+
+```sh
+sudo apt install ./Feedrico_{{version}}_amd64.deb
+```
+
 Before opening your Library with a new version, read *Breaking changes* below if there are any:
 an upgraded Library won't open in older versions of Feedrico.
 
