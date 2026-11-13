@@ -33,6 +33,8 @@ tests and decisions.
   (Vibe only).
 - `docs/development.md`: running the app locally. `docs/agent-workflow.md`: the agent
   worktree workflow in full. `docs/accessibility.md`: the WCAG 2.2 AA audit.
+- `docs/testing.md`: how to run tests and coverage locally, and what the PR review
+  workflows (`.github/workflows/review.yml`, `codeql.yml`) do on every pull request.
 
 ## Memory
 
