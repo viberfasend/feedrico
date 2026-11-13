@@ -211,8 +211,10 @@
     cursor: pointer;
   }
 
-  /* Images: one treatment per size class (reader-media.ts). */
+  /* Images: one treatment per size class (reader-media.ts). Feeds' `align="left|right"` would
+     float them and glue the text to their side; the size class decides instead. */
   .content :global(img) {
+    float: none;
     max-width: 100%;
     height: auto;
   }
@@ -362,6 +364,7 @@
     border-block-start: 1px solid var(--color-border-default);
   }
   .content :global(table) {
+    float: none;
     display: block;
     overflow-x: auto;
     border-collapse: collapse;

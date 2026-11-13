@@ -18,6 +18,7 @@ vi.mock('../api', async (importOriginal) => ({
 
 const { app } = await import('../state.svelte');
 const { default: Reader } = await import('./Reader.svelte');
+const { default: readerSource } = await import('./Reader.svelte?raw');
 
 const article = (contentHtml: string): ArticleDetail => ({
   id: 1,
@@ -138,6 +139,16 @@ describe('Reader images by size', () => {
     expect([...content.querySelectorAll('.img-caption')].map((c) => c.textContent)).toEqual(['The joke']);
     // A tall comic is meant to be scrolled: no height cap.
     expect(content.querySelector('img')!.classList.contains('img-cap')).toBe(false);
+  });
+
+  // Bug: news feeds (Saarbrücker Zeitung) send `<img align="left">` before the teaser text, and
+  // the sanitizer's allow-list keeps `align`. The webview turns it into `float: left`, the
+  // block's `margin: auto` becomes 0 beside a float, and the text ran right up against the
+  // picture. The spec shows every picture as a centred block, so the reader ignores `align`.
+  // Stored Articles already carry the attribute, so this has to hold in the reader's CSS.
+  it.each(['img', 'table'])('never float %s elements that carry an align attribute', (tag) => {
+    const rule = new RegExp(`\\.content :global\\(${tag}\\) \\{[^}]*\\bfloat: none;`);
+    expect(readerSource).toMatch(rule);
   });
 });
 
