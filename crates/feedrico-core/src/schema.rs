@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use crate::Result;
 
-pub(crate) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
+pub(crate) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
 
 const V1: &str = r#"
 CREATE TABLE folder (
@@ -125,6 +125,15 @@ const V4: &str = r#"
 ALTER TABLE enclosure ADD COLUMN duration_secs INTEGER;
 ALTER TABLE enclosure ADD COLUMN kind TEXT NOT NULL DEFAULT 'document';
 ALTER TABLE enclosure ADD COLUMN player_url TEXT;
+"#;
+
+/// Video metadata per Article (JSON, see `parse::ParsedVideo`): platform, video id, duration,
+/// view count, thumbnail source. Null when the Article is not about a video. Existing video
+/// Feed Articles (`yt:video:` entry ids) get their identity backfilled.
+const V5: &str = r#"
+ALTER TABLE article ADD COLUMN video TEXT;
+UPDATE article SET video = json_object('host', 'youtube', 'id', substr(identity, 10))
+ WHERE substr(identity, 1, 9) = 'yt:video:';
 "#;
 
 /// Existing Articles get the first image of their content as Lead Image.
@@ -285,5 +294,41 @@ mod tests {
             leads,
             vec![Some(crate::sanitize::media_key("https://x/zzz.png")), None]
         );
+
+    /// The V5 backfill: existing `yt:video:` Articles get their video identity backfilled.
+    #[test]
+    fn v5_adds_the_video_column_and_backfills_yt_video_identities() {
+        let mut c = conn();
+        migrate(&mut c, &MIGRATIONS[..1]).unwrap();
+        c.execute_batch(
+            "INSERT INTO feed (url, title) VALUES ('https://www.youtube.com/feeds/videos.xml?channel_id=UCx', 'YT');
+             INSERT INTO article (feed_id, identity, title, first_seen_at, article_date)
+               VALUES (1, 'yt:video:0A1ouV7iD8o', 'A video', 0, 0);
+             INSERT INTO article (feed_id, identity, title, first_seen_at, article_date)
+               VALUES (1, 'post-1', 'A post', 0, 0);",
+        )
+        .unwrap();
+
+        assert_eq!(migrate(&mut c, MIGRATIONS).unwrap(), MIGRATIONS.len() as u32);
+
+        let video: Option<String> = c
+            .query_row(
+                "SELECT video FROM article WHERE identity = 'yt:video:0A1ouV7iD8o'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&video.unwrap()).unwrap();
+        assert_eq!(parsed["host"], "youtube");
+        assert_eq!(parsed["id"], "0A1ouV7iD8o");
+        let none: Option<String> = c
+            .query_row(
+                "SELECT video FROM article WHERE identity = 'post-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(none.is_none(), "plain Articles stay without video metadata");
+    }
     }
 }

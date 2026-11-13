@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::parse::{EnclosureKind, ParsedEntry};
+use crate::parse::{EnclosureKind, ParsedEntry, ParsedVideo};
 use crate::{Error, Library, Result};
 
 /// Anything before this is treated as a missing or bogus date (1995-01-01).
@@ -24,21 +24,22 @@ pub(crate) fn upsert(
     e: &ParsedEntry,
     now: i64,
 ) -> Result<Option<i64>> {
-    let existing: Option<(i64, String, String)> = conn
+    let existing: Option<(i64, String, String, Option<String>)> = conn
         .query_row(
-            "SELECT id, title, content_html FROM article WHERE feed_id = ?1 AND identity = ?2",
+            "SELECT id, title, content_html, video FROM article WHERE feed_id = ?1 AND identity = ?2",
             params![feed_id, e.identity],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
 
     match existing {
         // Edited upstream: refresh the content, keep Read/Starred and the Article Date.
-        Some((id, title, html)) => {
-            if title != e.title || html != e.content_html {
+        Some((id, title, html, video)) => {
+            let new_video = video_json(e)?;
+            if title != e.title || html != e.content_html || video != new_video {
                 conn.execute(
                     "UPDATE article SET title = ?2, content_html = ?3, content_text = ?4, excerpt = ?5,
-                            url = ?6, author = ?7, lead_image = ?8
+                            url = ?6, author = ?7, lead_image = ?8, video = ?9
                      WHERE id = ?1",
                     params![
                         id,
@@ -48,7 +49,8 @@ pub(crate) fn upsert(
                         e.excerpt,
                         e.url,
                         e.author,
-                        lead_key(e)
+                        lead_key(e),
+                        new_video
                     ],
                 )?;
             }
@@ -57,8 +59,8 @@ pub(crate) fn upsert(
         None => {
             conn.execute(
                 "INSERT INTO article (feed_id, identity, url, title, author, content_html, content_text,
-                                      excerpt, published_at, first_seen_at, article_date, lead_image)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                      excerpt, published_at, first_seen_at, article_date, lead_image, video)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     feed_id,
                     e.identity,
@@ -72,6 +74,7 @@ pub(crate) fn upsert(
                     now,
                     article_date(e.published_at, now),
                     lead_key(e),
+                    video_json(e)?,
                 ],
             )?;
             let id = conn.last_insert_rowid();
@@ -103,6 +106,11 @@ pub(crate) fn upsert(
 
 fn lead_key(e: &ParsedEntry) -> Option<String> {
     e.lead_image.as_deref().map(crate::sanitize::media_key)
+}
+
+/// The Article's video metadata as the JSON stored in the `video` column (schema V4).
+fn video_json(e: &ParsedEntry) -> Result<Option<String>> {
+    Ok(e.video.as_ref().map(serde_json::to_string).transpose()?)
 }
 
 /// Which Articles a list shows.
@@ -186,6 +194,8 @@ pub struct ArticleDetail {
     /// Media key of the Feed's cached favicon, if any.
     pub favicon: Option<String>,
     pub enclosures: Vec<Enclosure>,
+    /// The video this Article is about or embeds (platform, id, duration, views, thumbnail).
+    pub video: Option<ParsedVideo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -304,15 +314,17 @@ impl Library {
 
     pub fn article(&self, id: i64) -> Result<ArticleDetail> {
         let conn = self.conn();
+        let mut video_raw: Option<String> = None;
         let mut detail = conn
             .query_row(
                 "SELECT a.id, a.feed_id, f.title, f.site_url, a.title, a.url, a.author, a.content_html,
-                        a.article_date, a.is_read, a.is_starred, m.hash
+                        a.article_date, a.is_read, a.is_starred, m.hash, a.video
                  FROM article a JOIN feed f ON f.id = a.feed_id
                  LEFT JOIN media m ON m.hash = f.favicon_hash
                  WHERE a.id = ?1",
                 [id],
                 |r| {
+                    video_raw = r.get(12)?;
                     Ok(ArticleDetail {
                         id: r.get(0)?,
                         feed_id: r.get(1)?,
@@ -327,11 +339,13 @@ impl Library {
                         is_starred: r.get(10)?,
                         favicon: r.get(11)?,
                         enclosures: Vec::new(),
+                        video: None,
                     })
                 },
             )
             .optional()?
             .ok_or(Error::NotFound)?;
+        detail.video = video_raw.map(|s| serde_json::from_str(&s)).transpose()?;
         let mut stmt = conn.prepare_cached(
             "SELECT url, mime_type, length, duration_secs, kind, player_url FROM enclosure WHERE article_id = ?1 ORDER BY id",
         )?;
@@ -426,6 +440,18 @@ mod tests {
         }
     }
 
+    fn video_entry(identity: &str, views: Option<u64>) -> ParsedEntry {
+        let mut e = entry(identity, "A video", Some(1_700_000_000));
+        e.video = Some(crate::parse::ParsedVideo {
+            host: crate::sanitize::VideoHost::YouTube,
+            id: "0A1ouV7iD8o".into(),
+            duration: Some(754),
+            views,
+            thumbnail: Some("https://i1.ytimg.com/vi/0A1ouV7iD8o/hqdefault.jpg".into()),
+        });
+        e
+    }
+
     fn fetched(entries: Vec<ParsedEntry>) -> FetchResult {
         FetchResult::Fetched {
             feed: ParsedFeed {
@@ -450,6 +476,58 @@ mod tests {
             }])
             .unwrap();
         (root, library)
+    }
+
+    #[test]
+    fn video_metadata_is_stored_on_the_article_and_updated_on_edit() {
+        let (_root, library) = library_with_feed();
+        library
+            .apply_fetch(
+                1,
+                fetched(vec![video_entry("yt:video:0A1ouV7iD8o", Some(100))]),
+            )
+            .unwrap();
+        let id: i64 = library
+            .conn()
+            .query_row(
+                "SELECT id FROM article WHERE identity = 'yt:video:0A1ouV7iD8o'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let video = library
+            .article(id)
+            .unwrap()
+            .video
+            .expect("video metadata on the Article");
+        assert_eq!(video.id, "0A1ouV7iD8o");
+        assert_eq!(video.duration, Some(754));
+        assert_eq!(video.views, Some(100));
+
+        // Edited upstream with unchanged content: the new view count still lands.
+        library
+            .apply_fetch(
+                1,
+                fetched(vec![video_entry("yt:video:0A1ouV7iD8o", Some(304_321))]),
+            )
+            .unwrap();
+        assert_eq!(
+            library.article(id).unwrap().video.unwrap().views,
+            Some(304_321)
+        );
+
+        // Plain Articles carry no video metadata.
+        library
+            .apply_fetch(1, fetched(vec![entry("p1", "Plain", None)]))
+            .unwrap();
+        let plain: i64 = library
+            .conn()
+            .query_row("SELECT id FROM article WHERE identity = 'p1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(library.article(plain).unwrap().video.is_none());
+        library.close().unwrap();
     }
 
     #[test]
