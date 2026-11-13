@@ -156,3 +156,126 @@ pub(crate) fn migrate(conn: &mut Connection, migrations: &[&str]) -> Result<u32>
     }
     Ok(migrations.len() as u32)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn() -> Connection {
+        Connection::open_in_memory().unwrap()
+    }
+
+    fn columns(conn: &Connection, table: &str) -> Vec<String> {
+        conn.prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap()
+            .query_map([], |r| r.get(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    fn object_names(conn: &Connection) -> Vec<String> {
+        conn.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'index')")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_fresh_database_is_at_version_zero() {
+        assert_eq!(version(&conn()).unwrap(), 0);
+    }
+
+    #[test]
+    fn migrating_applies_every_step_and_sets_user_version() {
+        let mut c = conn();
+        let applied = migrate(&mut c, MIGRATIONS).unwrap();
+        assert_eq!(applied, MIGRATIONS.len() as u32);
+        assert_eq!(version(&c).unwrap(), MIGRATIONS.len() as u32);
+
+        let objects = object_names(&c);
+        for expected in [
+            "folder",
+            "feed",
+            "article",
+            "enclosure",
+            "media",
+            "article_media",
+            "setting",
+            "article_fts",
+            "article_feed_unread",
+        ] {
+            assert!(objects.iter().any(|o| o == expected), "missing {expected}");
+        }
+        // V2 added the Lead Image column; V1 alone must not have it.
+        assert!(columns(&c, "article").iter().any(|c| c == "lead_image"));
+    }
+
+    #[test]
+    fn migrations_are_idempotent() {
+        let mut c = conn();
+        migrate(&mut c, MIGRATIONS).unwrap();
+        assert_eq!(
+            migrate(&mut c, MIGRATIONS).unwrap(),
+            MIGRATIONS.len() as u32
+        );
+        assert_eq!(version(&c).unwrap(), MIGRATIONS.len() as u32);
+    }
+
+    #[test]
+    fn a_partial_migration_stops_at_the_requested_version() {
+        let mut c = conn();
+        migrate(&mut c, &MIGRATIONS[..1]).unwrap();
+        assert_eq!(version(&c).unwrap(), 1);
+        assert!(!columns(&c, "article").iter().any(|c| c == "lead_image"));
+        assert!(!object_names(&c).iter().any(|o| o == "article_feed_unread"));
+
+        // Continuing with the full list picks up exactly where it stopped.
+        migrate(&mut c, MIGRATIONS).unwrap();
+        assert_eq!(version(&c).unwrap(), MIGRATIONS.len() as u32);
+        assert!(columns(&c, "article").iter().any(|c| c == "lead_image"));
+    }
+
+    #[test]
+    fn a_failing_migration_leaves_the_completed_steps_intact() {
+        let mut c = conn();
+        let broken = [MIGRATIONS[0], "THIS IS NOT SQL"];
+        assert!(migrate(&mut c, &broken).is_err());
+        assert_eq!(
+            version(&c).unwrap(),
+            1,
+            "the completed step stays committed, the failed one rolls back"
+        );
+    }
+
+    /// The V2 backfill: existing Articles get the first cached image as Lead Image. The "first"
+    /// is the lowest rowid, i.e. insertion order, not URL order.
+    #[test]
+    fn v2_backfills_the_lead_image_from_the_first_inserted_image() {
+        let mut c = conn();
+        migrate(&mut c, &MIGRATIONS[..1]).unwrap();
+        c.execute_batch(
+            "INSERT INTO feed (url, title) VALUES ('u', 'F');
+             INSERT INTO article (feed_id, identity, first_seen_at, article_date) VALUES (1, 'a', 0, 0);
+             INSERT INTO article (feed_id, identity, first_seen_at, article_date) VALUES (1, 'b', 0, 0);
+             INSERT INTO article_media (article_id, source_url) VALUES (1, 'https://x/zzz.png');
+             INSERT INTO article_media (article_id, source_url) VALUES (1, 'https://x/aaa.png');",
+        )
+        .unwrap();
+
+        migrate(&mut c, MIGRATIONS).unwrap();
+        let leads: Vec<Option<String>> = c
+            .prepare("SELECT lead_image FROM article ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            leads,
+            vec![Some(crate::sanitize::media_key("https://x/zzz.png")), None]
+        );
+    }
+}
