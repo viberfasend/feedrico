@@ -1,14 +1,30 @@
 # Labels applied by the labeler job in .github/workflows/review.yml.
-# One label per top-level area, kept small on purpose: src/ -> ui, crates/ + src-tauri/
-# -> core, .github/ -> ci, docs/ -> docs, site/ -> site.
-ui:
-  - 'src/**'
-core:
-  - 'crates/**'
-  - 'src-tauri/**'
-ci:
-  - '.github/**'
-docs:
-  - 'docs/**'
-site:
-  - 'site/**'
+# Uses the repository's existing labels only, one area per top-level path, kept small on
+# purpose. actions/labeler v6 requires the changed-files object form.
+area:ui:
+  - changed-files:
+      - any-glob-to-any-file: 'src/**'
+area:design-system:
+  - changed-files:
+      - any-glob-to-any-file: 'tokens/**'
+      - any-glob-to-any-file: 'brand/**'
+area:library:
+  - changed-files:
+      - any-glob-to-any-file: 'crates/**'
+area:infra:
+  - changed-files:
+      - any-glob-to-any-file: 'src-tauri/**'
+      - any-glob-to-any-file: '.github/**'
+      - any-glob-to-any-file: 'scripts/**'
+      - any-glob-to-any-file: 'package.json'
+      - any-glob-to-any-file: 'package-lock.json'
+      - any-glob-to-any-file: 'Cargo.toml'
+      - any-glob-to-any-file: 'Cargo.lock'
+      - any-glob-to-any-file: 'vite.config.ts'
+area:content:
+  - changed-files:
+      - any-glob-to-any-file: 'site/**'
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: 'docs/**'
+      - any-glob-to-any-file: '*.md'
