@@ -565,10 +565,15 @@ async fn check_for_updates(app: AppHandle) -> CommandResult<UpdateStatus> {
     Ok(fetcher.check_for_updates(&current).await?)
 }
 
+/// Only web links open in the system browser; nothing else is allowed through.
+fn is_web_url(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
 /// Opens an http(s) link in the system browser. Nothing else is allowed through.
 #[tauri::command]
 fn open_external(url: String, app: AppHandle) -> CommandResult<()> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
+    if !is_web_url(&url) {
         return Err(CommandError::new(
             "invalidUrl",
             "only web links can be opened",
@@ -831,12 +836,14 @@ fn serve_media(app: &AppHandle, path: &str) -> Response<Vec<u8>> {
 }
 
 /// Keeps the webview on the app: feed content can never navigate it away.
+fn navigation_allowed(url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "tauri")
+        || matches!(url.host_str(), Some("tauri.localhost") | Some("localhost"))
+}
+
 fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("navigation-guard")
-        .on_navigation(|_, url| {
-            matches!(url.scheme(), "tauri")
-                || matches!(url.host_str(), Some("tauri.localhost") | Some("localhost"))
-        })
+        .on_navigation(|_, url| navigation_allowed(url))
         .build()
 }
 
@@ -932,4 +939,185 @@ pub fn run() {
                 let _ = library.close();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_with(library: Option<Library>) -> AppState {
+        AppState {
+            library: Mutex::new(library),
+            fetcher: Fetcher::new("media://localhost/").unwrap(),
+            refreshing: AtomicBool::new(false),
+            perf: None,
+        }
+    }
+
+    /// Every core error crosses the IPC boundary as a stable kind the UI can branch on.
+    #[test]
+    fn command_errors_map_every_core_error_to_a_stable_kind() {
+        use feedrico_core::Error::*;
+        let lock = feedrico_core::LockInfo {
+            machine: "friend-laptop".into(),
+            pid: 4242,
+            opened_at: 1762547640,
+        };
+        let cases: Vec<(feedrico_core::Error, &str)> = vec![
+            (NotALibrary("/x".into()), "notALibrary"),
+            (TargetNotEmpty("/x".into()), "targetNotEmpty"),
+            (
+                TooNew {
+                    found: 4,
+                    supported: 3,
+                },
+                "tooNew",
+            ),
+            (
+                NeedsUpgrade {
+                    found: 1,
+                    target: 3,
+                },
+                "needsUpgrade",
+            ),
+            (Locked(lock), "locked"),
+            (Opml("bad".into()), "invalidOpml"),
+            (Feed("bad".into()), "internal"),
+            (Network("down".into()), "internal"),
+            (Invalid("bad".into()), "invalid"),
+            (
+                InvalidSetting {
+                    key: "theme".into(),
+                    message: "unknown".into(),
+                },
+                "invalidSetting",
+            ),
+            (NotFound, "notFound"),
+            (
+                Manifest(serde_json::from_str::<serde_json::Value>("{").unwrap_err()),
+                "internal",
+            ),
+            (Io(std::io::Error::other("disk full")), "internal"),
+        ];
+        for (error, kind) in cases {
+            let command_error = CommandError::from(error);
+            assert_eq!(command_error.kind, kind);
+            assert!(!command_error.message.is_empty());
+        }
+        // The message is the human-readable Display of the source error.
+        assert_eq!(CommandError::from(NotFound).message, "not found");
+        assert_eq!(
+            CommandError::from(Locked(feedrico_core::LockInfo {
+                machine: "friend-laptop".into(),
+                pid: 4242,
+                opened_at: 1762547640,
+            }))
+            .message,
+            "this Library is open on friend-laptop since 1762547640"
+        );
+    }
+
+    #[test]
+    fn io_errors_cross_as_io() {
+        let error = CommandError::from(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "nope",
+        ));
+        assert_eq!(error.kind, "io");
+        assert!(error.message.contains("nope"));
+    }
+
+    #[test]
+    fn with_library_runs_against_the_open_library_or_reports_none() {
+        let empty = state_with(None);
+        let err = with_library(&empty, |_| Ok::<(), feedrico_core::Error>(())).unwrap_err();
+        assert_eq!(err.kind, "noLibrary");
+        assert_eq!(err.message, "no Library is open");
+
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join(feedrico_core::library::DIR_NAME);
+        let library = Library::create(&dir).unwrap();
+        library
+            .add_feed("https://a.example/feed", "A", None, None)
+            .unwrap();
+        let state = state_with(Some(library));
+        assert_eq!(with_library(&state, |l| l.feed_count()).unwrap(), 1);
+    }
+
+    #[test]
+    fn library_info_reports_path_name_version_and_feed_count() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join(feedrico_core::library::DIR_NAME);
+        let library = Library::create(&dir).unwrap();
+        library
+            .add_feed("https://a.example/feed", "A", None, None)
+            .unwrap();
+        let info = info(&library).unwrap();
+        assert_eq!(info.path, dir);
+        assert_eq!(info.name, feedrico_core::library::DIR_NAME);
+        assert_eq!(info.format_version, feedrico_core::FORMAT_VERSION);
+        assert_eq!(info.feed_count, 1);
+        if std::env::var_os("APPIMAGE").is_none() {
+            assert!(!info.portable, "tests never run in Portable Mode");
+        }
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn dir_size_sums_files_recursively_and_fails_on_missing_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a"), [0u8; 10]).unwrap();
+        let sub = root.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("b"), [0u8; 5]).unwrap();
+        assert_eq!(dir_size(root.path()).unwrap(), 15);
+        assert!(dir_size(&root.path().join("missing")).is_err());
+    }
+
+    /// Feed content can never navigate the webview away from the app shell.
+    #[test]
+    fn navigation_stays_on_the_app_shell() {
+        for allowed in [
+            "tauri://localhost",
+            "https://tauri.localhost/",
+            "http://localhost:1430/",
+            "https://localhost/index.html",
+            // The host rule also covers the local media scheme the shell itself registers.
+            "media://localhost/abc123",
+        ] {
+            assert!(
+                navigation_allowed(&tauri::Url::parse(allowed).unwrap()),
+                "{allowed} must stay"
+            );
+        }
+        for blocked in [
+            "https://example.com",
+            "http://example.com/feed",
+            "media://example.com/abc123",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+        ] {
+            assert!(
+                !navigation_allowed(&tauri::Url::parse(blocked).unwrap()),
+                "{blocked} must be blocked"
+            );
+        }
+    }
+
+    #[test]
+    fn only_http_and_https_links_open_externally() {
+        assert!(is_web_url("https://example.com"));
+        assert!(is_web_url("http://example.com/x?y=1"));
+        for bad in [
+            "",
+            "example.com",
+            "ftp://x",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "HTTPS://example.com",
+            " https://example.com",
+        ] {
+            assert!(!is_web_url(bad), "{bad:?} must not open in a browser");
+        }
+    }
 }
