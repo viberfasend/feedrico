@@ -108,6 +108,14 @@
       },
       "caption": {
         "$value": "{palette.paper.0}"
+      },
+      "viewer": {
+        "$description": "Behind the full-window image viewer: near black in both themes, so photos look true.",
+        "$value": "{palette.paper.950}"
+      },
+      "backdrop": {
+        "$description": "Behind images in Articles. Only shows through transparent images: black-on-transparent diagrams stay readable in the dark theme.",
+        "$value": "{palette.paper.100}"
       }
     },
     "feedTile": {
