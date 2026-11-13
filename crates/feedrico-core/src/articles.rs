@@ -422,6 +422,7 @@ mod tests {
             images: vec![],
             lead_image: None,
             enclosures: vec![],
+            video: None,
         }
     }
 
