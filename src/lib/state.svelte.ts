@@ -562,10 +562,11 @@ export class AppState {
     const before = this.layout;
     if (key) this.layouts.views[key] = layout;
     else this.layouts.default = layout;
-    this.readerOpen = false;
+    // An open Article stays open across Layouts: the pane in a list is the slide-over in a grid.
+    this.readerOpen = this.article !== null;
     await api.setLayout(key, layout);
     // Gallery filters the list; switching into or out of it needs a fresh list.
-    if ((before === 'gallery') !== (layout === 'gallery')) await this.resetList();
+    if ((before === 'gallery') !== (layout === 'gallery')) await this.resetList({ keepArticle: true });
   }
 
   cycleLayout() {
@@ -623,7 +624,7 @@ export class AppState {
 
   // ---- The Article list -------------------------------------------------------------------
 
-  async resetList() {
+  async resetList(options: { keepArticle?: boolean } = {}) {
     // Bump the epoch first: anything still loading for the previous list is discarded, and
     // components that ask for pages while we count already load the new list.
     const query = this.query();
@@ -631,9 +632,11 @@ export class AppState {
     this.pages = new Map();
     this.loading = new Map();
     this.selectedIndex = null;
-    this.article = null;
     this.hasNewArticles = false;
-    this.readerOpen = false;
+    if (!options.keepArticle) {
+      this.article = null;
+      this.readerOpen = false;
+    }
     const total = await api.count(query);
     const hidden = query.withLeadImage
       ? (await api.count({ ...query, withLeadImage: false })) - total
