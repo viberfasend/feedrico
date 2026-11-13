@@ -113,7 +113,7 @@
       const reader = app.article ? document.getElementById('pane-reader') : null;
       if (!reader) {
         if (!event.shiftKey) void app.move(1);
-      } else if (pageReader(reader, !event.shiftKey) === 'end') {
+      } else if (pageReader(reader, !event.shiftKey, reader.querySelector<HTMLElement>('[role="toolbar"]')?.offsetHeight ?? 0) === 'end') {
         void app.move(1);
       }
       return;
