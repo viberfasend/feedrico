@@ -929,3 +929,133 @@ mod tests {
         );
     }
 }
+
+/// Edge cases around the refresh bookkeeping: backoff boundaries and stored conditionals.
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+    use crate::library::DIR_NAME;
+    use crate::parse::{ParsedEntry, ParsedFeed};
+
+    fn library_with_feed(site_url: Option<&str>) -> (tempfile::TempDir, Library) {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .add_feed("https://a.example/feed", "A", site_url, None)
+            .unwrap();
+        (root, library)
+    }
+
+    #[test]
+    fn the_backoff_boundary_is_inclusive() {
+        let (_root, library) = library_with_feed(None);
+        let conn = library.conn();
+        // Two failures: the Feed now waits 2 h.
+        library
+            .apply_fetch(1, FetchResult::Failed("HTTP 500".into()))
+            .unwrap();
+        library
+            .apply_fetch(1, FetchResult::Failed("HTTP 500".into()))
+            .unwrap();
+        let set_last = |secs_ago: i64| {
+            conn.execute(
+                "UPDATE feed SET last_fetched_at = ?2 WHERE id = 1",
+                params![1, now() - secs_ago],
+            )
+            .unwrap();
+        };
+
+        // Margins keep the test off the wall-clock second boundary.
+        set_last(2 * 3600 - 60);
+        assert!(
+            library.feeds_to_fetch(false).unwrap().is_empty(),
+            "before the delay is over: still waiting"
+        );
+        set_last(2 * 3600 + 60);
+        assert_eq!(
+            library.feeds_to_fetch(false).unwrap().len(),
+            1,
+            "once the delay has passed: due again"
+        );
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn a_fetched_result_stores_the_conditionals_and_fills_the_site_url() {
+        let (_root, library) = library_with_feed(None);
+        let entry = ParsedEntry {
+            identity: "a".into(),
+            url: None,
+            title: "A".into(),
+            author: None,
+            content_html: "<p>A</p>".into(),
+            content_text: "A".into(),
+            excerpt: "A".into(),
+            published_at: None,
+            images: vec![],
+            lead_image: None,
+            enclosures: vec![],
+        };
+        library
+            .apply_fetch(
+                1,
+                FetchResult::Fetched {
+                    feed: ParsedFeed {
+                        title: None,
+                        site_url: Some("https://a.example/".into()),
+                        entries: vec![entry],
+                    },
+                    etag: Some("\"e1\"".into()),
+                    last_modified: Some("Wed, 01 Jan 2025 00:00:00 GMT".into()),
+                },
+            )
+            .unwrap();
+        let row: (Option<String>, Option<String>, Option<String>, Option<i64>, i64) = library
+            .conn()
+            .query_row(
+                "SELECT etag, last_modified, site_url, last_success_at, error_count FROM feed WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap();
+        assert_eq!(row.0.as_deref(), Some("\"e1\""));
+        assert_eq!(row.1.as_deref(), Some("Wed, 01 Jan 2025 00:00:00 GMT"));
+        assert_eq!(row.2.as_deref(), Some("https://a.example/"));
+        assert!(row.3.is_some());
+        assert_eq!(row.4, 0);
+
+        // A later fetch without a site_url keeps the one already stored (coalesce).
+        library
+            .apply_fetch(
+                1,
+                FetchResult::Fetched {
+                    feed: ParsedFeed {
+                        title: None,
+                        site_url: None,
+                        entries: vec![],
+                    },
+                    etag: Some("\"e2\"".into()),
+                    last_modified: None,
+                },
+            )
+            .unwrap();
+        let (etag, site_url): (Option<String>, Option<String>) = library
+            .conn()
+            .query_row("SELECT etag, site_url FROM feed WHERE id = 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(etag.as_deref(), Some("\"e2\""));
+        assert_eq!(site_url.as_deref(), Some("https://a.example/"));
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn moving_a_missing_feed_is_not_found_but_moving_to_the_top_level_is_fine() {
+        let (_root, library) = library_with_feed(None);
+        assert!(matches!(library.move_feed(999, None), Err(Error::NotFound)));
+        library.move_feed(1, None).unwrap();
+        assert!(library.sidebar(0).unwrap().feeds.iter().any(|f| f.id == 1));
+        library.close().unwrap();
+    }
+}

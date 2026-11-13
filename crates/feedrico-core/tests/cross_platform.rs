@@ -66,3 +66,94 @@ fn fixture_library_from_linux_opens_here() {
     assert!(starred);
     library.close().unwrap();
 }
+
+/// Scenario C (docs/personas.md): no absolute paths anywhere inside a Library, so the same
+/// folder opens identically wherever it lands (Linux Library on a Windows Host, a stick, …).
+#[test]
+fn the_library_contains_no_absolute_paths() {
+    let manifest = fs::read_to_string(fixture_dir().join("library.json")).unwrap();
+    let db = fs::read(fixture_dir().join("library.db")).unwrap();
+    for needle in ["/home/", "/tmp/", "/Users/", "/private/"] {
+        assert!(!manifest.contains(needle), "manifest mentions {needle}");
+        assert!(
+            !db.windows(needle.len()).any(|w| w == needle.as_bytes()),
+            "database mentions {needle}"
+        );
+    }
+}
+
+/// After the one-time upgrade, the fixture is an ordinary same-version Library: it reopens
+/// without another prompt and leaves no lock behind (scenarios A/C on the upgraded copy).
+#[test]
+fn the_upgraded_fixture_reopens_without_another_upgrade() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join(DIR_NAME);
+    copy_dir(&fixture_dir(), &dir);
+    let library = Library::open(
+        &dir,
+        OpenOptions {
+            allow_upgrade: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    library.close().unwrap();
+
+    assert_eq!(
+        feedrico_core::library::inspect(&dir).unwrap(),
+        Status::Ready
+    );
+    assert!(!dir.join(".lock").exists(), "closing removes the lock");
+    let library = Library::open(&dir, OpenOptions::default()).unwrap();
+    assert_eq!(library.format_version().unwrap(), FORMAT_VERSION);
+    library.close().unwrap();
+}
+
+/// Scenario D (docs/personas.md): a stick pulled mid-session leaves a lock that names the
+/// machine and the time; "Open anyway" takes it over, and without consent nothing is written.
+#[test]
+fn a_stale_foreign_lock_is_reported_with_machine_and_time() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join(DIR_NAME);
+    copy_dir(&fixture_dir(), &dir);
+    let library = Library::open(
+        &dir,
+        OpenOptions {
+            allow_upgrade: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        feedrico_core::library::inspect(&dir).unwrap(),
+        Status::Locked(_)
+    ));
+    library.close().unwrap();
+
+    fs::write(
+        dir.join(".lock"),
+        br#"{"machine":"friend-laptop","pid":4242,"openedAt":1762547640}"#,
+    )
+    .unwrap();
+    match feedrico_core::library::inspect(&dir).unwrap() {
+        Status::Locked(info) => {
+            assert_eq!(info.machine, "friend-laptop");
+            assert_eq!(info.opened_at, 1762547640);
+        }
+        other => panic!("expected Locked, got {other:?}"),
+    }
+    assert!(matches!(
+        Library::open(&dir, OpenOptions::default()),
+        Err(feedrico_core::Error::Locked(_))
+    ));
+    let library = Library::open(
+        &dir,
+        OpenOptions {
+            take_over_lock: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    library.close().unwrap();
+    assert!(!dir.join(".lock").exists());
+}
