@@ -223,6 +223,28 @@ mod tests {
     }
 
     #[test]
+    fn short_versions_and_pre_release_names_compare_sensibly() {
+        // Missing components read as zero.
+        assert!(matches!(
+            compare("0.1", "0.1.0"),
+            UpdateStatus::UpToDate { .. }
+        ));
+        assert!(matches!(
+            compare("1", "1.0.1"),
+            UpdateStatus::Available { .. }
+        ));
+        // Pre-release names order alphabetically within the same numbers.
+        assert!(matches!(
+            compare("0.1.0-alpha", "0.1.0-beta"),
+            UpdateStatus::Available { .. }
+        ));
+        assert!(matches!(
+            compare("0.1.0-beta", "0.1.0-alpha"),
+            UpdateStatus::UpToDate { .. }
+        ));
+    }
+
+    #[test]
     fn a_garbage_tag_is_up_to_date_not_a_crash() {
         for tag in ["", "latest", "v", "0.x.0", "1.2.3.4", "0..1"] {
             assert!(

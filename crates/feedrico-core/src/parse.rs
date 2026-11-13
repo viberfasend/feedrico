@@ -311,3 +311,55 @@ mod tests {
         );
     }
 }
+
+/// Content-safety edges: feed input is untrusted, so non-web links and plain text must not
+/// turn into markup or URLs.
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+
+    const PREFIX: &str = "media://localhost/";
+
+    #[test]
+    fn non_web_links_are_dropped() {
+        let rss = br#"<?xml version="1.0"?>
+<rss version="2.0"><channel><title>T</title><link>javascript:alert(1)</link>
+  <item><title>Evil</title><guid>e1</guid><link>javascript:alert(1)</link>
+    <description>text</description></item>
+</channel></rss>"#;
+        let feed = parse(rss, "https://x.example/feed.xml", PREFIX).unwrap();
+        assert_eq!(feed.site_url, None, "a javascript: channel link is dropped");
+        assert_eq!(
+            feed.entries[0].url, None,
+            "a javascript: item link is dropped"
+        );
+    }
+
+    #[test]
+    fn plain_text_summaries_become_escaped_html() {
+        let atom = br#"<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>T</title><id>urn:t</id>
+  <entry><title>S</title><id>urn:e1</id>
+    <summary>Fish &amp; Chips &lt;3
+
+Second paragraph</summary></entry>
+</feed>"#;
+        let feed = parse(atom, "https://x.example/feed", PREFIX).unwrap();
+        let e = &feed.entries[0];
+        assert!(
+            e.content_html.contains("&lt;3"),
+            "the < is escaped in the HTML: {}",
+            e.content_html
+        );
+        assert!(
+            e.content_text.contains("Fish & Chips <3"),
+            "the reader text is unescaped: {}",
+            e.content_text
+        );
+        assert!(
+            e.content_html.contains("<p>"),
+            "paragraphs are kept: {}",
+            e.content_html
+        );
+    }
+}
