@@ -26,6 +26,50 @@ pub fn media_key(source_url: &str) -> String {
     blake3::hash(source_url.as_bytes()).to_hex()[..32].to_owned()
 }
 
+/// The MathML Core element set (W3C), minus `annotation-xml` and `mglyph`: see the comment at
+/// the allow-list in [`sanitize`] for why those two stay out.
+const MATHML_TAGS: &[&str] = &[
+    "math",
+    "semantics",
+    "annotation",
+    "merror",
+    "mfrac",
+    "mi",
+    "mmultiscripts",
+    "mn",
+    "mo",
+    "mover",
+    "mpadded",
+    "mphantom",
+    "mprescripts",
+    "mroot",
+    "mrow",
+    "ms",
+    "mspace",
+    "msqrt",
+    "mstyle",
+    "msub",
+    "msubsup",
+    "msup",
+    "mtable",
+    "mlabeledtr",
+    "mtd",
+    "mtext",
+    "mtr",
+    "munder",
+    "munderover",
+    "none",
+    "maction",
+    "menclose",
+    "mfenced",
+    "mstack",
+    "msrow",
+    "msgroup",
+    "msline",
+    "mscarry",
+    "mscarries",
+];
+
 /// `media_prefix` is where the shell serves cached media, e.g. `media://localhost/`.
 pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized {
     let images = RefCell::new(Vec::<String>::new());
@@ -115,7 +159,14 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
             } else {
                 Some(value.into())
             }
-        });
+        })
+        // MathML (issue #78, ADR 0004): the MathML Core element set, minus `annotation-xml` (its
+        // encoding="text/html" can smuggle in HTML) and `mglyph`. The set is inert — with no URL
+        // attributes allowed, maction's actiontype/href and every event handler are stripped like
+        // everywhere else. Only plain-text attributes survive: alttext (the accessible name screen
+        // readers voice for role "math") and display (block vs inline) on math itself.
+        .add_tags(MATHML_TAGS)
+        .add_tag_attributes("math", ["alttext", "display"]);
     if let Some(base) = base {
         builder.url_relative(ammonia::UrlRelative::RewriteWithBase(base.clone()));
     }
@@ -436,5 +487,91 @@ mod tests {
         );
         assert_eq!(excerpt("one two three four", 9), "one two…");
         assert_eq!(excerpt("short", 9), "short");
+    }
+
+    // Issue #78 / ADR 0004: pre-baked MathML survives sanitizing. The MathML Core element set is
+    // inert, and it is the format screen readers can navigate and voice (role "math", name from
+    // alttext), so equations must not vanish from Articles.
+    const MATHML_FIXTURE: &str = r#"<math alttext="E equals m c squared" display="block"><semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation>E = mc^2</annotation></semantics></math><p>Inline <math alttext="a squared plus b squared equals c squared"><mrow><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></mrow></math> in text.</p>"#;
+
+    #[test]
+    fn mathml_survives_sanitizing() {
+        let out = clean(MATHML_FIXTURE);
+        for expected in [
+            "<math",
+            r#"alttext="E equals m c squared""#,
+            r#"display="block""#,
+            "<semantics",
+            "<mrow",
+            "<mi>E</mi>",
+            "<mo>=</mo>",
+            "<msup",
+            "<mn>2</mn>",
+            "<annotation",
+            "E = mc^2",
+        ] {
+            assert!(
+                out.html.contains(expected),
+                "missing {expected} in {}",
+                out.html
+            );
+        }
+    }
+
+    #[test]
+    fn mathml_introduces_no_script_handler_or_url_vector() {
+        let out = clean(
+            r#"<math onclick="alert(1)" onmouseover="alert(2)" style="position:fixed;inset:0" class="katex" href="javascript:alert(3)"><maction actiontype="statusline" href="javascript:alert(4)">x</maction><mtext><script>alert(5)</script>click</mtext></math><math><semantics><mrow><mi>y</mi></mrow><annotation-xml encoding="text/html"><img src="https://evil.example/x" onerror="alert(6)"></annotation-xml></semantics></math>"#,
+        );
+        let html = &out.html;
+        for banned in [
+            "onclick",
+            "onmouseover",
+            "onerror",
+            "javascript:",
+            "style=",
+            "class=",
+            "actiontype",
+            "href=",
+            "<script",
+            "<annotation-xml",
+            "evil.example",
+        ] {
+            assert!(!html.contains(banned), "found {banned} in {html}");
+        }
+        // The inert elements and their text survive.
+        assert!(html.contains("<math"), "{html}");
+        assert!(html.contains("<maction"), "{html}");
+        assert!(html.contains("<mtext"), "{html}");
+        assert!(
+            html.contains("click") && html.contains('x') && html.contains('y'),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn raw_tex_delimiters_stay_literal_selectable_text() {
+        // ADR 0004: no bundled renderer in v1, no CDN per the spec network policy — $…$, $$…$$,
+        // \(…\) and \[…\] stay plain text the user can select and copy.
+        let out = clean(
+            r#"<p>Inline $E = mc^2$ and \(a^2 + b^2 = c^2\), display $$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$$ or \[ \int_0^1 x\,dx \].</p>"#,
+        );
+        for literal in [
+            "$E = mc^2$",
+            r"\(a^2 + b^2 = c^2\)",
+            r"$$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$$",
+            r"\[ \int_0^1 x\,dx \]",
+        ] {
+            assert!(
+                out.html.contains(literal),
+                "missing {literal} in {}",
+                out.html
+            );
+        }
+        assert!(
+            !out.html.contains("<math"),
+            "delimiters are not turned into elements: {}",
+            out.html
+        );
     }
 }
