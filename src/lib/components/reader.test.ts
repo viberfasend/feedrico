@@ -6,7 +6,7 @@
 // original, which opens in the system browser. Opening the Article still loads nothing remote.
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ArticleDetail } from '../api';
+import type { ArticleDetail, VideoMeta } from '../api';
 
 const mockApi = { openExternal: vi.fn(async (_url: string) => {}) };
 
@@ -371,5 +371,82 @@ describe('Reader math', () => {
     // Math glyphs use the text color token, AA-checked against the reader surface in both
     // themes, and inherit the reader font size (em), so equations scale with the typography.
     expect(css).toMatch(/math\s*\{[^}]*color:\s*var\(--color-text-default\)/s);
+  });
+});
+
+describe('Video card (#75)', () => {
+  // A video Feed Article: media:thumbnail is the Lead Image and cached at fetch time.
+  const video: VideoMeta = {
+    host: 'youtube',
+    id: '0A1ouV7iD8o',
+    duration: 754,
+    views: 304_321,
+    thumbnail: 'https://i1.ytimg.com/vi/0A1ouV7iD8o/hqdefault.jpg',
+  };
+
+  it('renders thumbnail, title, duration, views and open-in-browser from cached data only', () => {
+    const pane = renderArticle({ video, leadImage: 'thumb1', contentHtml: '<p>A video post</p>' });
+    const card = pane.querySelector('.video-card') as HTMLElement;
+    expect(card).not.toBeNull();
+    const img = card.querySelector('img.video-thumb') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe('media://localhost/thumb1');
+    expect(img.dataset.remote).toBe(video.thumbnail);
+    expect(card.textContent).toContain('Post');
+    expect(card.textContent).toContain('12:34');
+    expect(card.textContent).toContain('304,321 views');
+    const link = card.querySelector('a.video-open') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('https://www.youtube.com/watch?v=0A1ouV7iD8o');
+    // Reading makes no network request (Offline Reader): no iframe, every img src is the cache.
+    expect(pane.querySelector('iframe')).toBeNull();
+    for (const el of pane.querySelectorAll('img')) {
+      expect(el.getAttribute('src')!.startsWith('media://localhost/')).toBe(true);
+    }
+    link.click();
+    expect(mockApi.openExternal).toHaveBeenCalledWith('https://www.youtube.com/watch?v=0A1ouV7iD8o');
+  });
+
+  it('shows the thumbnail once: not again as the Lead Image', () => {
+    const pane = renderArticle({ video, leadImage: 'thumb1', contentHtml: '<p>A video post</p>' });
+    expect(pane.querySelector('.video-card img.video-thumb')).not.toBeNull();
+    expect(pane.querySelector('.lead')).toBeNull();
+  });
+
+  it('falls back to the remote-link behaviour when the thumbnail is not cached', () => {
+    const pane = renderArticle({ video, leadImage: 'thumb1', contentHtml: '<p>A video post</p>' });
+    failToLoad(pane.querySelector('.video-card img.video-thumb')!);
+    expect(pane.querySelector('.video-card img')).toBeNull();
+    const link = pane.querySelector('.video-card .remote-image a') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe(video.thumbnail);
+    link.click();
+    expect(mockApi.openExternal).toHaveBeenCalledWith(video.thumbnail);
+  });
+
+  it('renders without a thumbnail when the Feed carries none (blog embed)', () => {
+    const vimeo: VideoMeta = { host: 'vimeo', id: '76979871', duration: null, views: null, thumbnail: null };
+    const pane = renderArticle({ video: vimeo, contentHtml: '<p>Embedded below</p>' });
+    const card = pane.querySelector('.video-card') as HTMLElement;
+    expect(card.querySelector('img')).toBeNull();
+    expect(card.textContent).toContain('vimeo.com');
+    expect(card.textContent).not.toContain('views');
+    const link = card.querySelector('a.video-open') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('https://vimeo.com/76979871');
+  });
+
+  it('keeps the inline embed-card placeholder as a link card that opens in the browser', () => {
+    const content = render(
+      '<p class="embed-card" data-video-host="youtube" data-video-id="0A1ouV7iD8o" data-video-src="https://www.youtube.com/embed/0A1ouV7iD8o"><a href="https://www.youtube.com/embed/0A1ouV7iD8o">Video on youtube.com: open in browser</a></p>',
+    );
+    const placeholder = content.querySelector('.embed-card')!;
+    expect(placeholder.getAttribute('data-video-host')).toBe('youtube');
+    expect(placeholder.getAttribute('data-video-id')).toBe('0A1ouV7iD8o');
+    expect(placeholder.getAttribute('data-video-src')).toBe('https://www.youtube.com/embed/0A1ouV7iD8o');
+    const link = placeholder.querySelector('a') as HTMLAnchorElement;
+    link.click();
+    expect(mockApi.openExternal).toHaveBeenCalledWith('https://www.youtube.com/embed/0A1ouV7iD8o');
+  });
+
+  it('renders no card for a plain Article', () => {
+    const pane = renderArticle({ contentHtml: '<p>Just text</p>' });
+    expect(pane.querySelector('.video-card')).toBeNull();
   });
 });

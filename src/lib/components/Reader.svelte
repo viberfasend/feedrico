@@ -9,6 +9,7 @@
   import { enhanceContent, type ViewerImage } from './reader/content';
   import ImageViewer from './reader/ImageViewer.svelte';
   import ReaderToolbar from './reader/ReaderToolbar.svelte';
+  import VideoCard from './reader/VideoCard.svelte';
 
   let scroller = $state<HTMLElement>();
   let heading = $state<HTMLElement>();
@@ -66,6 +67,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
     <article onclick={onClick}>
       <ArticleHeader {article} bind:heading onview={viewLead} />
+      <VideoCard {article} />
       <Attachments {enclosures} />
 
       {#key article.contentHtml}
@@ -389,8 +391,9 @@
     overflow-x: auto;
   }
 
-  /* Cards for what the reader can't show inline: uncached images and embeds. */
-  .content :global(:is(.embed-link, .remote-image)) {
+  /* Cards for what the reader can't show inline: uncached images and embeds. Video embeds
+     keep their data attributes on .embed-card and open in the browser like any link. */
+  .content :global(:is(.embed-link, .embed-card, .remote-image)) {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -414,6 +417,9 @@
   }
   .content :global(.embed-link) {
     --card-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round'%3E%3Cpath d='M3.5 5.5h9v9h-9zM12.5 8.5l4-2.5v8l-4-2.5'/%3E%3C/svg%3E");
+  }
+  .content :global(.embed-card) {
+    --card-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round'%3E%3Crect x='2.5' y='4.5' width='15' height='11' rx='2'/%3E%3Cpath d='M8.5 7.5l4 2.5-4 2.5z' fill='black' stroke='none'/%3E%3C/svg%3E");
   }
   .content :global(.remote-image) {
     --card-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M3.5 4.5h13v11h-13zM3.5 13l4-4 3 3 2-2 4 4M3 3l14 14'/%3E%3C/svg%3E");

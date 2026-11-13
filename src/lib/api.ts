@@ -174,12 +174,29 @@ export interface Enclosure {
   playerUrl: string | null;
 }
 
+export type VideoHost = 'youtube' | 'vimeo';
+
+/** The video an Article is about or embeds (#75), stored on the Article in the Library. */
+export interface VideoMeta {
+  host: VideoHost;
+  /** The video id on its platform. */
+  id: string;
+  /** Seconds, from media:content/@duration. */
+  duration: number | null;
+  /** From media:community/media:statistics/@views. */
+  views: number | null;
+  /** Source URL of the Feed's own thumbnail (media:thumbnail), cached at fetch time. */
+  thumbnail: string | null;
+}
+
 export interface ArticleDetail extends ArticleRow {
   feedSiteUrl: string | null;
   url: string | null;
   author: string | null;
   contentHtml: string;
   enclosures: Enclosure[];
+  /** The video identity + metadata; null for plain Articles (older Libraries may lack it). */
+  video?: VideoMeta | null;
 }
 
 export interface ImportSummary {
@@ -282,6 +299,12 @@ export const api = {
 /** URL of a cached image, served from the open Library by the shell's media protocol. */
 export function mediaUrl(key: string): string {
   return convertFileSrc(key, 'media');
+}
+
+/** The canonical watch page of a video, for the video card's "Open in browser" link. */
+export function videoWatchUrl(video: VideoMeta): string {
+  const id = encodeURIComponent(video.id);
+  return video.host === 'vimeo' ? `https://vimeo.com/${id}` : `https://www.youtube.com/watch?v=${id}`;
 }
 
 /** Local midnight in unix seconds: the start of the Today Smart View. */

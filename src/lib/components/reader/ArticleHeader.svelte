@@ -18,8 +18,11 @@
   } = $props();
 
   const minutes = $derived(readingMinutes(article.contentHtml));
+  // The video card shows the Feed's own thumbnail; the Lead Image must not show it twice (spec).
   const lead = $derived(
-    article.leadImage && showLeadImage(article.contentHtml, article.leadImage) ? mediaUrl(article.leadImage) : null,
+    article.leadImage && !article.video?.thumbnail && showLeadImage(article.contentHtml, article.leadImage)
+      ? mediaUrl(article.leadImage)
+      : null,
   );
   let leadFailed = $state(false);
   $effect(() => {
