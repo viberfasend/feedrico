@@ -597,3 +597,193 @@ mod tests {
         library.close().unwrap();
     }
 }
+
+/// Edge cases around the Article Date rules, FTS query building and view filters.
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+    use crate::feeds::FetchResult;
+    use crate::library::DIR_NAME;
+    use crate::opml::OpmlFeed;
+    use crate::parse::{ParsedEnclosure, ParsedEntry, ParsedFeed};
+
+    fn entry(identity: &str, title: &str, published_at: Option<i64>) -> ParsedEntry {
+        ParsedEntry {
+            identity: identity.into(),
+            url: Some(format!("https://x.example/{identity}")),
+            title: title.into(),
+            author: None,
+            content_html: format!("<p>{title}</p>"),
+            content_text: title.into(),
+            excerpt: title.into(),
+            published_at,
+            images: vec![],
+            lead_image: None,
+            enclosures: vec![],
+        }
+    }
+
+    fn fetched(entries: Vec<ParsedEntry>) -> FetchResult {
+        FetchResult::Fetched {
+            feed: ParsedFeed {
+                title: None,
+                site_url: None,
+                entries,
+            },
+            etag: None,
+            last_modified: None,
+        }
+    }
+
+    fn library_with_feed() -> (tempfile::TempDir, Library) {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[OpmlFeed {
+                url: "https://x.example/feed".into(),
+                title: "X".into(),
+                site_url: None,
+                folder: None,
+            }])
+            .unwrap();
+        (root, library)
+    }
+
+    #[test]
+    fn article_date_boundaries() {
+        let now = 1_800_000_000;
+        assert_eq!(
+            article_date(Some(EARLIEST_PLAUSIBLE), now),
+            EARLIEST_PLAUSIBLE,
+            "the boundary itself is plausible"
+        );
+        assert_eq!(
+            article_date(Some(EARLIEST_PLAUSIBLE - 1), now),
+            now,
+            "one second before 1995 is bogus"
+        );
+        assert_eq!(
+            article_date(Some(now), now),
+            now,
+            "exactly first-seen is allowed"
+        );
+        assert_eq!(article_date(Some(now + 1), now), now, "future is clamped");
+    }
+
+    #[test]
+    fn fts_query_builds_a_safe_prefix_query() {
+        assert_eq!(fts_query(""), "\"\"");
+        assert_eq!(fts_query("   "), "\"\"");
+        assert_eq!(fts_query("hello"), "\"hello\"*");
+        assert_eq!(fts_query("hello  world"), "\"hello\"* \"world\"*");
+        assert_eq!(
+            fts_query("he\"llo; DROP TABLE x--"),
+            "\"hello\"* \"DROP\"* \"TABLE\"* \"x\"*",
+            "quotes, punctuation and SQL keywords become plain terms"
+        );
+        assert_eq!(fts_query("café"), "\"café\"*", "unicode letters are kept");
+    }
+
+    #[test]
+    fn today_view_and_the_lead_image_filter() {
+        let (_root, library) = library_with_feed();
+        let now = crate::lock::now();
+        let mut with_image = entry("img", "With image", Some(now - 100));
+        with_image.lead_image = Some("https://x.example/p.png".into());
+        with_image.images = vec!["https://x.example/p.png".into()];
+        library
+            .apply_fetch(
+                1,
+                fetched(vec![
+                    with_image,
+                    entry("old", "Old", Some(1_000_000_000)),
+                    entry("fresh", "Fresh", None),
+                ]),
+            )
+            .unwrap();
+
+        let today = ListQuery {
+            view: View::Today { since: now - 200 },
+            sort: Sort::NewestFirst,
+            search: None,
+            with_lead_image: false,
+        };
+        let titles: Vec<_> = library
+            .list_articles(&today, 0, 50)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.title)
+            .collect();
+        assert_eq!(titles, ["Fresh", "With image"], "only today's Articles");
+
+        let gallery = ListQuery {
+            with_lead_image: true,
+            ..today
+        };
+        let rows = library.list_articles(&gallery, 0, 50).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "With image");
+        assert!(rows[0].lead_image.is_some());
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn article_detail_carries_enclosures_and_a_missing_id_is_not_found() {
+        let (_root, library) = library_with_feed();
+        let mut e = entry("pod", "Podcast", None);
+        e.enclosures = vec![ParsedEnclosure {
+            url: "https://x.example/ep.mp3".into(),
+            mime_type: Some("audio/mpeg".into()),
+            length: Some(42),
+        }];
+        library.apply_fetch(1, fetched(vec![e])).unwrap();
+
+        let detail = library.article(1).unwrap();
+        assert_eq!(detail.enclosures.len(), 1);
+        assert_eq!(detail.enclosures[0].url, "https://x.example/ep.mp3");
+        assert_eq!(detail.enclosures[0].length, Some(42));
+
+        assert!(matches!(library.article(999), Err(Error::NotFound)));
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn mark_all_read_on_an_already_read_view_returns_no_ids() {
+        let (_root, library) = library_with_feed();
+        library
+            .apply_fetch(1, fetched(vec![entry("a", "A", None)]))
+            .unwrap();
+        let all = ListQuery {
+            view: View::AllUnread,
+            sort: Sort::NewestFirst,
+            search: None,
+            with_lead_image: false,
+        };
+        library.set_read(1, true).unwrap();
+        assert!(library.mark_all_read(&all).unwrap().is_empty());
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn search_prefers_the_feed_scope_when_both_are_set() {
+        let (_root, library) = library_with_feed();
+        library
+            .apply_fetch(1, fetched(vec![entry("a", "Spinnfäden", None)]))
+            .unwrap();
+        let q = ListQuery {
+            view: View::Search {
+                feed: Some(1),
+                folder: Some(999),
+            },
+            sort: Sort::NewestFirst,
+            search: Some("spinn".into()),
+            with_lead_image: false,
+        };
+        assert_eq!(
+            library.count_articles(&q).unwrap(),
+            1,
+            "the Feed scope wins over the Folder scope"
+        );
+        library.close().unwrap();
+    }
+}

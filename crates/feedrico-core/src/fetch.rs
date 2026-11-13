@@ -436,3 +436,258 @@ mod tests {
         assert!(fetcher().discover("not a url at all").await.is_err());
     }
 }
+
+/// Tests for the `fetch`/`download_image` paths: a recording local server stands in for the
+/// network, so no test ever leaves localhost (Paul, the Offline Reader, would approve).
+#[cfg(test)]
+mod fetch_tests {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+    use crate::feeds::FeedToFetch;
+
+    const RSS: &str = r#"<?xml version="1.0"?><rss version="2.0"><channel><title>Site</title><link>http://x/</link><item><title>One</title><guid>1</guid></item></channel></rss>"#;
+
+    /// A route: (path, status line, extra headers, body, omit Content-Length for close-delimited).
+    type Route = (&'static str, &'static str, String, Vec<u8>, bool);
+
+    fn ok(path: &'static str, content_type: &'static str, body: &str) -> Route {
+        (
+            path,
+            "200 OK",
+            format!("Content-Type: {content_type}\r\n"),
+            body.as_bytes().to_vec(),
+            false,
+        )
+    }
+
+    /// Serves routes on localhost and records every request head it saw.
+    fn serve(routes: Vec<Route>) -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_thread = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = [0u8; 8192];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]).into_owned();
+                seen_thread.lock().unwrap().push(request.clone());
+                let path = request.split_whitespace().nth(1).unwrap_or("/").to_owned();
+                let reply = match routes.iter().find(|(p, ..)| *p == path) {
+                    Some((_, status, extra, body, omit_len)) => {
+                        let mut head = format!("HTTP/1.1 {status}\r\n");
+                        if !omit_len && !extra.contains("Content-Length") {
+                            head.push_str(&format!("Content-Length: {}\r\n", body.len()));
+                        }
+                        head.push_str(extra);
+                        head.push_str("Connection: close\r\n\r\n");
+                        let mut reply = head.into_bytes();
+                        reply.extend_from_slice(body);
+                        reply
+                    }
+                    None => {
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_vec()
+                    }
+                };
+                let _ = stream.write_all(&reply);
+            }
+        });
+        (base, seen)
+    }
+
+    fn fetcher() -> Fetcher {
+        Fetcher::new("media://localhost/").unwrap()
+    }
+
+    fn feed_to(url: String, etag: Option<&str>, last_modified: Option<&str>) -> FeedToFetch {
+        FeedToFetch {
+            id: 1,
+            url,
+            etag: etag.map(str::to_owned),
+            last_modified: last_modified.map(str::to_owned),
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_sends_conditionals_and_keeps_the_new_ones() {
+        let (base, seen) = serve(vec![(
+            "/feed.xml",
+            "200 OK",
+            "Content-Type: application/rss+xml\r\nETag: \"abc\"\r\nLast-Modified: Wed, 01 Jan 2025 00:00:00 GMT\r\n".to_owned(),
+            RSS.as_bytes().to_vec(),
+            false,
+        )]);
+        let feed = feed_to(
+            format!("{base}/feed.xml"),
+            Some("\"old\""),
+            Some("Tue, 01 Oct 2024 00:00:00 GMT"),
+        );
+        let result = fetcher().fetch(&feed).await;
+        let FetchResult::Fetched {
+            feed,
+            etag,
+            last_modified,
+        } = result
+        else {
+            panic!("expected Fetched, got {result:?}")
+        };
+        assert_eq!(etag.as_deref(), Some("\"abc\""));
+        assert_eq!(
+            last_modified.as_deref(),
+            Some("Wed, 01 Jan 2025 00:00:00 GMT")
+        );
+        assert_eq!(feed.title.as_deref(), Some("Site"));
+        assert_eq!(feed.entries.len(), 1);
+
+        // hyper sends header names lowercase.
+        let request = seen.lock().unwrap()[0].to_ascii_lowercase();
+        assert!(
+            request.contains("if-none-match: \"old\""),
+            "request was: {request}"
+        );
+        assert!(
+            request.contains("if-modified-since: tue, 01 oct 2024 00:00:00 gmt"),
+            "request was: {request}"
+        );
+        assert!(
+            request.contains("accept: application/rss+xml"),
+            "request was: {request}"
+        );
+        assert!(
+            request.contains("user-agent: feedrico/"),
+            "honest User-Agent: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_304_without_conditionals_is_still_not_modified() {
+        let (base, _seen) = serve(vec![(
+            "/feed.xml",
+            "304 Not Modified",
+            String::new(),
+            Vec::new(),
+            false,
+        )]);
+        let result = fetcher()
+            .fetch(&feed_to(format!("{base}/feed.xml"), None, None))
+            .await;
+        assert!(matches!(result, FetchResult::NotModified));
+    }
+
+    #[tokio::test]
+    async fn an_http_error_or_bad_xml_becomes_a_failed_result_not_a_panic() {
+        let (base, _seen) = serve(vec![
+            (
+                "/gone",
+                "500 Internal Server Error",
+                String::new(),
+                b"boom".to_vec(),
+                false,
+            ),
+            ok("/bad.xml", "application/rss+xml", "<html>nope</html>"),
+        ]);
+        let fetcher = fetcher();
+        let failed = fetcher
+            .fetch(&feed_to(format!("{base}/gone"), None, None))
+            .await;
+        let FetchResult::Failed(message) = failed else {
+            panic!("expected Failed")
+        };
+        assert!(message.contains("HTTP 500"), "message was: {message}");
+
+        let failed = fetcher
+            .fetch(&feed_to(format!("{base}/bad.xml"), None, None))
+            .await;
+        assert!(matches!(failed, FetchResult::Failed(_)));
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_host_fails_calmly() {
+        // Port 1 on localhost is closed: a connect error, reported in plain words.
+        let result = fetcher()
+            .fetch(&feed_to("http://127.0.0.1:1/feed".into(), None, None))
+            .await;
+        let FetchResult::Failed(message) = result else {
+            panic!("expected Failed")
+        };
+        assert!(
+            message.contains("could not connect"),
+            "message was: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_image_checks_the_mime_type_and_the_cap() {
+        let (base, _seen) = serve(vec![
+            ok("/ok.png", "image/png", "PNGDATA"),
+            ok("/semi.png", "image/png; charset=binary", "PNG2"),
+            // Declared larger than MAX_IMAGE_BYTES: refused before the body is read.
+            (
+                "/huge.png",
+                "200 OK",
+                "Content-Type: image/png\r\nContent-Length: 99999999\r\n".to_owned(),
+                b"tiny".to_vec(),
+                false,
+            ),
+            ok("/page.html", "text/html", "<html></html>"),
+        ]);
+        let fetcher = fetcher();
+
+        let (bytes, mime) = fetcher
+            .download_image(&format!("{base}/ok.png"))
+            .await
+            .unwrap();
+        assert_eq!((bytes, mime.as_str()), (b"PNGDATA".to_vec(), "image/png"));
+
+        let (_, mime) = fetcher
+            .download_image(&format!("{base}/semi.png"))
+            .await
+            .unwrap();
+        assert_eq!(
+            mime, "image/png",
+            "parameters are stripped from the MIME type"
+        );
+
+        let err = fetcher
+            .download_image(&format!("{base}/huge.png"))
+            .await
+            .unwrap_err();
+        assert_eq!(err.to_string(), "network error: image too large");
+
+        let err = fetcher
+            .download_image(&format!("{base}/page.html"))
+            .await
+            .unwrap_err();
+        assert_eq!(err.to_string(), "network error: not an image: text/html");
+    }
+
+    #[tokio::test]
+    async fn a_body_that_grows_past_the_cap_mid_stream_is_refused() {
+        // No Content-Length (close-delimited), so only the streaming cap can catch it.
+        let (base, _seen) = serve(vec![(
+            "/big.png",
+            "200 OK",
+            "Content-Type: image/png\r\n".to_owned(),
+            vec![b'x'; MAX_IMAGE_BYTES + 1],
+            true,
+        )]);
+        let err = fetcher()
+            .download_image(&format!("{base}/big.png"))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("response larger than 5 MB"),
+            "error was: {err}"
+        );
+    }
+
+    #[test]
+    fn the_media_prefix_is_what_was_configured() {
+        assert_eq!(fetcher().media_prefix(), "media://localhost/");
+    }
+}

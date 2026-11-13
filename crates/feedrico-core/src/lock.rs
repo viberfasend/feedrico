@@ -147,4 +147,114 @@ mod tests {
             Err(Error::Locked(_))
         ));
     }
+
+    #[test]
+    fn staleness_rules_for_pids() {
+        let here = LockInfo::current().machine;
+        let dead_local = LockInfo {
+            machine: here.clone(),
+            pid: 4000000000,
+            opened_at: 1,
+        };
+        assert!(is_stale_here(&dead_local), "dead pid on this machine");
+        let own = LockInfo {
+            machine: here,
+            pid: std::process::id(),
+            opened_at: 1,
+        };
+        assert!(!is_stale_here(&own), "our own live pid is not stale");
+        let foreign = LockInfo {
+            machine: "friend-laptop".into(),
+            pid: 4000000000,
+            opened_at: 1,
+        };
+        assert!(!is_stale_here(&foreign), "other machines always ask");
+    }
+}
+
+/// Lock behaviour that holds on every OS (the Linux-only staleness rules live in `tests` above).
+#[cfg(test)]
+mod portable_tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_lock_reads_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read(dir.path()).unwrap(), None);
+    }
+
+    /// A lock whose JSON is unreadable (truncated write on a yanked stick) still counts as a
+    /// lock, attributed to an unknown machine, so the user is asked instead of overwritten.
+    #[test]
+    fn a_garbage_lock_counts_as_a_lock_from_an_unknown_machine() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(FILE_NAME), b"{\"machine\":\"fri").unwrap();
+        assert_eq!(read(dir.path()).unwrap(), Some(LockInfo::unknown()));
+        assert!(matches!(
+            LockGuard::acquire(dir.path(), false),
+            Err(Error::Locked(_))
+        ));
+    }
+
+    #[test]
+    fn acquire_writes_machine_pid_and_time_and_refuses_a_second_instance() {
+        let dir = tempfile::tempdir().unwrap();
+        let guard = LockGuard::acquire(dir.path(), false).unwrap();
+        let info = read(dir.path()).unwrap().unwrap();
+        assert_eq!(info.machine, LockInfo::current().machine);
+        assert_eq!(info.pid, std::process::id());
+        assert!(info.opened_at > 0);
+
+        // Our own live pid is not stale, so a second open is refused with the holder's info.
+        match LockGuard::acquire(dir.path(), false) {
+            Err(Error::Locked(held)) => assert_eq!(held.pid, std::process::id()),
+            other => panic!("expected Locked, got {other:?}"),
+        }
+        drop(guard);
+        assert_eq!(read(dir.path()).unwrap(), None, "closing removes the lock");
+    }
+
+    /// Version scenario D (docs/personas.md): the Carrier pulled the stick mid-session; the Host
+    /// sees the foreign lock and can take it over deliberately with "Open anyway".
+    #[test]
+    fn take_over_rewrites_a_foreign_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(FILE_NAME),
+            br#"{"machine":"friend-laptop","pid":4242,"openedAt":1762547640}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            LockGuard::acquire(dir.path(), false),
+            Err(Error::Locked(_))
+        ));
+
+        let guard = LockGuard::acquire(dir.path(), true).unwrap();
+        let info = read(dir.path()).unwrap().unwrap();
+        assert_eq!(info.machine, LockInfo::current().machine);
+        assert_eq!(info.pid, std::process::id());
+        drop(guard);
+        assert!(!dir.path().join(FILE_NAME).exists());
+    }
+
+    #[test]
+    fn lock_json_is_camel_case_on_the_wire() {
+        let info = LockInfo {
+            machine: "m".into(),
+            pid: 7,
+            opened_at: 42,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert_eq!(json, r#"{"machine":"m","pid":7,"openedAt":42}"#);
+        assert_eq!(serde_json::from_str::<LockInfo>(&json).unwrap(), info);
+    }
+
+    #[test]
+    fn acquiring_inside_a_missing_directory_is_an_io_error() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            LockGuard::acquire(&dir.path().join("nope"), false),
+            Err(Error::Io(_))
+        ));
+    }
 }
