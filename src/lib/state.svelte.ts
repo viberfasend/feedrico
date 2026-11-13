@@ -20,6 +20,7 @@ import {
   type Sidebar,
   type Sort,
   type Status,
+  type UpdateStatus,
   type View,
 } from './api';
 import { applyDensity, applyTheme, type Theme } from './tokens';
@@ -123,6 +124,11 @@ export class AppState {
   /** Total size of the Library folder and of its media cache, for the Settings dialog. */
   librarySize = $state<number | null>(null);
   mediaSize = $state<number | null>(null);
+  /** The installed version of the app, for Settings > About; null until read. */
+  appVersion = $state<string | null>(null);
+  /** The result of the last manual update check this session; null until one ran. */
+  updateStatus = $state<UpdateStatus | null>(null);
+  updateChecking = $state(false);
   /** "Start with OS" (machine-local); null until read. */
   autostart = $state<boolean | null>(null);
   /** The active theme; stored in the Library (spec: "What lives in the Library"). */
@@ -290,17 +296,19 @@ export class AppState {
   /** Opens the Settings dialog with fresh settings and Library facts. */
   async openSettings() {
     try {
-      const [settings, librarySize, mediaSize, autostart] = await Promise.all([
+      const [settings, librarySize, mediaSize, autostart, appVersion] = await Promise.all([
         api.settings(),
         api.librarySize(),
         api.mediaSize(),
         api.autostartEnabled(),
+        api.appVersion(),
       ]);
       this.settings = settings;
       this.applySettings();
       this.librarySize = librarySize;
       this.mediaSize = mediaSize;
       this.autostart = autostart;
+      this.appVersion = appVersion;
       this.settingsOpen = true;
     } catch (e) {
       this.notify(errorMessage(e));
@@ -800,8 +808,10 @@ export class AppState {
   async checkForUpdates() {
     if (this.updateCheckRunning) return;
     this.updateCheckRunning = true;
+    this.updateChecking = true;
     try {
       const status = await api.checkForUpdates();
+      this.updateStatus = status;
       if (status.kind === 'available') {
         this.notify(`Feedrico ${status.latest} is available`, {
           label: 'Open',
@@ -816,6 +826,7 @@ export class AppState {
       this.notify("Couldn't reach GitHub. Check your connection and try again.");
     } finally {
       this.updateCheckRunning = false;
+      this.updateChecking = false;
     }
   }
 

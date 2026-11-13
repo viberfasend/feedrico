@@ -36,6 +36,7 @@ const mockApi = {
   setRead: vi.fn(async () => {}),
   deleteFolder: vi.fn(async () => {}),
   openExternal: vi.fn(async () => {}),
+  appVersion: vi.fn(async () => '0.1.0'),
   checkForUpdates: vi.fn(),
   settings: vi.fn(async () => defaultSettings()),
   setSettings: vi.fn(async (s: Settings) => {
@@ -291,6 +292,34 @@ describe('Settings dialog writes through to the Library', () => {
     expect(text).toContain('/lib');
     expect(text).toContain('Format version');
     expect(text).toContain('3');
+  });
+
+  it('shows the installed version under About Feedrico', async () => {
+    await mountApp();
+    await openViaShortcut();
+    await openSection('About Feedrico');
+    expect(dialog()!.querySelector('.about-version')!.textContent).toBe('0.1.0');
+  });
+
+  it('checks for updates on a click and offers the download when one is available', async () => {
+    mockApi.checkForUpdates.mockResolvedValue({
+      kind: 'available',
+      current: '0.1.0',
+      latest: '0.2.0',
+      url: 'https://example.com/v0.2.0',
+    });
+    await mountApp();
+    await openViaShortcut();
+    await openSection('About Feedrico');
+    expect(mockApi.checkForUpdates).not.toHaveBeenCalled();
+    const button = (label: string) =>
+      [...dialog()!.querySelectorAll('button')].find((el) => el.textContent?.trim() === label) as HTMLElement;
+    button('Check for updates').click();
+    await settle();
+    flushSync();
+    expect(dialog()!.querySelector('.about-updates')!.textContent).toContain('0.2.0 is available');
+    button('Download').click();
+    expect(mockApi.openExternal).toHaveBeenCalledWith('https://example.com/v0.2.0');
   });
 });
 

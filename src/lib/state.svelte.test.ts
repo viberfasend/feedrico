@@ -55,6 +55,7 @@ const mockApi = {
   refresh: vi.fn(async () => true),
   onRefreshProgress: vi.fn(async () => () => {}),
   openExternal: vi.fn(async () => {}),
+  appVersion: vi.fn(async () => '0.1.0'),
   checkForUpdates: vi.fn(),
   startup: vi.fn(async () => ({ kind: 'welcome', defaultPath: '' })),
   recentLibraries: vi.fn(async () => [] as string[]),

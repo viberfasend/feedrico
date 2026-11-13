@@ -1,5 +1,6 @@
 // Typed bridge to the Rust shell. Every command lives here; components never call invoke().
 
+import { getVersion } from '@tauri-apps/api/app';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { Density, Theme } from './tokens';
@@ -259,6 +260,7 @@ export const api = {
   autostartEnabled: () => invoke<boolean>('autostart_enabled'),
   setAutostart: (enabled: boolean) => invoke<void>('set_autostart', { enabled }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
+  appVersion: () => getVersion(),
   checkForUpdates: () => invoke<UpdateStatus>('check_for_updates'),
   refresh: (force: boolean) => invoke<boolean>('refresh', { force }),
   onRefreshProgress: (cb: (p: RefreshProgress) => void): Promise<UnlistenFn> =>
