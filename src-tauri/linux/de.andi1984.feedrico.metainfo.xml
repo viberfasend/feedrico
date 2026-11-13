@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- AppStream metadata: what Ubuntu's App Center and GNOME Software show for the .deb
-     (name, summary, icon, licence). The version comes from the package itself. -->
+     (name, summary, icon, licence). `node scripts/release.mjs version` adds the release entry. -->
 <component type="desktop-application">
   <id>de.andi1984.feedrico</id>
   <name>Feedrico</name>
@@ -18,6 +18,9 @@
       <li>Move your Library between computers by copying one folder</li>
     </ul>
   </description>
+  <releases>
+    <release version="0.1.0" date="2026-11-13"/>
+  </releases>
   <launchable type="desktop-id">Feedrico.desktop</launchable>
   <icon type="stock">feedrico</icon>
   <url type="homepage">https://viberfasend.github.io/feedrico/</url>
