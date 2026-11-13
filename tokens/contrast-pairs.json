@@ -240,6 +240,31 @@
       "fg": "color.media.caption",
       "bg": "color.media.viewer",
       "min": 4.5
+    },
+    {
+      "fg": "color.code.keyword",
+      "bg": "color.surface.sunken",
+      "min": 4.5
+    },
+    {
+      "fg": "color.code.string",
+      "bg": "color.surface.sunken",
+      "min": 4.5
+    },
+    {
+      "fg": "color.code.comment",
+      "bg": "color.surface.sunken",
+      "min": 4.5
+    },
+    {
+      "fg": "color.code.number",
+      "bg": "color.surface.sunken",
+      "min": 4.5
+    },
+    {
+      "fg": "color.code.function",
+      "bg": "color.surface.sunken",
+      "min": 4.5
     }
   ]
 }
