@@ -6,6 +6,7 @@ Done, committed locally on `feat/site-marketing-copy` in worktree
 `.claude/worktrees/vibe-site-marketing`. Not pushed (no PR, per workflow).
 
 - `86dacd3` feat(site): speak to readers, not developers
+- `7460882` feat(site): redesign the hero sun, local-only data section, full SEO pass
 
 ## What changed
 
@@ -69,6 +70,37 @@ Henrik, Jonas, Paul).
 
 No automated tests cover `site/` HTML/CSS; verification is the build's
 contrast check plus the screenshots above.
+
+## Second round (user follow-up): sun, folder files, SEO
+
+- Hero sun redrawn: the filled ribbon arc became a 1.2px hairline of
+  silk; the sun is a larger honey disc (r 17→20) with a softer, wider
+  halo; dew drops hang below the line. Path geometry unchanged, so
+  `site.js` clock positioning needed no change. Reviewed at 10:00,
+  17:00 (golden) and 23:00 (lamp on the horizon), 1440px and 390px.
+- `#folder` (file tree / travels-stays columns) replaced by `#local`
+  "Your data stays on your machine." — one paragraph + a note that any
+  backup tool or USB stick works. Rationale: users care that data is
+  local, not which files are inside.
+- SEO pass, informed by researching 2026 RSS-reader homepages (Feedly
+  now leads with AI/CTI, Miniflux privacy-first, NetNewsWire/FreshRSS
+  free+open source, FeedZero no-algorithm/no-tracking, PC Gamer's
+  "kill the algorithm" RSS revival; dominant claims: no algorithm,
+  privacy/no account, offline, free & open source, fast at scale):
+  - `<title>`/meta/OG now say "calm RSS reader" and "free, local-first";
+    keywords + robots meta added; canonical kept.
+  - Hero lede and claims use the actual search terms ("desktop RSS
+    reader", "chronological list", "no algorithm"); claims grid is now
+    six items (added "Private by design", "Free, no subscription").
+  - New `#faq` section with 6 Q&As (what is an RSS reader, offline,
+    account/sync, OPML import, free & open source, tracking), mirrored as
+    `FAQPage` JSON-LD together with `WebSite` + `SoftwareApplication`
+    (price 0, GPL-3.0 license, featureList). The strict CSP allows the
+    JSON-LD block via a sha256 hash of its exact text — recompute if the
+    JSON is edited.
+  - `site/robots.txt` and `site/sitemap.xml` added (Pages path
+    `https://viberfasend.github.io/feedrico/`); both served correctly by
+    `npm run site:preview`.
 
 ## Open questions
 
