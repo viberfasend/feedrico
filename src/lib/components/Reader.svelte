@@ -15,7 +15,8 @@
   });
 
   // Content HTML is sanitized in the Rust core. Links never navigate the app: they open in the
-  // system browser.
+  // system browser. This covers the enclosures too: the shell's navigation guard swallows any
+  // link it doesn't handle.
   function onClick(event: MouseEvent) {
     const link = (event.target as HTMLElement).closest('a');
     if (!link) return;
@@ -58,7 +59,8 @@
 
 <section class="reader" id="pane-reader" aria-label="Reader" tabindex="-1" bind:this={scroller}>
   {#if article}
-    <article>
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+    <article onclick={onClick}>
       <header class="head">
         {#if app.isGrid}
           <button class="close" onclick={() => app.closeReader()} aria-label="Close reader" title="Close (Esc)">
@@ -112,8 +114,7 @@
         </ul>
       {/if}
 
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-      <div class="content" onclick={onClick} use:linkMissingImages role="document">
+      <div class="content" use:linkMissingImages role="document">
         <!-- Sanitized by feedrico-core (ammonia allow-list) and constrained by the webview CSP. -->
         {@html article.contentHtml}
       </div>

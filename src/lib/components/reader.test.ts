@@ -101,3 +101,19 @@ describe('Reader images that are not cached', () => {
     expect(img.classList.contains('missing')).toBe(true);
   });
 });
+
+describe('Attachments', () => {
+  // Bug: enclosure links sat outside the content's click handler, and the shell's navigation
+  // guard blocks the webview from leaving the app, so clicking an attachment did nothing.
+  it('open in the browser when clicked', () => {
+    app.article = {
+      ...article(''),
+      enclosures: [{ url: 'https://cdn.example/ep88.mp3?utm=rss', mimeType: 'audio/mpeg', length: 58_400_000 }],
+    };
+    mounted = mount(Reader, { target: document.body });
+    flushSync();
+    const link = document.querySelector('a[href="https://cdn.example/ep88.mp3?utm=rss"]') as HTMLAnchorElement;
+    link.click();
+    expect(mockApi.openExternal).toHaveBeenCalledWith('https://cdn.example/ep88.mp3?utm=rss');
+  });
+});
