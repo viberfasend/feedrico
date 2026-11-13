@@ -1,6 +1,6 @@
 [package]
 name = "feedrico"
-version = "0.1.0"
+version = "0.2.0"
 description = "Feedrico: a fast, local-only desktop RSS reader"
 edition.workspace = true
 license.workspace = true

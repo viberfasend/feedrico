@@ -1,6 +1,6 @@
 [package]
 name = "feedrico-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Feedrico domain logic: the portable Library, Feeds, Articles. No UI or Tauri dependency."
 edition.workspace = true
 license.workspace = true

@@ -19,6 +19,7 @@
     </ul>
   </description>
   <releases>
+    <release version="0.2.0" date="2026-11-13"/>
     <release version="0.1.0" date="2026-11-13"/>
   </releases>
   <launchable type="desktop-id">Feedrico.desktop</launchable>
