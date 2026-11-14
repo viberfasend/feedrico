@@ -4,6 +4,7 @@
   // user presses Test, and Feedrico never opens a login: it only says how to sign in yourself.
   import { onMount } from 'svelte';
   import { isCommandError } from '../api';
+  import { assist } from '../assistant-state.svelte';
   import {
     type AssistantKind,
     type AssistantSetup,
@@ -55,6 +56,8 @@
       await setAssistantSetup(next);
       setup = next;
       problem = null;
+      // The reader's Assistant entry points follow the setup at once (on, off, accepted).
+      void assist.loadSetup();
     } catch {
       problem = 'Could not save this on your computer. Try again.';
     }

@@ -54,7 +54,7 @@ export interface AssistantRun {
 }
 
 const BINARY: Record<AssistantKind, string> = { claudeCode: 'claude', mistralVibe: 'vibe' };
-const KINDS: AssistantErrorKind[] = ['notInstalled', 'notSignedIn', 'usageLimit', 'offline', 'timedOut', 'cancelled', 'malformed', 'failed'];
+const KINDS: AssistantErrorKind[] = ['notInstalled', 'notSignedIn', 'usageLimit', 'offline', 'timedOut', 'cancelled', 'malformed', 'failed', 'notSetUp'];
 
 /** Plain words for an error and what to do next. */
 export function describeError(kind: AssistantErrorKind, assistant: AssistantKind): { what: string; next: string } {
@@ -74,6 +74,8 @@ export function describeError(kind: AssistantErrorKind, assistant: AssistantKind
       return { what: 'Stopped.', next: 'Try again whenever you like.' };
     case 'malformed':
       return { what: `${name} sent an answer Feedrico couldn't read.`, next: 'Try again.' };
+    case 'notSetUp':
+      return { what: 'No Assistant is set up on this computer.', next: 'Set one up in Settings, under Assistant.' };
     case 'failed':
       return { what: `${name} couldn't finish.`, next: `Try again. If it keeps failing, run \`${BINARY[assistant]}\` in a terminal to see what is wrong.` };
   }
@@ -104,11 +106,11 @@ class AssistantState {
 
   /** Whether Assistant entry points apply right now: set up, with an Article in the reader. */
   get available() {
-    return this.setup !== null && app.article !== null && (!app.isGrid || app.readerOpen);
+    return this.setup?.disclosureAccepted === true && app.article !== null && (!app.isGrid || app.readerOpen);
   }
 
   start(entry: AssistantEntry) {
-    if (!this.setup) return;
+    if (!this.setup?.disclosureAccepted) return;
     this.discard();
     const id = ++this.seq;
     this.run = { id, entry, phase: 'running', text: '', html: '', error: null };

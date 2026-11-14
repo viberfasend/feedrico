@@ -56,7 +56,7 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-{#if assist.setup}
+{#if assist.setup?.disclosureAccepted}
   <!-- Announces completion once; the streamed text itself is not in a live region. -->
   <div class="sr-only" role="status" aria-live="polite">{assist.announcement}</div>
 
