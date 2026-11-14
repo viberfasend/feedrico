@@ -377,3 +377,14 @@ describe('start with OS', () => {
     expect(dialog()!.textContent).toContain('Not available in Portable Mode');
   });
 });
+
+describe('Assistant section', () => {
+  it('is a machine-local section, off by default, that never touches the Library settings', async () => {
+    await mountApp();
+    await openViaShortcut();
+    await openSection('Assistant');
+    expect(dialog()?.textContent).toContain('Set up');
+    expect(dialog()?.textContent).toContain('Kept on this computer only');
+    expect(mockApi.setSettings).not.toHaveBeenCalled();
+  });
+});

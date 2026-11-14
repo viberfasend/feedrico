@@ -9,6 +9,7 @@
     REFRESH_INTERVALS,
     type Settings,
   } from '../api';
+  import AssistantSettings from './AssistantSettings.svelte';
   import { fileSize } from '../format';
   import { app } from '../state.svelte';
   import type { Density, Theme } from '../tokens';
@@ -25,6 +26,7 @@
     { value: 'reading', label: 'Reading' },
     { value: 'storage', label: 'Refresh and storage' },
     { value: 'library', label: 'About this Library' },
+    { value: 'assistant', label: 'Assistant' },
     { value: 'machine', label: 'This computer' },
     { value: 'about', label: 'About Feedrico' },
   ] as const;
@@ -124,7 +126,7 @@
                   <header class="pane-head">
                     <h3>{item.label}</h3>
                     <p class="where">
-                      {item.value === 'machine'
+                      {item.value === 'machine' || item.value === 'assistant'
                         ? 'Kept on this computer only. Another computer opening this Library has its own.'
                         : 'Saved in this Library, so it comes along to every computer that opens it.'}
                     </p>
@@ -381,6 +383,8 @@
                         </div>
                       </div>
                     </div>
+                  {:else if item.value === 'assistant'}
+                    <AssistantSettings />
                   {:else}
                     <div class="group">
                       <div class="row">

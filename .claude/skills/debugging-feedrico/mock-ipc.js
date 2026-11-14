@@ -34,6 +34,7 @@ const iconSvg = (key) =>
   );
 const library = { path: '/mock', name: 'Mock Library', formatVersion: 3, feedCount: feeds.length, portable: false };
 
+let assistantSetup = null;
 const handlers = {
   startup: () => ({ kind: 'opened', library }),
   library_info: () => library,
@@ -46,6 +47,16 @@ const handlers = {
     imageCacheCapBytes: 1024 ** 3, pruneReadDays: 90, pruneUnreadDays: 365,
   }),
   set_settings: () => null,
+  // Assistants (epic #110). Flip `assistantSetup` to null to see the off state; change signIn to
+  // 'plan' | 'apiKey' | 'notSignedIn' to see each sign-in sentence.
+  assistant_setup_get: () => assistantSetup,
+  assistant_setup_set: ({ setup }) => { assistantSetup = setup; return null; },
+  assistant_detect: () => [
+    { kind: 'claudeCode', path: '/usr/bin/claude', version: '2.1.0', signIn: 'plan' },
+    { kind: 'mistralVibe', path: '/usr/bin/vibe', version: '1.0.0', signIn: 'notSignedIn' },
+  ],
+  assistant_run: () => ({ text: 'Hello from the mock Assistant.', structured: null }),
+  assistant_cancel: () => null,
   has_setting: () => true,
   last_view: () => null,
   set_last_view: () => null,
