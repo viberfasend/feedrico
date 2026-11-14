@@ -76,6 +76,13 @@ const handlers = {
   library_size: () => 1234567,
   media_size: () => 65432,
   autostart_enabled: () => false,
+  // Assistants (#115): a canned setup and answer. Append-only; the settings worker (#114) adds its own.
+  assistant_setup_get: () => ({ kind: 'claudeCode', path: '/mock/claude', model: null, disclosureAccepted: true }),
+  assistant_run: async () => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return { text: 'It works. This is a **canned** answer from the mock, with a [link](https://example.com).\n\n- first point\n- second point', structured: null };
+  },
+  assistant_cancel: () => null,
 };
 
 window.__TAURI_INTERNALS__ = {
