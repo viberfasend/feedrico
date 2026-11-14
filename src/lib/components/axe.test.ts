@@ -99,6 +99,17 @@ vi.mock('../api', async (importOriginal) => ({
   api: mockApi,
 }));
 
+let assistantSetup: unknown = null;
+vi.mock('../assistant', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../assistant')>()),
+  getAssistantSetup: async () => assistantSetup,
+  setAssistantSetup: async () => {},
+  detectAssistants: async () => [
+    { kind: 'claudeCode', path: '/usr/bin/claude', version: '2.1.0', signIn: 'apiKey' },
+    { kind: 'mistralVibe', path: '/usr/bin/vibe', version: '1.0', signIn: 'notSignedIn' },
+  ],
+}));
+
 // happy-dom's Animation has no cancel(); zero-duration transitions skip it entirely.
 vi.mock('svelte/transition', () => ({
   fade: () => ({ duration: 0 }),
@@ -181,6 +192,34 @@ describe('axe over every screen state', () => {
     expect(document.querySelector('.settings-dialog')).not.toBeNull();
     await expectNoViolations('settings dialog');
   });
+
+  for (const state of ['off', 'listed', 'set up'] as const) {
+    it(`has no violations in the Assistant section (${state})`, async () => {
+      assistantSetup =
+        state === 'set up'
+          ? { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: false }
+          : null;
+      await mountReady('list');
+      await app.openSettings();
+      await settle();
+      flushSync();
+      const tab = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+        (el) => el.textContent?.trim() === 'Assistant',
+      )!;
+      tab.click();
+      await settle();
+      flushSync();
+      if (state === 'listed') {
+        [...document.querySelectorAll<HTMLButtonElement>('button')]
+          .find((b) => b.textContent?.trim() === 'Set up')!
+          .click();
+        await settle();
+        flushSync();
+        expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+      }
+      await expectNoViolations(`assistant section (${state})`);
+    });
+  }
 
   it('has no violations with the Broken Feeds dialog open, and while confirming', async () => {
     await mountReady('list');
