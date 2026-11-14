@@ -19,6 +19,7 @@
 //! - [`run`]: run one [`Task`], stream [`Event`]s, cancel, map errors (#113).
 
 pub mod detect;
+pub mod prompts;
 pub mod run;
 
 use std::path::PathBuf;
