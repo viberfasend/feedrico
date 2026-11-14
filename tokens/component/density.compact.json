@@ -3,7 +3,7 @@
     "row": {
       "$type": "dimension",
       "height": {
-        "$value": "56px"
+        "$value": "74px"
       },
       "paddingBlock": {
         "$value": "{space.inset.sm}"

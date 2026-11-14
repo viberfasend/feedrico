@@ -34,4 +34,30 @@ describe('Layout components', () => {
       lines + 2 * value(base, '--space-stack-2xs') + 2 * value(base, '--space-inset-md') + 1;
     expect(value(comfortable, '--article-list-row-height')).toBeGreaterThanOrEqual(Math.ceil(needed));
   });
+
+  // #104: titles wrap to two lines inside the fixed row, so the row must fit meta, a two-line
+  // title and one excerpt line, and compact must fit meta plus a two-line title.
+  it('gives List rows room for a two-line title in both densities', () => {
+    const base = css('base.css');
+    const ui = value(base, '--font-line-height-ui');
+    const px = (name: string) => value(base, name) * 16;
+    const meta = px('--font-size-caption') * ui;
+    const title = 2 * px('--font-size-body') * ui;
+    const excerpt = px('--font-size-small') * ui;
+    const comfortable =
+      meta + title + excerpt + 2 * value(base, '--space-stack-2xs') + 2 * value(base, '--space-inset-md') + 1;
+    const compact = meta + title + value(base, '--space-stack-2xs') + 2 * value(base, '--space-inset-sm') + 1;
+    expect(value(css('density-comfortable.css'), '--article-list-row-height')).toBeGreaterThanOrEqual(
+      Math.ceil(comfortable)
+    );
+    expect(value(css('density-compact.css'), '--article-list-row-height')).toBeGreaterThanOrEqual(Math.ceil(compact));
+  });
+
+  it('clamps the List title to two lines instead of nowrap, and exposes it as a tooltip', () => {
+    const source = String(sources['./ListLayout.svelte']);
+    const title = /\.title\s*\{[^}]*\}/.exec(source)?.[0] ?? '';
+    expect(title).toMatch(/line-clamp:\s*2/);
+    expect(title).not.toMatch(/nowrap/);
+    expect(source).toContain('title={article.title}');
+  });
 });
