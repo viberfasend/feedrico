@@ -45,12 +45,27 @@ describe('build-tokens.mjs', () => {
       expect(generated('density-comfortable.css')).toMatch(/:root,\n\[data-density="comfortable"\] \{/);
       expect(generated('density-compact.css')).toMatch(/\[data-density="compact"\] \{/);
 
+      // Scrollbar tokens exist in both themes (incl. the OS-dark block) and the gate checks them.
+      for (const css of [light, dark]) {
+        expect(css).toContain('--color-scrollbar-thumb:');
+        expect(css).toContain('--color-scrollbar-thumb-hover:');
+        expect(css).toContain('--color-scrollbar-track:');
+      }
+      expect(dark.match(/--color-scrollbar-thumb:/g)).toHaveLength(2);
+      const pairs = JSON.parse(readFileSync(new URL('../tokens/contrast-pairs.json', import.meta.url), 'utf8')).pairs;
+      for (const fg of ['color.scrollbar.thumb', 'color.scrollbar.thumbHover']) {
+        for (const bg of ['base', 'raised', 'sunken']) {
+          expect(pairs, `${fg} on ${bg}`).toContainEqual({ fg, bg: `color.surface.${bg}`, min: 3 });
+        }
+      }
+
       const tokens = generated('tokens.ts');
       expect(tokens).toMatch(/export const t = /);
       expect(tokens).toMatch(/export type Tokens = typeof t;/);
       // The accessor references the CSS variables, not the raw values.
       expect(tokens).toContain('"var(--color-surface-base)"');
       expect(tokens).not.toContain('#FBF7EF');
+      expect(tokens).toContain('"var(--color-scrollbar-thumb)"');
     },
     180_000,
   );

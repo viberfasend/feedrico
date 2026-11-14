@@ -159,6 +159,17 @@
       "6": {
         "$value": "{palette.rust.500}"
       }
+    },
+    "scrollbar": {
+      "thumb": {
+        "$value": "{palette.paper.500}"
+      },
+      "thumbHover": {
+        "$value": "{palette.paper.600}"
+      },
+      "track": {
+        "$value": "#00000000"
+      }
     }
   },
   "shadow": {
