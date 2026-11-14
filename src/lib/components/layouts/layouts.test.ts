@@ -60,4 +60,39 @@ describe('Layout components', () => {
     expect(title).not.toMatch(/nowrap/);
     expect(source).toContain('title={article.title}');
   });
+
+  // #107: no Lead Image (or a failed one) is a text card at the same height, not a placeholder.
+  describe('text-only Articles', () => {
+    const cards = sources['./CardsLayout.svelte'] as string;
+    const magazine = sources['./MagazineLayout.svelte'] as string;
+
+    it('Cards render no image area or placeholder art without a Lead Image', () => {
+      expect(cards).not.toMatch(/Gossamer|typographic|big-title|motif/);
+      expect(cards).toMatch(/\{#if withImage\}\s*<div class="visual"/);
+      expect(cards).toContain('class:text-card={!withImage}');
+    });
+
+    it('Cards keep the height from the same tokens for text and image cards', () => {
+      expect(cards).toContain("tokens.px('--cards-text-height')");
+      expect(cards).toContain("tokens.px('--cards-image-ratio')");
+      expect(cards.match(/style:height="\{cardHeight\}px"/g)?.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('Cards show the title up to 4 lines and break long words', () => {
+      expect(cards).toMatch(/\.text-card \.title \{[^}]*line-clamp: 4/);
+      expect(cards).toContain('overflow-wrap: anywhere');
+    });
+
+    it('keeps the offline "image not cached" state distinguishable', () => {
+      expect(cards).toContain('Image not cached');
+      expect(magazine).toContain('Image not cached');
+    });
+
+    it('Magazine hero without an image has no gradient placeholder and keeps band tokens', () => {
+      expect(magazine).not.toContain('linear-gradient');
+      expect(magazine).toContain("tokens.px('--magazine-band-height')");
+      expect(magazine).toContain("tokens.px('--magazine-small-row-height')");
+      expect(magazine).toContain('overflow-wrap: anywhere');
+    });
+  });
 });

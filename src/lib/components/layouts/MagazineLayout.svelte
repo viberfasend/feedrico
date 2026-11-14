@@ -6,6 +6,7 @@
   import { app } from '../../state.svelte';
   import { tokens } from '../../tokens/runtime.svelte';
   import FeedIcon from '../FeedIcon.svelte';
+  import Icon from '../Icon.svelte';
   import VirtualRows from '../VirtualRows.svelte';
 
   let { label }: { label: string } = $props();
@@ -50,6 +51,7 @@
       {#each bandSlots(band) as { index, article }, position (index)}
         {#if article}
           {@const withImage = kind(position) !== 'small' && hasLeadImage(article.leadImage)}
+          {@const imageMissing = kind(position) !== 'small' && !!article.leadImage && !withImage}
           <button
             class="story {kind(position)}"
             class:unread={!article.isRead}
@@ -76,6 +78,7 @@
               <div class="meta">
                 <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
                 <span class="feed">{article.feedTitle}</span>
+                {#if imageMissing}<span class="missing"><Icon name="image" size={12} label="Image not cached" /></span>{/if}
                 <time>{shortDate(article.articleDate)}</time>
               </div>
               <div class="title">{article.title}</div>
@@ -163,11 +166,24 @@
   .lead .text {
     padding-block-start: var(--space-stack-sm);
   }
+  /* Text hero: same footprint as an image hero, filled with title and a long excerpt. */
   .lead:not(.with-image) {
-    grid-template-rows: 1fr;
-    align-content: end;
+    grid-template-rows: minmax(0, 1fr);
     padding: var(--space-inset-xl);
-    background: linear-gradient(160deg, var(--color-accent-subtle), var(--color-surface-sunken));
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-surface-raised);
+  }
+  .lead:not(.with-image) .text {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: var(--space-stack-md);
+    padding-block-start: 0;
+  }
+  .medium:not(.with-image) .text {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .missing {
+    display: inline-flex;
+    flex: none;
   }
   .meta {
     display: flex;
@@ -193,6 +209,7 @@
     font-family: var(--font-family-reading);
     font-weight: var(--font-weight-heading);
     line-height: var(--font-line-height-heading);
+    overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     overflow: hidden;
@@ -204,9 +221,9 @@
     letter-spacing: -0.01em;
   }
   .lead:not(.with-image) .title {
-    font-size: var(--font-size-title-display);
-    -webkit-line-clamp: 5;
-    line-clamp: 5;
+    font-size: var(--font-size-title-lg);
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
   }
   .medium .title {
     font-size: var(--font-size-title-sm);
@@ -231,6 +248,11 @@
   }
   .lead .excerpt {
     font-size: var(--font-size-body);
+  }
+  .lead:not(.with-image) .excerpt {
+    min-height: 0;
+    -webkit-line-clamp: 12;
+    line-clamp: 12;
   }
   .skeleton {
     background: var(--color-surface-hover);
