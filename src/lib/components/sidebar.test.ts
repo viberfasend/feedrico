@@ -22,4 +22,15 @@ describe('Sidebar tree', () => {
     expect(ul).toMatch(/display:\s*grid/);
     expect(ul).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   });
+
+  // Bug (#101): the Folder row sits next to the 32 px disclosure button in a flex row but kept
+  // `.row`'s `width: 100%`. It was as wide as the whole list, so it overflowed the sidebar by the
+  // button's width (a sideways scrollbar) and Folder names indented unevenly. It must fill the
+  // space left over instead.
+  it('sizes the Folder row to the space beside the disclosure button, not to 100%', () => {
+    const rule = /\n {2}\.row\.folder \{([^}]*)\}/.exec(source)?.[1] ?? '';
+    expect(rule).toMatch(/flex:\s*1/);
+    expect(rule).toMatch(/min-width:\s*0/);
+    expect(rule).toMatch(/width:\s*auto/);
+  });
 });

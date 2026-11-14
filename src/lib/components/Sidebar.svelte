@@ -400,6 +400,10 @@
     padding-inline-start: calc(var(--sidebar-row-padding-inline) + var(--space-inset-lg) + var(--space-inline-xs));
   }
   .row.folder {
+    /* Fill what the disclosure button leaves; `.row`'s 100% would overflow the sidebar by its width. */
+    flex: 1;
+    min-width: 0;
+    width: auto;
     font-weight: var(--font-weight-medium);
   }
   .title {
