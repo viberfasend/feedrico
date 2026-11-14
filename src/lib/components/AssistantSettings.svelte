@@ -145,6 +145,18 @@
     task = null;
   }
 
+  /** The detected Assistants, plus the one set up if it was not found this time. */
+  const listed = $derived.by(() => {
+    const items = found.map((item) => ({ item, missing: false }));
+    if (setup && !found.some((f) => f.kind === setup!.kind && f.path === setup!.path)) {
+      items.unshift({
+        item: { kind: setup.kind, path: setup.path, version: null, signIn: 'unknown' },
+        missing: true,
+      });
+    }
+    return items;
+  });
+
   const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
   const modelValue = $derived(setup?.model ?? '');
   const providerLine = $derived(
@@ -197,15 +209,15 @@
           <div class="row-text" role="status" aria-live="polite">
             {#if phase === 'detecting'}
               <span class="desc">Looking for Assistants…</span>
-            {:else if found.length === 0}
+            {:else if listed.length === 0}
               <span class="desc">
                 No Assistant found. Install Claude Code or Mistral Vibe, or enter where it is below.
               </span>
             {/if}
           </div>
-          {#if phase === 'listed' && found.length > 0}
+          {#if phase === 'listed' && listed.length > 0}
             <div class="found" role="radiogroup" aria-label="Assistant to use">
-              {#each found as item (item.kind + item.path)}
+              {#each listed as { item, missing } (item.kind + item.path)}
                 <label class="found-item">
                   <input
                     type="radio"
@@ -215,7 +227,13 @@
                   />
                   <span class="row-text">
                     <span class="label">{assistantNames[item.kind]}{version(item)}</span>
-                    <span class="desc">{@render signIn(item)}</span>
+                    <span class="desc">
+                      {#if missing}
+                        Not found at {item.path} — check the path or Look again
+                      {:else}
+                        {@render signIn(item)}
+                      {/if}
+                    </span>
                     <span class="desc path" title={item.path}>{item.path}</span>
                   </span>
                 </label>

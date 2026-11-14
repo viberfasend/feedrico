@@ -211,4 +211,22 @@ describe('Assistant settings', () => {
     expect(button('Set up')).toBeTruthy();
     expect(text()).not.toContain('gives the Article');
   });
+
+  it('keeps the set-up Assistant in the list, selected, when it is no longer found', async () => {
+    stored = { kind: 'claudeCode', path: '/gone/claude', model: 'haiku', disclosureAccepted: true };
+    mockAssistant.detectAssistants.mockImplementation(async () => [vibe]);
+    await open();
+    await click(button('Change'));
+    const radios = [...document.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+    expect(radios).toHaveLength(2);
+    expect(radios.filter((r) => r.checked)).toHaveLength(1);
+    expect(text()).toContain('Not found at /gone/claude \u2014 check the path or Look again');
+  });
+
+  it('lists the set-up Assistant even when nothing is found', async () => {
+    stored = { kind: 'claudeCode', path: '/gone/claude', model: 'haiku', disclosureAccepted: true };
+    await open();
+    await click(button('Change'));
+    expect(text()).toContain('Not found at /gone/claude');
+  });
 });
