@@ -6,7 +6,6 @@
   import { app } from '../../state.svelte';
   import { tokens } from '../../tokens/runtime.svelte';
   import FeedIcon from '../FeedIcon.svelte';
-  import Gossamer from '../Gossamer.svelte';
   import Icon from '../Icon.svelte';
   import VirtualRows from '../VirtualRows.svelte';
 
@@ -35,9 +34,11 @@
         {@const article = index < app.total ? app.rowAt(index) : undefined}
         {#if article}
           {@const withImage = hasLeadImage(article.leadImage)}
+          {@const imageMissing = !!article.leadImage && !withImage}
           <button
             class="card"
             class:unread={!article.isRead}
+            class:text-card={!withImage}
             class:selected={app.selectedIndex === index}
             style:height="{cardHeight}px"
             role="option"
@@ -47,33 +48,27 @@
             aria-label={articleOptionLabel(article)}
             onclick={() => app.selectIndex(index)}
           >
-            <div class="visual" style:height="{imageHeight}px">
-              {#if withImage}
+            {#if withImage}
+              <div class="visual" style:height="{imageHeight}px">
                 <img
                   src={mediaUrl(article.leadImage!)}
                   alt=""
                   decoding="async"
                   onerror={() => failedImages.add(article.leadImage!)}
                 />
-              {:else}
-                <div class="typographic">
-                  <span class="motif"><Gossamer size={120} /></span>
-                  <span class="big-title">{article.title}</span>
-                </div>
-              {/if}
-            </div>
+              </div>
+            {/if}
             <div class="body">
               <div class="meta">
                 <span class="dot" aria-hidden="true"></span>
                 <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
                 <span class="feed">{article.feedTitle}</span>
+                {#if imageMissing}<span class="missing"><Icon name="image" size={12} label="Image not cached" /></span>{/if}
                 {#if article.isStarred}<span class="star"><Icon name="star" size={12} filled label="Starred" /></span>{/if}
                 <time>{shortDate(article.articleDate)}</time>
               </div>
-              {#if withImage}
-                <div class="title">{article.title}</div>
-              {/if}
-              <div class="excerpt" class:long={!withImage}>{article.excerpt}</div>
+              <div class="title">{article.title}</div>
+              <div class="excerpt">{article.excerpt}</div>
             </div>
           </button>
         {:else if index < app.total}
@@ -122,32 +117,6 @@
     object-fit: cover;
     display: block;
   }
-  .typographic {
-    position: relative;
-    height: 100%;
-    display: flex;
-    align-items: flex-end;
-    padding: var(--space-inset-lg);
-    background: linear-gradient(160deg, var(--color-accent-subtle), var(--color-surface-sunken));
-  }
-  .motif {
-    position: absolute;
-    inset-block-start: var(--space-inset-sm);
-    inset-inline-end: var(--space-inset-sm);
-    opacity: 0.8;
-  }
-  .big-title {
-    position: relative;
-    font-family: var(--font-family-reading);
-    font-size: var(--font-size-title-md);
-    font-weight: var(--font-weight-heading);
-    line-height: var(--font-line-height-heading);
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    line-clamp: 4;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
   .body {
     display: grid;
     align-content: start;
@@ -191,14 +160,14 @@
     font-family: var(--font-family-reading);
     font-weight: var(--font-weight-strong);
     line-height: var(--font-line-height-heading);
+    overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .card:not(.unread) .title,
-  .card:not(.unread) .big-title {
+  .card:not(.unread) .title {
     color: var(--color-text-muted);
   }
   .excerpt {
@@ -210,9 +179,30 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .excerpt.long {
+  /* No Lead Image: same total height, all of it text. Title up to 4 lines, excerpt fills the rest. */
+  .card.text-card {
+    grid-template-rows: 1fr;
+  }
+  .text-card .body {
+    grid-template-rows: auto auto 1fr;
+    align-content: stretch;
+    gap: var(--space-stack-sm);
+    padding: var(--space-inset-lg);
+  }
+  .text-card .title {
+    font-size: var(--font-size-title-md);
+    font-weight: var(--font-weight-heading);
     -webkit-line-clamp: 4;
     line-clamp: 4;
+  }
+  .text-card .excerpt {
+    min-height: 0;
+    -webkit-line-clamp: 8;
+    line-clamp: 8;
+  }
+  .missing {
+    display: inline-flex;
+    flex: none;
   }
   .skeleton {
     background: var(--color-surface-hover);
