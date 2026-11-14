@@ -265,6 +265,36 @@
       "fg": "color.code.function",
       "bg": "color.surface.sunken",
       "min": 4.5
+    },
+    {
+      "fg": "color.scrollbar.thumb",
+      "bg": "color.surface.base",
+      "min": 3
+    },
+    {
+      "fg": "color.scrollbar.thumb",
+      "bg": "color.surface.raised",
+      "min": 3
+    },
+    {
+      "fg": "color.scrollbar.thumb",
+      "bg": "color.surface.sunken",
+      "min": 3
+    },
+    {
+      "fg": "color.scrollbar.thumbHover",
+      "bg": "color.surface.base",
+      "min": 3
+    },
+    {
+      "fg": "color.scrollbar.thumbHover",
+      "bg": "color.surface.raised",
+      "min": 3
+    },
+    {
+      "fg": "color.scrollbar.thumbHover",
+      "bg": "color.surface.sunken",
+      "min": 3
     }
   ]
 }

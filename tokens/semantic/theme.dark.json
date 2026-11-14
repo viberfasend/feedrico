@@ -159,6 +159,17 @@
       "6": {
         "$value": "{palette.dusk.200}"
       }
+    },
+    "scrollbar": {
+      "thumb": {
+        "$value": "{palette.dusk.400}"
+      },
+      "thumbHover": {
+        "$value": "{palette.dusk.300}"
+      },
+      "track": {
+        "$value": "#00000000"
+      }
     }
   },
   "shadow": {
