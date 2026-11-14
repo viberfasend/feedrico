@@ -1,4 +1,4 @@
-# Agent workflow: worktrees, checks, handoffs
+# Agent workflow: worktrees, checks, reports
 
 How coding agents (Vibe, Claude Code) work in this repository alongside the user's own
 checkout. `AGENTS.md` at the root summarizes this for any agent that starts here.
@@ -29,16 +29,11 @@ checkout. `AGENTS.md` at the root summarizes this for any agent that starts here
 - Run all checks from `CLAUDE.md` before every commit.
 - Commit locally on the task branch. Push and open PRs only when the user asks.
 
-## Handoffs
+## Reports
 
-- At the end of a batch, write the handoff in the worktree root (`HANDOFF.md`: per issue
-  the status and commit hashes, what was built, deviations from the brief and why, tests
-  added and how each was proven red, open questions, the output of the final check run)
-  and COMMIT it on the branch.
-- Reason: untracked files in a worktree are not durable. On 2026-11-11 a finished branch
-  (`feat/settings-and-a11y`) was merged by rebase and its worktree was reset to
-  `origin/main`; the untracked `HANDOFF.md` was lost and only the session log under
-  `~/.vibe/logs/session/` still had it.
+- No `HANDOFF.md` or other handoff files on branches or in PRs. At the end of a task, put
+  the status, commit hashes, deviations from the brief, open questions and the final check
+  output in the agent's final report and, when there is one, in the PR body.
 
 ## Memory and shared context
 
