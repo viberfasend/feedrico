@@ -17,6 +17,20 @@ use lol_html::{RewriteStrSettings, element, rewrite_str};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+/// Images with width AND height <= this threshold are tracking pixels and should be dropped.
+/// Matches PIXEL_MAX in src/lib/reader-media.ts.
+const PIXEL_MAX: u32 = 2;
+
+/// Returns true if the image is a tracking pixel (both width and height attributes exist and are <= PIXEL_MAX).
+fn is_tracking_pixel(width: Option<&str>, height: Option<&str>) -> bool {
+    let width = width.and_then(|w| w.parse::<u32>().ok());
+    let height = height.and_then(|h| h.parse::<u32>().ok());
+    match (width, height) {
+        (Some(w), Some(h)) => w <= PIXEL_MAX && h <= PIXEL_MAX,
+        _ => false,
+    }
+}
+
 pub struct Sanitized {
     pub html: String,
     /// Absolute image URLs referenced by the content, in order of appearance.
@@ -251,6 +265,13 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
                 let src = el
                     .get_attribute("src")
                     .or_else(|| el.get_attribute("data-src"));
+                // Issue #86: drop tracking pixels (images with width AND height <= 2)
+                let width = el.get_attribute("width");
+                let height = el.get_attribute("height");
+                if is_tracking_pixel(width.as_deref(), height.as_deref()) {
+                    el.remove();
+                    return Ok(());
+                }
                 match src.as_deref().and_then(resolve) {
                     Some(url) => {
                         // Inert: the webview never loads data-* attributes. The reader links
@@ -857,5 +878,118 @@ mod tests {
             "delimiters are not turned into elements: {}",
             out.html
         );
+    }
+
+    // Issue #86: tracking pixels (images with width AND height <= 2) should be dropped
+    // and NOT added to the download list.
+    #[test]
+    fn tracking_pixel_1x1_is_dropped_and_not_collected() {
+        let out = clean(r#"<img src="/pixel.png" width="1" height="1" alt="tracking">"#);
+        // The image should be removed from HTML
+        assert!(!out.html.contains("pixel.png"), "{}", out.html);
+        assert!(!out.html.contains("tracking"), "{}", out.html);
+        // The URL should NOT be in the images list
+        assert_eq!(
+            out.images,
+            Vec::<String>::new(),
+            "tracking pixel should not be collected"
+        );
+    }
+
+    #[test]
+    fn tracking_pixel_2x2_is_dropped_and_not_collected() {
+        let out = clean(r#"<img src="/pixel.png" width="2" height="2" alt="tracking">"#);
+        assert!(!out.html.contains("pixel.png"), "{}", out.html);
+        assert!(!out.html.contains("tracking"), "{}", out.html);
+        assert_eq!(
+            out.images,
+            Vec::<String>::new(),
+            "2x2 tracking pixel should not be collected"
+        );
+    }
+
+    #[test]
+    fn tracking_pixel_2x1_is_dropped_and_not_collected() {
+        let out = clean(r#"<img src="/pixel.png" width="2" height="1" alt="tracking">"#);
+        assert!(!out.html.contains("pixel.png"), "{}", out.html);
+        assert!(!out.html.contains("tracking"), "{}", out.html);
+        assert_eq!(
+            out.images,
+            Vec::<String>::new(),
+            "2x1 tracking pixel should not be collected"
+        );
+    }
+
+    #[test]
+    fn divider_600x1_is_kept_and_collected() {
+        let out = clean(r#"<img src="/divider.png" width="600" height="1" alt="divider">"#);
+        // The image should be kept in HTML
+        assert!(out.html.contains("divider.png"), "{}", out.html);
+        // The URL should be in the images list
+        let url = "https://blog.example/divider.png";
+        assert_eq!(
+            out.images,
+            vec![url.to_owned()],
+            "600x1 divider should be collected"
+        );
+    }
+
+    #[test]
+    fn image_without_dimensions_is_collected() {
+        let out = clean(r#"<img src="/photo.png" alt="photo">"#);
+        // The image should be kept in HTML
+        assert!(out.html.contains("photo.png"), "{}", out.html);
+        // The URL should be in the images list
+        let url = "https://blog.example/photo.png";
+        assert_eq!(
+            out.images,
+            vec![url.to_owned()],
+            "image without dimensions should be collected"
+        );
+    }
+
+    #[test]
+    fn image_with_only_width_is_collected() {
+        let out = clean(r#"<img src="/photo.png" width="100" alt="photo">"#);
+        assert!(out.html.contains("photo.png"), "{}", out.html);
+        let url = "https://blog.example/photo.png";
+        assert_eq!(
+            out.images,
+            vec![url.to_owned()],
+            "image with only width should be collected"
+        );
+    }
+
+    #[test]
+    fn image_with_only_height_is_collected() {
+        let out = clean(r#"<img src="/photo.png" height="100" alt="photo">"#);
+        assert!(out.html.contains("photo.png"), "{}", out.html);
+        let url = "https://blog.example/photo.png";
+        assert_eq!(
+            out.images,
+            vec![url.to_owned()],
+            "image with only height should be collected"
+        );
+    }
+
+    #[test]
+    fn multiple_images_with_tracking_pixels() {
+        let out = clean(
+            r#"<img src="/tracker.png" width="1" height="1">
+               <img src="/photo.png" width="100" height="100">
+               <img src="/tracker2.png" width="2" height="2">"#,
+        );
+        // Only the photo should be in the images list
+        let url = "https://blog.example/photo.png";
+        assert_eq!(
+            out.images,
+            vec![url.to_owned()],
+            "only non-tracking images should be collected"
+        );
+        // Tracking pixels should be removed from HTML
+        assert!(!out.html.contains("tracker.png"), "{}", out.html);
+        assert!(!out.html.contains("tracker2.png"), "{}", out.html);
+        // Photo should be kept
+        assert!(out.html.contains("photo.png"), "{}", out.html);
     }
 }
