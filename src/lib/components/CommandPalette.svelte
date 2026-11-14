@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { assist } from '../assistant-state.svelte';
   import { rank, type Rankable } from '../palette';
   import { panes } from '../pane-state.svelte';
   import { app } from '../state.svelte';
@@ -44,6 +45,10 @@
       { id: 'action:settings', group: 'action', icon: 'settings', label: 'Open settings…', run: () => void app.openSettings() },
       { id: 'action:openLibrary', group: 'action', icon: 'library', label: 'Open another Library…', run: () => app.showWelcome() },
       { id: 'action:updates', group: 'action', icon: 'update', label: 'Check for updates', run: () => void app.checkForUpdates() },
+      // Assistant entries only exist with a setup and an Article in the reader.
+      ...(assist.available
+        ? assist.entries.map((e) => ({ id: `action:assistant:${e.id}`, group: 'action' as const, icon: 'check' as const, label: e.paletteLabel, run: () => assist.start(e) }))
+        : []),
     ];
   }
 

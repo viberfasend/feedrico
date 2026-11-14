@@ -3,7 +3,9 @@
   // Open in browser are always one click away, and every tooltip teaches the shortcut.
   import { hostOf } from '../../format';
   import { app } from '../../state.svelte';
+  import { assist } from '../../assistant-state.svelte';
   import IconButton from '../../ui/IconButton.svelte';
+  import Menu from '../../ui/Menu.svelte';
   import type { ArticleDetail } from '../../api';
 
   let { article, title, scrolled }: { article: ArticleDetail; title: string; scrolled: boolean } = $props();
@@ -24,6 +26,17 @@
   <p class="title" aria-hidden="true" title={title}>{title}</p>
 
   <div class="group">
+    {#if assist.setup}
+      <Menu
+        label="Assistant"
+        class="assistant-trigger"
+        align="end"
+        bind:open={assist.menuOpen}
+        items={assist.entries.map((e) => ({ label: e.menuLabel, onclick: () => assist.start(e) }))}
+      >
+        Assistant
+      </Menu>
+    {/if}
     <IconButton
       label="Star"
       title={article.isStarred ? 'Unstar (s)' : 'Star (s)'}
@@ -50,6 +63,21 @@
 </div>
 
 <style>
+  .toolbar :global(.assistant-trigger) {
+    height: var(--icon-button-size);
+    padding-inline: var(--space-inset-sm);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-small);
+    cursor: pointer;
+  }
+  .toolbar :global(.assistant-trigger:hover),
+  .toolbar :global(.assistant-trigger[data-state='open']) {
+    background: var(--color-surface-hover);
+    color: var(--color-text-default);
+  }
   .toolbar {
     position: sticky;
     inset-block-start: 0;

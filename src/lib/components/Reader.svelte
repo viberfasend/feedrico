@@ -5,6 +5,7 @@
   import EmptyState from './EmptyState.svelte';
   import Icon from './Icon.svelte';
   import ArticleHeader from './reader/ArticleHeader.svelte';
+  import AssistantPanel from './reader/AssistantPanel.svelte';
   import Attachments from './reader/Attachments.svelte';
   import { enhanceContent, type ViewerImage } from './reader/content';
   import ImageViewer from './reader/ImageViewer.svelte';
@@ -67,6 +68,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
     <article onclick={onClick}>
       <ArticleHeader {article} bind:heading onview={viewLead} />
+      <AssistantPanel />
       <VideoCard {article} />
       <Attachments {enclosures} />
 
