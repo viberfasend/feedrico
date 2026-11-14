@@ -4,6 +4,7 @@
 //! tested headless. Vocabulary follows `GLOSSARY.md` at the repository root.
 
 pub mod articles;
+pub mod assistant;
 pub mod discover;
 mod error;
 pub mod export;
