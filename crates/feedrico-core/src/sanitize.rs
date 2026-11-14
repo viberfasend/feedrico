@@ -30,6 +30,8 @@ pub struct Sanitized {
 pub enum VideoHost {
     YouTube,
     Vimeo,
+    Dailymotion,
+    PeerTube,
 }
 
 impl VideoHost {
@@ -37,6 +39,8 @@ impl VideoHost {
         match self {
             VideoHost::YouTube => "youtube",
             VideoHost::Vimeo => "vimeo",
+            VideoHost::Dailymotion => "dailymotion",
+            VideoHost::PeerTube => "peertube",
         }
     }
 
@@ -45,13 +49,16 @@ impl VideoHost {
         match self {
             VideoHost::YouTube => "youtube.com",
             VideoHost::Vimeo => "vimeo.com",
+            VideoHost::Dailymotion => "dailymotion.com",
+            VideoHost::PeerTube => "peertube",
         }
     }
 }
 
 /// Classifies a URL as a video page or embed: YouTube (`watch?v=`, `youtu.be/ID`, `/embed/ID`
-/// on youtube.com and youtube-nocookie.com) and Vimeo (`vimeo.com/ID`,
-/// `player.vimeo.com/video/ID`). Returns the platform and the video id.
+/// on youtube.com and youtube-nocookie.com), Vimeo (`vimeo.com/ID`,
+/// `player.vimeo.com/video/ID`), Dailymotion (`dailymotion.com/embed/video/ID`), and
+/// PeerTube instances (`/videos/embed/ID`). Returns the platform and the video id.
 pub fn video_identity(url: &Url) -> Option<(VideoHost, String)> {
     let host = url
         .host_str()?
@@ -88,7 +95,25 @@ pub fn video_identity(url: &Url) -> Option<(VideoHost, String)> {
             .and_then(|rest| rest.split('/').next())
             .filter(|id| valid_vimeo_id(id))
             .map(|id| (VideoHost::Vimeo, id.to_owned())),
-        _ => None,
+        "dailymotion.com" | "www.dailymotion.com" => {
+            if let Some(rest) = path.strip_prefix("/embed/video/") {
+                let id = rest.split('/').next().unwrap_or_default();
+                // Dailymotion video IDs start with x and are alphanumeric
+                (!id.is_empty()).then(|| (VideoHost::Dailymotion, id.to_owned()))
+            } else {
+                None
+            }
+        }
+        _ => {
+            // PeerTube instances: any host with /videos/embed/ path
+            if let Some(rest) = path.strip_prefix("/videos/embed/") {
+                let id = rest.split('/').next().unwrap_or_default();
+                // PeerTube IDs are typically UUIDs or similar alphanumeric strings
+                (!id.is_empty()).then(|| (VideoHost::PeerTube, id.to_owned()))
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -181,13 +206,22 @@ pub fn sanitize(html: &str, base: Option<&Url>, media_prefix: &str) -> Sanitized
                 // original src ride in inert data attributes for the reader's card; the link
                 // inside is the no-JS fallback and never loads anything. No live iframe (spec).
                 if let Some((host, id)) = video_identity(&url) {
+                    let display_host = match host {
+                        VideoHost::YouTube => "youtube.com",
+                        VideoHost::Vimeo => "vimeo.com",
+                        VideoHost::Dailymotion => "dailymotion.com",
+                        VideoHost::PeerTube => url
+                            .host_str()
+                            .unwrap_or("peertube")
+                            .trim_start_matches("www."),
+                    };
                     return format!(
                         r#"<p class="embed-card" data-video-host="{}" data-video-id="{}" data-video-src="{}"><a href="{}">Video on {}: open in browser</a></p>"#,
                         host.as_str(),
                         escape_attr(&id),
                         escape_attr(url.as_str()),
                         escape_attr(url.as_str()),
-                        escape_text(host.label()),
+                        escape_text(display_host),
                     );
                 }
                 let host = url
@@ -489,6 +523,72 @@ mod tests {
         assert!(out.html.contains(r#"class="embed-link""#), "{}", out.html);
         assert!(!out.html.contains("embed-card"), "{}", out.html);
         assert!(out.html.contains("Embedded content on widgets.example.com"));
+    }
+
+    #[test]
+    fn peertube_embeds_become_video_cards() {
+        let out = clean(
+            r#"<iframe src="https://peertube.example.com/videos/embed/abc123-xyz"></iframe>"#,
+        );
+        assert!(
+            !out.html.contains("<iframe"),
+            "iframe should be replaced: {}",
+            out.html
+        );
+        assert!(
+            out.html.contains(r#"class="embed-card""#),
+            "should be a rich card: {}",
+            out.html
+        );
+        assert!(
+            out.html
+                .contains("Video on peertube.example.com: open in browser"),
+            "should say Video on peertube.example.com: {}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn dailymotion_embeds_become_video_cards() {
+        let out =
+            clean(r#"<iframe src="https://www.dailymotion.com/embed/video/x8f00123"></iframe>"#);
+        assert!(
+            !out.html.contains("<iframe"),
+            "iframe should be replaced: {}",
+            out.html
+        );
+        assert!(
+            out.html.contains(r#"class="embed-card""#),
+            "should be a rich card: {}",
+            out.html
+        );
+        assert!(
+            out.html
+                .contains("Video on dailymotion.com: open in browser"),
+            "should say Video on dailymotion.com: {}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn youtube_nocookie_embeds_become_video_cards() {
+        let out =
+            clean(r#"<iframe src="https://www.youtube-nocookie.com/embed/0A1ouV7iD8o"></iframe>"#);
+        assert!(
+            !out.html.contains("<iframe"),
+            "iframe should be replaced: {}",
+            out.html
+        );
+        assert!(
+            out.html.contains(r#"class="embed-card""#),
+            "should be a rich card: {}",
+            out.html
+        );
+        assert!(
+            out.html.contains("Video on youtube.com: open in browser"),
+            "should say Video on youtube.com: {}",
+            out.html
+        );
     }
 
     #[test]
