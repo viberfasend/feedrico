@@ -11,7 +11,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, MAIN_DB};
+use rusqlite::{Connection, MAIN_DB, OpenFlags};
 use serde::Serialize;
 
 use crate::lock::{self, LockGuard, LockInfo};
@@ -57,7 +57,9 @@ pub struct OpenOptions {
 pub struct Library {
     dir: PathBuf,
     conn: Option<Connection>,
-    _lock: LockGuard,
+    /// `None` for a read-only Library, which never takes the lock.
+    _lock: Option<LockGuard>,
+    read_only: bool,
 }
 
 pub fn inspect(dir: &Path) -> Result<Status> {
@@ -97,6 +99,52 @@ impl Library {
         Self::open_with(dir, options, MIGRATIONS)
     }
 
+    /// Opens an existing Library for reading only: nothing is written, migrated or locked, and
+    /// the app may have the Library open at the same time (used by the MCP server, #124).
+    ///
+    /// A Library newer than this build is refused with `TooNew`; an older one that would need an
+    /// upgrade is refused with `NeedsUpgrade` and never upgraded.
+    pub fn open_read_only(dir: &Path) -> Result<Self> {
+        Self::open_read_only_with(dir, MIGRATIONS)
+    }
+
+    fn open_read_only_with(dir: &Path, migrations: &[&str]) -> Result<Self> {
+        let supported = migrations.len() as u32;
+        if !dir.join(manifest::FILE_NAME).is_file() || !dir.join(DB_FILE).is_file() {
+            return Err(Error::NotALibrary(dir.to_path_buf()));
+        }
+        let found = Manifest::read(dir)?.format_version;
+        if found > supported {
+            return Err(Error::TooNew { found, supported });
+        }
+        let conn = Connection::open_with_flags(
+            dir.join(DB_FILE),
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        conn.pragma_update(None, "query_only", true)?;
+        // The database is the truth; the manifest may lag behind an interrupted upgrade.
+        let db_version = schema::version(&conn)?;
+        if db_version > supported {
+            return Err(Error::TooNew {
+                found: db_version,
+                supported,
+            });
+        }
+        if db_version < supported {
+            return Err(Error::NeedsUpgrade {
+                found: db_version,
+                target: supported,
+            });
+        }
+        Ok(Self {
+            dir: dir.to_path_buf(),
+            conn: Some(conn),
+            _lock: None,
+            read_only: true,
+        })
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }
@@ -119,6 +167,9 @@ impl Library {
         let Some(conn) = self.conn.take() else {
             return Ok(());
         };
+        if self.read_only {
+            return conn.close().map_err(|(_, e)| e.into());
+        }
         // Always close the connection, even if tidying up the journal fails.
         let tidy = conn
             .pragma_update(None, "wal_checkpoint", "TRUNCATE")
@@ -147,7 +198,8 @@ impl Library {
         Ok(Self {
             dir: dir.to_path_buf(),
             conn: Some(conn),
-            _lock: lock,
+            _lock: Some(lock),
+            read_only: false,
         })
     }
 
@@ -203,7 +255,8 @@ impl Library {
         Ok(Self {
             dir: dir.to_path_buf(),
             conn: Some(conn),
-            _lock: lock,
+            _lock: Some(lock),
+            read_only: false,
         })
     }
 }
@@ -529,5 +582,82 @@ mod tests {
         conn.execute("DELETE FROM article", []).unwrap();
         assert_eq!(hits("spinnfaden"), 0);
         library.close().unwrap();
+    }
+
+    fn hash_tree(dir: &Path) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for e in fs::read_dir(&d).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    let rel = p.strip_prefix(dir).unwrap().to_string_lossy().into_owned();
+                    out.push((
+                        rel,
+                        blake3::hash(&fs::read(&p).unwrap()).to_hex().to_string(),
+                    ));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn read_only_open_changes_no_byte_and_ignores_a_lock() {
+        let root = tmp();
+        let dir = root.path().join(DIR_NAME);
+        let lib = Library::create(&dir).unwrap();
+        lib.add_feed("https://e.org/f", "E", None, None).unwrap();
+        lib.close().unwrap();
+        // A foreign machine's lock: read-only neither takes it over nor removes it.
+        fs::write(
+            dir.join(lock::FILE_NAME),
+            br#"{"machine":"friend-laptop","pid":4242,"openedAt":1762547640}"#,
+        )
+        .unwrap();
+        let before = hash_tree(&dir);
+
+        let ro = Library::open_read_only(&dir).unwrap();
+        assert_eq!(ro.feed_count().unwrap(), 1);
+        drop(ro);
+
+        assert_eq!(hash_tree(&dir), before);
+    }
+
+    #[test]
+    fn read_only_open_works_while_the_app_has_the_library_open() {
+        let root = tmp();
+        let dir = root.path().join(DIR_NAME);
+        let app = Library::create(&dir).unwrap();
+        app.add_feed("https://e.org/f", "E", None, None).unwrap();
+        let ro = Library::open_read_only(&dir).unwrap();
+        assert_eq!(ro.feed_count().unwrap(), 1);
+        assert!(ro.add_feed("https://e.org/g", "G", None, None).is_err());
+        drop(ro);
+        assert!(dir.join(lock::FILE_NAME).exists(), "the app keeps its lock");
+        app.close().unwrap();
+    }
+
+    #[test]
+    fn read_only_open_refuses_newer_and_older_libraries_without_touching_them() {
+        let root = tmp();
+        let dir = root.path().join(DIR_NAME);
+        Library::create_with(&dir, &MIGRATIONS[..1])
+            .unwrap()
+            .close()
+            .unwrap();
+        let before = hash_tree(&dir);
+        assert!(matches!(
+            Library::open_read_only_with(&dir, MIGRATIONS),
+            Err(Error::NeedsUpgrade { .. })
+        ));
+        assert!(matches!(
+            Library::open_read_only_with(&dir, &MIGRATIONS[..0]),
+            Err(Error::TooNew { .. })
+        ));
+        assert_eq!(hash_tree(&dir), before);
     }
 }
