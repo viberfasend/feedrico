@@ -8,7 +8,7 @@
   import VirtualRows from '../VirtualRows.svelte';
 
   let { label }: { label: string } = $props();
-  const rowHeight = $derived(tokens.px('--article-list-row-height') || 84);
+  const rowHeight = $derived(tokens.px('--article-list-row-height') || 101);
 </script>
 
 <VirtualRows {rowHeight} {label}>
@@ -35,7 +35,7 @@
           {#if article.isStarred}<span class="star"><Icon name="star" size={12} filled label="Starred" /></span>{/if}
           <time>{shortDate(article.articleDate)}</time>
         </div>
-        <div class="title">{article.title}</div>
+        <div class="title" title={article.title}>{article.title}</div>
         <div class="excerpt">{article.excerpt}</div>
       {:else}
         <div class="skeleton"></div>
@@ -95,13 +95,16 @@
     flex: none;
     font-variant-numeric: tabular-nums;
   }
-  .title,
-  .excerpt {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  /* The row height is fixed (VirtualRows needs it). The title takes up to two lines; the excerpt
+     gets the remaining 1fr, clipped at a line boundary: two lines when the title is short, one
+     when it is long. */
   .title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
     color: var(--color-text-muted);
     font-weight: var(--font-weight-medium);
   }
@@ -110,11 +113,21 @@
     font-weight: var(--font-weight-strong);
   }
   .excerpt {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    min-height: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
     color: var(--color-text-muted);
     font-size: var(--font-size-small);
   }
   :global([data-density='compact']) .excerpt {
     display: none;
+  }
+  :global([data-density='compact']) .row {
+    grid-template-rows: auto auto;
   }
   .skeleton {
     grid-row: 1 / -1;
