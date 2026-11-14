@@ -16,8 +16,10 @@
 //!
 //! Layout:
 //! - [`detect`]: find installed Assistants, their version and sign-in state (#112).
+//! - [`article`]: Article input and the reading-aid prompts (#116, #118).
 //! - [`run`]: run one [`Task`], stream [`Event`]s, cancel, map errors (#113).
 
+pub mod article;
 pub mod detect;
 pub mod prompts;
 pub mod run;
