@@ -49,7 +49,8 @@ pub fn detect(options: &DetectOptions) -> Vec<FoundAssistant> {
         .collect()
 }
 
-/// A manual path applies to the Assistant its file name says (`claude`, `vibe`), and wins over
+/// A manual path applies to the Assistant its file name starts with (`claude*`, `vibe*`, case-
+/// insensitive, without `.exe`/`.cmd`), and any other name is ignored and never run. It wins over
 /// `PATH`, which wins over the fallback directories.
 fn locate(
     kind: AssistantKind,
@@ -58,8 +59,16 @@ fn locate(
     fallback: &[PathBuf],
 ) -> Option<PathBuf> {
     if let Some(manual) = manual {
-        let stem = manual.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        if stem.eq_ignore_ascii_case(kind.binary_name()) && is_executable(manual) {
+        let name = manual
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let name = name
+            .strip_suffix(".exe")
+            .or_else(|| name.strip_suffix(".cmd"))
+            .unwrap_or(&name);
+        if name.starts_with(kind.binary_name()) && is_executable(manual) {
             return Some(manual.to_path_buf());
         }
     }
@@ -398,5 +407,42 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("claude"), "#!/bin/sh\n").unwrap();
         assert!(detect(&opts(dir.path())).is_empty());
+    }
+
+    #[test]
+    fn manual_path_kind_is_decided_by_file_name_prefix() {
+        let empty = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        for (name, kind) in [
+            ("claude-wrapper", AssistantKind::ClaudeCode),
+            ("Claude.exe", AssistantKind::ClaudeCode),
+            ("vibe-3.1", AssistantKind::MistralVibe),
+        ] {
+            let manual = fake_vibe(dir.path());
+            let named = dir.path().join(name);
+            std::fs::rename(&manual, &named).unwrap();
+            let o = DetectOptions {
+                manual_path: Some(named.clone()),
+                ..opts(empty.path())
+            };
+            let found = detect(&o);
+            assert_eq!(found.len(), 1, "{name}");
+            assert_eq!(found[0].kind, kind, "{name}");
+            assert_eq!(found[0].path, named, "{name}");
+        }
+    }
+
+    #[test]
+    fn manual_path_with_another_name_is_ignored_and_never_run() {
+        let empty = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ran");
+        let evil = fake(dir.path(), "rm-rf", &format!("touch {}", marker.display()));
+        let o = DetectOptions {
+            manual_path: Some(evil),
+            ..opts(empty.path())
+        };
+        assert!(detect(&o).is_empty());
+        assert!(!marker.exists());
     }
 }
