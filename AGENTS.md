@@ -22,9 +22,8 @@ tests and decisions.
   agent that authored the change — see landed commits on `main` (Vibe:
   `Mistral Vibe <noreply@mistral.ai>`, Claude: `noreply@anthropic.com`).
 - Batch work: commit locally on the task branch; do not push or open PRs unless asked.
-  Write the handoff (status, commit hashes, deviations, open questions, final check output)
-  and COMMIT it on the branch — untracked files in a worktree are lost when the worktree is
-  reset.
+  No `HANDOFF.md` or other handoff files: status, commit hashes, deviations, open questions
+  and the final check output go in your final report and the PR body.
 
 ## Skills and docs
 
