@@ -388,6 +388,23 @@ async fn export_library(path: PathBuf, app: AppHandle) -> CommandResult<()> {
     Ok(())
 }
 
+/// Finds the user's Assistants (epic #110). It runs each CLI's own `--version` and status
+/// command, so it stays off the UI thread, and the UI calls it only when Settings opens or a
+/// first run starts, never at startup.
+#[tauri::command]
+async fn assistant_detect(
+    manual_path: Option<PathBuf>,
+) -> CommandResult<Vec<feedrico_core::assistant::FoundAssistant>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        feedrico_core::assistant::detect::detect(&feedrico_core::assistant::detect::DetectOptions {
+            manual_path,
+            ..Default::default()
+        })
+    })
+    .await
+    .map_err(|e| CommandError::new("internal", e.to_string()))
+}
+
 #[tauri::command]
 fn sidebar(today_since: i64, state: State<'_, AppState>) -> CommandResult<Sidebar> {
     with_library(&state, |l| l.sidebar(today_since))
@@ -923,6 +940,7 @@ pub fn run() {
             refresh,
             perf_interactive,
             perf_finish,
+            assistant_detect,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Feedrico")
