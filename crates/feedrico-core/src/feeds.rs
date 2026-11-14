@@ -1,7 +1,7 @@
 //! Feeds and Folders in the Library: OPML import, the sidebar tree, refresh bookkeeping.
 
 use rusqlite::{OptionalExtension, params};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::lock::now;
 use crate::opml::{self, OpmlFeed};
@@ -82,6 +82,43 @@ pub enum FetchResult {
         last_modified: Option<String>,
     },
     Failed(String),
+}
+
+/// The longest Folder name an Assistant may propose, in characters.
+pub const MAX_FOLDER_NAME_CHARS: usize = 60;
+
+/// One accepted move from the Assistant's Folder suggestions: a Feed into the Folder with this
+/// name. The Folder is created when no Folder has that name yet.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderMove {
+    pub feed_id: i64,
+    pub folder: String,
+}
+
+/// A Feed that was moved, with what it needs to be put back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MovedFeed {
+    pub feed_id: i64,
+    pub previous_folder_id: Option<i64>,
+    pub folder_id: i64,
+}
+
+/// What `apply_folder_moves` did, so that `undo_folder_moves` can reverse exactly that.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedMoves {
+    pub created_folder_ids: Vec<i64>,
+    pub moved: Vec<MovedFeed>,
+}
+
+/// A Feed at the top level, as far as an Assistant needs to know it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsortedFeed {
+    pub id: i64,
+    pub title: String,
+    pub site_url: Option<String>,
 }
 
 fn non_empty<'a>(text: &'a str, message: &str) -> Result<&'a str> {
@@ -236,6 +273,116 @@ impl Library {
             params![feed_id, folder_id],
         )?;
         found(changed)
+    }
+
+    /// The Feeds among `ids` that are at the top level (in no Folder), in the order of `ids`.
+    /// Unknown ids and Feeds already in a Folder are left out.
+    pub fn top_level_feeds(&self, ids: &[i64]) -> Result<Vec<UnsortedFeed>> {
+        let mut stmt = self
+            .conn()
+            .prepare("SELECT id, title, site_url FROM feed WHERE id = ?1 AND folder_id IS NULL")?;
+        let mut feeds = Vec::new();
+        for id in ids {
+            if let Some(feed) = stmt
+                .query_row([id], |r| {
+                    Ok(UnsortedFeed {
+                        id: r.get(0)?,
+                        title: r.get(1)?,
+                        site_url: r.get(2)?,
+                    })
+                })
+                .optional()?
+            {
+                feeds.push(feed);
+            }
+        }
+        Ok(feeds)
+    }
+
+    /// The names of all Folders, in sidebar order.
+    pub fn folder_names(&self) -> Result<Vec<String>> {
+        Ok(self
+            .conn()
+            .prepare("SELECT name FROM folder ORDER BY position, id")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Applies accepted Folder suggestions as one step: creates the Folders that don't exist yet
+    /// (matched by name, ignoring case), then moves each Feed into its Folder. All or nothing.
+    /// Only Feeds still at the top level move; it never renames, unsubscribes or touches Articles.
+    /// Returns what it did, for `undo_folder_moves`.
+    pub fn apply_folder_moves(&self, moves: &[FolderMove]) -> Result<AppliedMoves> {
+        let tx = self.conn().unchecked_transaction()?;
+        let mut folders: Vec<(i64, String)> = tx
+            .prepare("SELECT id, name FROM folder")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut applied = AppliedMoves::default();
+        for m in moves {
+            let name = non_empty(&m.folder, "a Folder needs a name")?;
+            if name.chars().count() > MAX_FOLDER_NAME_CHARS {
+                return Err(Error::Invalid(format!(
+                    "a Folder name can have at most {MAX_FOLDER_NAME_CHARS} characters"
+                )));
+            }
+            let current: Option<Option<i64>> = tx
+                .query_row(
+                    "SELECT folder_id FROM feed WHERE id = ?1",
+                    [m.feed_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            // Unknown Feeds and Feeds the user has sorted meanwhile stay where they are.
+            let Some(None) = current else { continue };
+            let wanted = name.to_lowercase();
+            let folder_id = match folders.iter().find(|(_, n)| n.to_lowercase() == wanted) {
+                Some((id, _)) => *id,
+                None => {
+                    tx.execute(
+                        "INSERT INTO folder (name, position)
+                         VALUES (?1, (SELECT coalesce(max(position), -1) + 1 FROM folder))",
+                        [name],
+                    )?;
+                    let id = tx.last_insert_rowid();
+                    folders.push((id, name.to_string()));
+                    applied.created_folder_ids.push(id);
+                    id
+                }
+            };
+            tx.execute(
+                "UPDATE feed SET folder_id = ?2 WHERE id = ?1",
+                params![m.feed_id, folder_id],
+            )?;
+            applied.moved.push(MovedFeed {
+                feed_id: m.feed_id,
+                previous_folder_id: None,
+                folder_id,
+            });
+        }
+        tx.commit()?;
+        Ok(applied)
+    }
+
+    /// Undo for `apply_folder_moves`: puts each Feed back where it was (unless the user has moved
+    /// it again since), then removes the Folders that step created if they are empty now.
+    pub fn undo_folder_moves(&self, applied: &AppliedMoves) -> Result<()> {
+        let tx = self.conn().unchecked_transaction()?;
+        for m in &applied.moved {
+            tx.execute(
+                "UPDATE feed SET folder_id = ?3 WHERE id = ?1 AND folder_id IS ?2",
+                params![m.feed_id, m.folder_id, m.previous_folder_id],
+            )?;
+        }
+        for id in &applied.created_folder_ids {
+            tx.execute(
+                "DELETE FROM folder WHERE id = ?1
+                 AND NOT EXISTS (SELECT 1 FROM feed WHERE folder_id = ?1)",
+                [id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Deletes a Folder; its Feeds move to the top level.
@@ -512,6 +659,158 @@ mod tests {
             site_url: None,
             folder: folder.map(Into::into),
         }
+    }
+
+    /// A snapshot of the whole tree and every Feed row's title and position, to compare states.
+    fn tree(library: &Library) -> String {
+        let sidebar = library.sidebar(0).unwrap();
+        let mut out = String::new();
+        for f in &sidebar.folders {
+            out += &format!("[{}:{}]", f.id, f.name);
+            for feed in &f.feeds {
+                out += &format!(" {}:{}", feed.id, feed.title);
+            }
+            out += "\n";
+        }
+        for feed in &sidebar.feeds {
+            out += &format!("top {}:{}\n", feed.id, feed.title);
+        }
+        out
+    }
+
+    fn mv(feed_id: i64, folder: &str) -> FolderMove {
+        FolderMove {
+            feed_id,
+            folder: folder.into(),
+        }
+    }
+
+    #[test]
+    fn folder_moves_apply_as_one_step_and_undo_restores_the_exact_state() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", Some("Tech")),
+                opml_feed("https://b.example", None),
+                opml_feed("https://c.example", None),
+                opml_feed("https://d.example", None),
+                opml_feed("https://e.example", None),
+            ])
+            .unwrap();
+        let before = tree(&library);
+        let top: Vec<i64> = library
+            .sidebar(0)
+            .unwrap()
+            .feeds
+            .iter()
+            .map(|f| f.id)
+            .collect();
+
+        let applied = library
+            .apply_folder_moves(&[
+                mv(top[0], "tech"),      // existing Folder, matched ignoring case
+                mv(top[1], " Cooking "), // new Folder
+                mv(top[2], "Cooking"),   // same new Folder
+            ])
+            .unwrap();
+        assert_eq!(applied.created_folder_ids.len(), 1);
+        assert_eq!(applied.moved.len(), 3);
+        let sidebar = library.sidebar(0).unwrap();
+        assert_eq!(sidebar.folders.len(), 2);
+        assert_eq!(sidebar.folders[0].feeds.len(), 2);
+        assert_eq!(sidebar.folders[1].name, "Cooking");
+        assert_eq!(sidebar.folders[1].feeds.len(), 2);
+        assert_eq!(sidebar.feeds.len(), 1);
+
+        library.undo_folder_moves(&applied).unwrap();
+        assert_eq!(tree(&library), before);
+        assert_eq!(library.folder_names().unwrap(), ["Tech"]);
+    }
+
+    #[test]
+    fn folder_moves_skip_sorted_and_unknown_feeds_and_reject_bad_names() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", Some("Tech")),
+                opml_feed("https://b.example", None),
+            ])
+            .unwrap();
+        let sidebar = library.sidebar(0).unwrap();
+        let (sorted, free) = (sidebar.folders[0].feeds[0].id, sidebar.feeds[0].id);
+
+        let applied = library
+            .apply_folder_moves(&[mv(sorted, "News"), mv(9999, "News"), mv(free, "Tech")])
+            .unwrap();
+        assert!(applied.created_folder_ids.is_empty());
+        assert_eq!(applied.moved.len(), 1);
+        assert_eq!(library.folder_names().unwrap(), ["Tech"]);
+
+        let before = tree(&library);
+        assert!(library.apply_folder_moves(&[mv(free, "  ")]).is_err());
+        assert!(
+            library
+                .apply_folder_moves(&[mv(free, &"x".repeat(61))])
+                .is_err()
+        );
+        assert_eq!(tree(&library), before);
+    }
+
+    #[test]
+    fn undo_leaves_created_folders_that_gained_other_feeds_and_feeds_moved_since() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", None),
+                opml_feed("https://b.example", None),
+            ])
+            .unwrap();
+        let top: Vec<i64> = library
+            .sidebar(0)
+            .unwrap()
+            .feeds
+            .iter()
+            .map(|f| f.id)
+            .collect();
+        let applied = library
+            .apply_folder_moves(&[mv(top[0], "New"), mv(top[1], "New")])
+            .unwrap();
+        let new = applied.created_folder_ids[0];
+        // The user takes one Feed to another Folder and renames nothing else.
+        library
+            .import_opml(&[opml_feed("https://z.example", Some("Z"))])
+            .unwrap();
+        let z = library.sidebar(0).unwrap().folders[1].id;
+        library.move_feed(top[1], Some(z)).unwrap();
+
+        library.undo_folder_moves(&applied).unwrap();
+        let sidebar = library.sidebar(0).unwrap();
+        assert!(
+            sidebar.folders.iter().all(|f| f.id != new),
+            "empty again, removed"
+        );
+        assert_eq!(sidebar.feeds.len(), 1);
+        assert_eq!(sidebar.folders[0].feeds[0].id, top[1], "moved since: stays");
+    }
+
+    #[test]
+    fn top_level_feeds_leave_out_sorted_and_unknown_ids() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", Some("Tech")),
+                opml_feed("https://b.example", None),
+            ])
+            .unwrap();
+        let sidebar = library.sidebar(0).unwrap();
+        let (sorted, free) = (sidebar.folders[0].feeds[0].id, sidebar.feeds[0].id);
+        let feeds = library.top_level_feeds(&[sorted, 9999, free]).unwrap();
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].id, free);
     }
 
     #[test]
