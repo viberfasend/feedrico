@@ -9,12 +9,15 @@
     separatorBefore?: boolean;
     /** Renders a non-interactive heading above this item. */
     headingBefore?: string;
+    /** Makes this a radio item (`menuitemradio`); consecutive radio items form one group. */
+    checked?: boolean;
   }
 </script>
 
 <script lang="ts">
   import { DropdownMenu } from 'bits-ui';
   import type { Snippet } from 'svelte';
+  import Icon from '../components/Icon.svelte';
 
   let {
     items,
@@ -33,6 +36,21 @@
     /** The trigger content. */
     children: Snippet;
   } = $props();
+
+  /** Consecutive radio items share one RadioGroup, started again by a heading or separator. */
+  const rows = $derived.by(() => {
+    const out: { first: MenuItem; items: MenuItem[]; radio: boolean }[] = [];
+    for (const item of items) {
+      const radio = item.checked !== undefined;
+      const last = out[out.length - 1];
+      if (last && last.radio === radio && !item.headingBefore && !item.separatorBefore) {
+        last.items.push(item);
+      } else {
+        out.push({ first: item, items: [item], radio });
+      }
+    }
+    return out;
+  });
 </script>
 
 <DropdownMenu.Root bind:open>
@@ -47,18 +65,47 @@
         <!-- bits-ui positions the wrapper; without it the menu lands at the page's end. -->
         <div {...wrapperProps}>
         <div {...props} class="menu">
-          {#each items as item (item.label)}
-            {#if item.separatorBefore}<div class="menu-separator" role="separator"></div>{/if}
-            {#if item.headingBefore}<div class="menu-heading">{item.headingBefore}</div>{/if}
-            <DropdownMenu.Item
-              disabled={item.disabled}
-              textValue={item.label}
-              onSelect={() => item.onclick()}
-            >
-              {#snippet child({ props: itemProps })}
-                <div {...itemProps} class="menu-item" class:danger={item.danger}>{item.label}</div>
-              {/snippet}
-            </DropdownMenu.Item>
+          {#each rows as row (row.first.label)}
+            {#if row.first.separatorBefore}<div class="menu-separator" role="separator"></div>{/if}
+            {#if row.first.headingBefore}<div class="menu-heading" aria-hidden="true">{row.first.headingBefore}</div>{/if}
+            {#if row.radio}
+              <DropdownMenu.RadioGroup value={row.items.find((i) => i.checked)?.label ?? ''}>
+                {#snippet child({ props: groupProps })}
+                  <div {...groupProps} aria-label={row.first.headingBefore}>
+                    {#each row.items as item (item.label)}
+                      <DropdownMenu.RadioItem
+                        value={item.label}
+                        disabled={item.disabled}
+                        textValue={item.label}
+                        onSelect={() => item.onclick()}
+                      >
+                        {#snippet child({ props: itemProps })}
+                          <div {...itemProps} class="menu-item">
+                            <!-- 1.4.1: the chosen item needs more than bold text to stand out. -->
+                            <span class="radio-mark" aria-hidden="true">{#if item.checked}<Icon name="check" size={14} />{/if}</span>
+                            {item.label}
+                          </div>
+                        {/snippet}
+                      </DropdownMenu.RadioItem>
+                    {/each}
+                  </div>
+                {/snippet}
+              </DropdownMenu.RadioGroup>
+            {:else}
+              {#each row.items as item (item.label)}
+                <DropdownMenu.Item
+                  disabled={item.disabled}
+                  textValue={item.label}
+                  onSelect={() => item.onclick()}
+                >
+                  {#snippet child({ props: itemProps })}
+                    <div {...itemProps} class="menu-item" class:danger={item.danger}>
+                      {item.label}
+                    </div>
+                  {/snippet}
+                </DropdownMenu.Item>
+              {/each}
+            {/if}
           {/each}
         </div>
         </div>
@@ -94,6 +141,16 @@
   }
   .menu-item[data-highlighted] {
     background: var(--color-surface-hover);
+  }
+  .menu-item[aria-checked='true'] {
+    font-weight: var(--font-weight-strong);
+  }
+  .radio-mark {
+    display: inline-flex;
+    flex: none;
+    width: 14px;
+    margin-inline-end: var(--space-inline-sm);
+    color: var(--color-text-accent);
   }
   .menu-item.danger {
     color: var(--color-status-warning-text);

@@ -608,6 +608,12 @@ export class AppState {
     return this.resetList();
   }
 
+  setSort(sort: Sort) {
+    if (this.sort === sort) return;
+    this.sort = sort;
+    void this.resetList();
+  }
+
   toggleSort() {
     this.sort = this.sort === 'newestFirst' ? 'oldestFirst' : 'newestFirst';
     void this.resetList();
