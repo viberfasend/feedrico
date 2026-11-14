@@ -27,6 +27,18 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+/// The Assistant the user set up on this machine. Stored as `assistant.json` in the app data
+/// dir (never in the Library). Its absence means Assistants are off.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantSetup {
+    pub kind: AssistantKind,
+    pub path: PathBuf,
+    pub model: Option<String>,
+    /// The user has seen the disclosure that Article text goes to the provider.
+    pub disclosure_accepted: bool,
+}
+
 /// The Assistants Feedrico knows how to drive. New CLIs (Codex, Gemini, Ollama: #125) add a
 /// variant and an adapter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

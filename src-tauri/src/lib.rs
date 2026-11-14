@@ -205,6 +205,21 @@ fn recent_libraries(app: AppHandle) -> Vec<PathBuf> {
 }
 
 #[tauri::command]
+fn assistant_setup_get(app: AppHandle) -> Option<feedrico_core::assistant::AssistantSetup> {
+    machine::assistant_setup(&app)
+}
+
+/// `None` turns Assistants off and deletes the file. Machine-local, never in the Library.
+#[tauri::command]
+fn assistant_setup_set(
+    setup: Option<feedrico_core::assistant::AssistantSetup>,
+    app: AppHandle,
+) -> CommandResult<()> {
+    machine::set_assistant_setup(&app, setup.as_ref()).map_err(feedrico_core::Error::from)?;
+    Ok(())
+}
+
+#[tauri::command]
 fn library_inspect(path: PathBuf) -> CommandResult<Status> {
     Ok(feedrico_core::library::inspect(&path)?)
 }
@@ -996,6 +1011,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             startup,
             recent_libraries,
+            assistant_setup_get,
+            assistant_setup_set,
             assistant_run,
             assistant_cancel,
             library_inspect,
