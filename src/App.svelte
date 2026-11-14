@@ -11,7 +11,10 @@
   import Toasts from './lib/components/Toasts.svelte';
   import Welcome from './lib/components/Welcome.svelte';
   import { pageReader } from './lib/paging';
+  import { panes } from './lib/pane-state.svelte';
+  import { layoutPanes, listRange, sidebarRange, slideOverRange, type PaneLimits } from './lib/panes';
   import { app } from './lib/state.svelte';
+  import Splitter from './lib/ui/Splitter.svelte';
   import { tokens } from './lib/tokens/runtime.svelte';
   import { fade, fly } from 'svelte/transition';
 
@@ -36,16 +39,16 @@
   /** F6 / Shift+F6 move between the panes: sidebar → Article list → reader. */
   const PANE_IDS = ['pane-sidebar', 'pane-list', 'pane-reader'];
   function cyclePanes(forward: boolean) {
-    const panes = PANE_IDS.map((id) => document.getElementById(id)).filter(
-      (el): el is HTMLElement => el !== null,
-    );
-    if (!panes.length) return;
-    const current = panes.findIndex(
+    const targets = PANE_IDS.filter((id) => id !== 'pane-sidebar' || !panes.sidebarHidden)
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => el !== null);
+    if (!targets.length) return;
+    const current = targets.findIndex(
       (el) => el === document.activeElement || el.contains(document.activeElement),
     );
     const next =
-      current === -1 ? 0 : (current + (forward ? 1 : -1) + panes.length) % panes.length;
-    panes[next]?.focus({ preventScroll: true });
+      current === -1 ? 0 : (current + (forward ? 1 : -1) + targets.length) % targets.length;
+    targets[next]?.focus({ preventScroll: true });
   }
 
   // Dev-only component gallery at #gallery; statically false in production builds, so the
@@ -61,6 +64,43 @@
   });
 
   let paletteOpen = $state(false);
+
+  // Pane sizes: preferences from pane-state, bounds from tokens, clamped to the window.
+  let windowWidth = $state(window.innerWidth);
+  // The shell's own width (0 until measured): the panes share what the shell actually has.
+  let shellWidth = $state(0);
+  let available = $derived(shellWidth || windowWidth);
+  let limits = $derived<PaneLimits>({
+    sidebarMin: tokens.px('--sidebar-min-width'),
+    sidebarMax: tokens.px('--sidebar-max-width'),
+    listMin: tokens.px('--article-list-min-width'),
+    listMax: tokens.px('--article-list-max-width'),
+    readerMin: tokens.px('--reader-min-width'),
+  });
+  let sidebarDefault = $derived(tokens.px('--sidebar-width'));
+  let listDefault = $derived(tokens.px('--article-list-width'));
+  let slideOverDefault = $derived(tokens.px('--slide-over-width'));
+  // The token is a percentage ("88%"), so tokens.px would read it as 88.
+  const slideOverFraction =
+    parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slide-over-max-width')) / 100 || 0.88;
+  let widths = $derived(
+    layoutPanes(
+      {
+        sidebar: panes.sidebar ?? sidebarDefault,
+        list: panes.list ?? listDefault,
+        sidebarHidden: panes.sidebarHidden,
+        grid: app.isGrid,
+        available,
+      },
+      limits,
+    ),
+  );
+  let sidebarBounds = $derived(sidebarRange(app.isGrid, available, limits));
+  let listBounds = $derived(listRange(widths.sidebar, available, limits));
+  let slideOverBounds = $derived(slideOverRange(windowWidth, slideOverFraction, limits));
+  let slideOverWidth = $derived(
+    Math.min(Math.max(panes.slideOver ?? slideOverDefault, slideOverBounds.min), slideOverBounds.max),
+  );
 
   // Keyboard-first reading (spec: "Keyboard"). Shortcuts never fire while typing.
   function onKeydown(event: KeyboardEvent) {
@@ -126,7 +166,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} bind:innerWidth={windowWidth} />
 
 {#if showGallery}
   {#await import('./lib/components/Gallery.svelte') then { default: Gallery }}
@@ -137,17 +177,58 @@
 {:else if app.phase === 'attention'}
   <Attention />
 {:else if app.phase === 'ready'}
-  <main class="shell" class:grid-layout={app.isGrid}>
-    <Sidebar />
+  <main
+    class="shell"
+    class:grid-layout={app.isGrid}
+    bind:clientWidth={shellWidth}
+    style="--sidebar-width: {widths.sidebar}px; --article-list-width: {widths.list}px"
+  >
+    <div class="sidebar-slot" class:hidden={panes.sidebarHidden}>
+      <Sidebar />
+    </div>
     <ArticleList />
     {#if !app.isGrid}
       <Reader />
     {/if}
+    <Splitter
+      label="Resize sidebar"
+      controls="pane-sidebar"
+      value={widths.sidebar}
+      min={sidebarBounds.min}
+      max={sidebarBounds.max}
+      style="left: calc({widths.sidebar}px - var(--splitter-hit-size) / 2)"
+      onchange={(px) => panes.set('sidebar', px)}
+      onreset={() => panes.set('sidebar', null)}
+      ontoggle={() => panes.toggleSidebar()}
+    />
+    {#if !app.isGrid}
+      <Splitter
+        label="Resize Article list"
+        controls="pane-list"
+        value={widths.list}
+        min={listBounds.min}
+        max={listBounds.max}
+        style="left: calc({widths.sidebar + widths.list}px - var(--splitter-hit-size) / 2)"
+        onchange={(px) => panes.set('list', px)}
+        onreset={() => panes.set('list', null)}
+      />
+    {/if}
   </main>
   {#if app.isGrid && app.readerOpen}
     <button class="backdrop" aria-label="Close reader" tabindex="-1" onclick={() => app.closeReader()} transition:fade={{ duration: tokens.px('--motion-duration-fast') }}></button>
-    <div class="slide-over" role="dialog" aria-modal="true" aria-label="Reader" transition:fly={{ x: 80, duration: tokens.px('--motion-duration-base') }} use:focusOnOpen>
+    <div class="slide-over" style="--slide-over-width: {slideOverWidth}px" role="dialog" aria-modal="true" aria-label="Reader" transition:fly={{ x: 80, duration: tokens.px('--motion-duration-base') }} use:focusOnOpen>
       <Reader />
+      <Splitter
+        label="Resize reader"
+        controls="pane-reader"
+        inverted
+        value={slideOverWidth}
+        min={slideOverBounds.min}
+        max={slideOverBounds.max}
+        style="inset-inline-start: calc(var(--splitter-hit-size) / -2)"
+        onchange={(px) => panes.set('slideOver', px)}
+        onreset={() => panes.set('slideOver', null)}
+      />
     </div>
   {/if}
 {/if}
@@ -184,7 +265,7 @@
     inset-block: 0;
     inset-inline-end: 0;
     z-index: var(--layer-slide-over);
-    width: min(var(--slide-over-width), var(--slide-over-max-width));
+    width: var(--slide-over-width);
     box-shadow: var(--shadow-overlay);
     border-inline-start: 1px solid var(--color-border-default);
     outline: none;
@@ -192,7 +273,18 @@
   .shell {
     display: grid;
     grid-template-columns: var(--sidebar-width) var(--article-list-width) minmax(0, 1fr);
+    position: relative;
     height: 100%;
     overflow: hidden;
+  }
+  .sidebar-slot {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  /* visibility removes the hidden sidebar from the accessibility tree and the tab order. */
+  .sidebar-slot.hidden {
+    visibility: hidden;
   }
 </style>
