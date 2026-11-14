@@ -4,11 +4,13 @@
 mod machine;
 mod perf;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
 
+use feedrico_core::assistant::{self, AssistantError};
 use feedrico_core::feeds::ImportSummary;
 use feedrico_core::{AddOutcome, Discovery, FetchResult};
 use feedrico_core::{
@@ -16,7 +18,7 @@ use feedrico_core::{
     Sidebar, Status, UpdateStatus, opml,
 };
 use futures::StreamExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::http::{Response, StatusCode, header};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt as _;
@@ -38,6 +40,8 @@ struct AppState {
     refreshing: AtomicBool,
     /// Set only when the app runs its timing harness (`perf.rs`).
     perf: Option<perf::Perf>,
+    /// Running Assistant tasks by the run id the UI chose, so `assistant_cancel` can stop one.
+    assistant_runs: Mutex<HashMap<String, assistant::run::Cancel>>,
 }
 
 /// Errors cross the IPC boundary as a kind the UI can branch on plus a readable message.
@@ -825,6 +829,98 @@ fn perf_finish(
     Ok(())
 }
 
+/// What the UI asks an Assistant to do. Features add variants.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum AssistantAction {
+    Test,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssistantResult {
+    text: String,
+    structured: Option<serde_json::Value>,
+}
+
+impl From<AssistantError> for CommandError {
+    fn from(error: AssistantError) -> Self {
+        let kind = match error {
+            AssistantError::NotInstalled => "notInstalled",
+            AssistantError::NotSignedIn => "notSignedIn",
+            AssistantError::UsageLimit => "usageLimit",
+            AssistantError::Offline => "offline",
+            AssistantError::TimedOut => "timedOut",
+            AssistantError::Cancelled => "cancelled",
+            AssistantError::Malformed { .. } => "malformed",
+            AssistantError::Failed { .. } => "failed",
+        };
+        CommandError::new(kind, error.to_string())
+    }
+}
+
+/// Run one Assistant task on the user's explicit action, streaming `assistant-event`s.
+///
+/// Uses the machine-local Assistant setup once #114 stores one. Until then it takes the first
+/// Assistant `detect` finds.
+#[tauri::command]
+async fn assistant_run(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    run_id: String,
+    action: AssistantAction,
+) -> CommandResult<AssistantResult> {
+    let task = match action {
+        AssistantAction::Test => assistant::prompts::test_task(),
+    };
+    // TODO(#114): read the machine-local setup (kind, path, model) here when it exists.
+    let found = tauri::async_runtime::spawn_blocking(|| {
+        assistant::detect::detect(&assistant::detect::DetectOptions::default())
+    })
+    .await
+    .map_err(|e| CommandError::new("internal", e.to_string()))?;
+    let assistant = found
+        .into_iter()
+        .next()
+        .ok_or(AssistantError::NotInstalled)?;
+
+    let cancel = assistant::run::Cancel::new();
+    state
+        .assistant_runs
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(run_id.clone(), cancel.clone());
+    let event_app = app.clone();
+    let event_run_id = run_id.clone();
+    let result = assistant::run::run(&assistant, &task, cancel, move |event| {
+        let _ = event_app.emit(
+            "assistant-event",
+            serde_json::json!({ "runId": event_run_id, "event": event }),
+        );
+    })
+    .await;
+    state
+        .assistant_runs
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(&run_id);
+    let (text, structured) = result?;
+    Ok(AssistantResult { text, structured })
+}
+
+/// Stop a running Assistant task. Unknown run ids are ignored (it may have just finished).
+#[tauri::command]
+fn assistant_cancel(state: State<'_, AppState>, run_id: String) {
+    if let Some(cancel) = state
+        .assistant_runs
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&run_id)
+    {
+        cancel.cancel();
+    }
+}
+
 fn not_perf_mode() -> CommandError {
     CommandError::new("notPerfMode", "only available in perf mode")
 }
@@ -892,6 +988,7 @@ pub fn run() {
             fetcher,
             refreshing: AtomicBool::new(false),
             perf,
+            assistant_runs: Mutex::new(HashMap::new()),
         })
         .register_uri_scheme_protocol("media", |ctx, request| {
             serve_media(ctx.app_handle(), request.uri().path())
@@ -899,6 +996,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             startup,
             recent_libraries,
+            assistant_run,
+            assistant_cancel,
             library_inspect,
             library_create,
             library_open,
@@ -969,6 +1068,7 @@ mod tests {
             fetcher: Fetcher::new("media://localhost/").unwrap(),
             refreshing: AtomicBool::new(false),
             perf: None,
+            assistant_runs: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1137,5 +1237,15 @@ mod tests {
         ] {
             assert!(!is_web_url(bad), "{bad:?} must not open in a browser");
         }
+    }
+
+    #[test]
+    fn assistant_errors_cross_ipc_with_their_kind() {
+        let e = CommandError::from(AssistantError::UsageLimit);
+        assert_eq!(e.kind, "usageLimit");
+        let e = CommandError::from(AssistantError::Malformed {
+            message: "x".into(),
+        });
+        assert_eq!(e.kind, "malformed");
     }
 }
