@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/feedrico-core", "src-tauri"]
+members = ["crates/feedrico-core", "crates/feedrico-mcp", "src-tauri"]
 
 [workspace.package]
 edition = "2024"
