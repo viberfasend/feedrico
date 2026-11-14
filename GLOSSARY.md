@@ -48,6 +48,10 @@ _Avoid_: View mode, display, style, view (for presentation)
 The one image that represents an Article in the Cards, Magazine and Gallery Layouts. An Article may have none.
 _Avoid_: Thumbnail, hero, cover
 
+**Assistant**:
+A locally installed AI command-line tool, such as Claude Code or Mistral Vibe, that the user has signed in to themselves and that Feedrico may ask to work on Articles when the user says so.
+_Avoid_: AI, agent, bot, model, copilot, LLM
+
 **Portable Mode**:
 Running the app from the same place as its Library, such as a USB stick, so nothing needs to be installed on the host machine.
 _Avoid_: Stick mode, USB mode
