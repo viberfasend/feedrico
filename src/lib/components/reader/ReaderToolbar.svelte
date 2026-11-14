@@ -21,7 +21,7 @@
   </div>
 
   <!-- Once the heading scrolls away, the toolbar says which Article this is. -->
-  <p class="title" aria-hidden="true">{title}</p>
+  <p class="title" aria-hidden="true" title={title}>{title}</p>
 
   <div class="group">
     <IconButton

@@ -144,7 +144,7 @@
           <input class="rename" aria-label="Feed name" value={feed.title} use:focusSelect
             onblur={(e) => commitRename(e, feed.title)} onkeydown={renameKeys} onclick={(e) => e.stopPropagation()} />
         {:else}
-          <span class="title">{feed.title}</span>
+          <span class="title" title={feed.title}>{feed.title}</span>
         {/if}
         {#if feed.lastError}
           <span class="broken" title={brokenTitle(feed)}><Icon name="warning" size={14} label="Feed has problems" /></span>
@@ -175,7 +175,7 @@
             onclick={() => app.select(item.selection)}
           >
             <Icon name={item.icon} size={16} />
-            <span class="title">{item.label}</span>
+            <span class="title" title={item.label}>{item.label}</span>
             {#if item.count() && !(app.hideCounts && item.selection.kind === 'starred')}
               <span class="count">
                 <span class="sr-only">{app.hideCounts ? 'has unread Articles' : `${item.count()} ${item.selection.kind === 'starred' ? 'starred' : 'unread'}`}</span>
@@ -221,7 +221,7 @@
                     <input class="rename" aria-label="Folder name" value={folder.name} use:focusSelect
                       onblur={(e) => commitRename(e, folder.name)} onkeydown={renameKeys} onclick={(e) => e.stopPropagation()} />
                   {:else}
-                    <span class="title">{folder.name}</span>
+                    <span class="title" title={folder.name}>{folder.name}</span>
                   {/if}
                   {#if folder.unread}
                     <span class="count">
@@ -257,7 +257,9 @@
   <footer class="footer">
     <div class="library" title={app.library?.path}>
       <Icon name="library" size={14} />
-      <span>{app.library?.portable ? 'Portable Library' : (app.library?.name ?? '')}</span>
+      <span title={app.library?.portable ? 'Portable Library' : (app.library?.name ?? '')}
+        >{app.library?.portable ? 'Portable Library' : (app.library?.name ?? '')}</span
+      >
     </div>
     <div class="tools">
       <IconButton label="Add Feed" icon="plus" onclick={() => (app.addFeedOpen = true)} />

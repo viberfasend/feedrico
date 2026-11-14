@@ -77,11 +77,11 @@
             <div class="text">
               <div class="meta">
                 <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
-                <span class="feed">{article.feedTitle}</span>
+                <span class="feed" title={article.feedTitle}>{article.feedTitle}</span>
                 {#if imageMissing}<span class="missing"><Icon name="image" size={12} label="Image not cached" /></span>{/if}
                 <time>{shortDate(article.articleDate)}</time>
               </div>
-              <div class="title">{article.title}</div>
+              <div class="title" title={article.title}>{article.title}</div>
               {#if kind(position) !== 'small'}
                 <div class="excerpt">{article.excerpt}</div>
               {/if}
@@ -215,6 +215,7 @@
     overflow: hidden;
     -webkit-line-clamp: 3;
     line-clamp: 3;
+    hyphens: auto;
   }
   .lead .title {
     font-size: var(--font-size-title-lg);

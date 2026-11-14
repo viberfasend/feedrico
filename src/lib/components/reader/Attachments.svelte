@@ -34,7 +34,7 @@
         <a href={item.url} title={`Open on ${item.host}`}>
           <span class="icon"><Icon name={item.kind === 'file' ? 'file' : item.kind} size={18} /></span>
           <span class="text">
-            <span class="name">{item.name}</span>
+            <span class="name" title={item.name}>{item.name}</span>
             <span class="details">{item.details}</span>
           </span>
           <span class="open"><Icon name="external" size={14} /><span class="sr-only">Opens on {item.host}</span></span>

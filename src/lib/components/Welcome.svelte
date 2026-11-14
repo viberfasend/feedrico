@@ -59,7 +59,7 @@
         <ul>
           {#each app.recent as path (path)}
             <li>
-              <button class="link" disabled={busy} onclick={() => run(() => app.open(path))}>
+              <button class="link" title={path} disabled={busy} onclick={() => run(() => app.open(path))}>
                 {path}
               </button>
             </li>

@@ -73,7 +73,7 @@
         {#each choices as choice (choice.url)}
           <button type="button" class="choice" onclick={() => subscribe(choice.url, choice.title ?? choice.url, null)}>
             <strong>{choice.title ?? choice.url}</strong>
-            <span>{choice.url}</span>
+            <span title={choice.url}>{choice.url}</span>
           </button>
         {/each}
       </fieldset>
