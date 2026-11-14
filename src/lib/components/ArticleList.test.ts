@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Article list pane: View title and count, the Layout switcher, sort order, debounced
+// The Article list pane: View title and count, the View menu (Layout and sort order), debounced
 // search with its Folder/Feed scope chip, the empty states (Mira), the refresh progress bar
 // and the "New Articles" pill. Clara: every View remembers its own Layout.
 import { flushSync, mount, unmount } from 'svelte';
@@ -145,45 +145,77 @@ describe('ArticleList header', () => {
   });
 });
 
-describe('Layout switcher', () => {
-  it('offers all four Layouts with the current one pressed', async () => {
+async function openViewMenu() {
+  const trigger = document.querySelector<HTMLButtonElement>('#pane-list button[aria-label^="View options"]')!;
+  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  flushSync();
+  await settle();
+}
+const radios = () => [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+const radio = (name: string) => radios().find((r) => r.textContent?.trim() === name)!;
+const choose = async (name: string) => {
+  radio(name).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  flushSync();
+  await settle();
+};
+
+describe('View menu', () => {
+  it('replaces the Layout segments and sort toggle with one named button', async () => {
     app.layouts = { default: 'magazine', views: {} };
     await renderList();
-    const segments = [...document.querySelectorAll<HTMLButtonElement>('#pane-list .switcher button')];
-    expect(segments.map((b) => b.getAttribute('aria-label'))).toEqual(['List', 'Cards', 'Magazine', 'Gallery']);
-    expect(segments.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false']);
+    expect(document.querySelector('#pane-list .switcher')).toBeNull();
+    const trigger = buttonByLabel('View options: Magazine, newest first')!;
+    expect(trigger.title).toBe('View options: Magazine, newest first');
+  });
+
+  it('lists Layouts and sort orders as radio items reflecting the current state', async () => {
+    app.layouts = { default: 'magazine', views: {} };
+    await renderList();
+    await openViewMenu();
+    expect(radios().map((r) => r.textContent?.trim())).toEqual([
+      'List', 'Cards', 'Magazine', 'Gallery', 'Newest first', 'Oldest first',
+    ]);
+    expect(radios().map((r) => r.getAttribute('aria-checked'))).toEqual([
+      'false', 'false', 'true', 'false', 'true', 'false',
+    ]);
+    expect(document.querySelectorAll('[role="menu"] [role="group"]')).toHaveLength(2);
+    // 1.4.1: the chosen items show a checkmark, not only bold text.
+    expect(radios().map((r) => r.querySelector('.radio-mark svg') !== null)).toEqual([
+      false, false, true, false, true, false,
+    ]);
   });
 
   // Clara: each View remembers its own Layout, stored under the View key.
   it('stores the choice per View in the Library', async () => {
     await renderList();
-    buttonByLabel('Cards')!.click();
-    await settle();
+    await openViewMenu();
+    await choose('Cards');
     expect(mockApi.setLayout).toHaveBeenCalledWith('allUnread', 'cards');
     expect(app.layouts.views).toEqual({ allUnread: 'cards' });
     expect(app.layout).toBe('cards');
+    expect(buttonByLabel('View options: Cards, newest first')).toBeDefined();
 
     app.selection = { kind: 'feed', id: 5 };
     flushSync();
     expect(app.layout, 'the Feed still uses the default').toBe('list');
-    buttonByLabel('Gallery')!.click();
-    await settle();
+    await openViewMenu();
+    await choose('Gallery');
     expect(mockApi.setLayout).toHaveBeenCalledWith('feed:5', 'gallery');
     // Switching into Gallery re-filters the list (only Articles with a Lead Image).
     expect(mockApi.count).toHaveBeenCalled();
   });
-});
 
-describe('Sort and search controls', () => {
-  it('toggles newest/oldest first and re-queries', async () => {
+  it('chooses the sort order and re-queries', async () => {
     await renderList();
-    const sort = buttonByLabel('Sorted newest first')!;
-    sort.click();
-    await settle();
-    expect(buttonByLabel('Sorted oldest first')).toBeDefined();
+    await openViewMenu();
+    await choose('Oldest first');
+    expect(app.sort).toBe('oldestFirst');
+    expect(buttonByLabel('View options: List, oldest first')).toBeDefined();
     expect(mockApi.count).toHaveBeenCalledWith(expect.objectContaining({ sort: 'oldestFirst' }));
   });
+});
 
+describe('Search controls', () => {
   it('debounces search input and queries the search View', async () => {
     await renderList();
     const input = document.getElementById('search') as HTMLInputElement;

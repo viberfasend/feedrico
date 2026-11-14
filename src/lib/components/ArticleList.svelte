@@ -2,6 +2,7 @@
   import { LAYOUTS, type Layout } from '../api';
   import { app } from '../state.svelte';
   import Button from '../ui/Button.svelte';
+  import Menu, { type MenuItem } from '../ui/Menu.svelte';
   import EmptyState from './EmptyState.svelte';
   import Icon, { type IconName } from './Icon.svelte';
   import CardsLayout from './layouts/CardsLayout.svelte';
@@ -15,6 +16,25 @@
     magazine: { label: 'Magazine', icon: 'magazine' },
     gallery: { label: 'Gallery', icon: 'gallery' },
   };
+
+  const sortLabel = $derived(app.sort === 'newestFirst' ? 'newest first' : 'oldest first');
+  const viewLabel = $derived(`View options: ${layoutMeta[app.layout].label}, ${sortLabel}`);
+  const viewItems = $derived<MenuItem[]>([
+    ...LAYOUTS.map((layout, i): MenuItem => ({
+      label: layoutMeta[layout].label,
+      checked: app.layout === layout,
+      headingBefore: i === 0 ? 'Layout (v cycles)' : undefined,
+      onclick: () => void app.setLayout(layout),
+    })),
+    {
+      label: 'Newest first',
+      checked: app.sort === 'newestFirst',
+      separatorBefore: true,
+      headingBefore: 'Sort',
+      onclick: () => app.setSort('newestFirst'),
+    },
+    { label: 'Oldest first', checked: app.sort === 'oldestFirst', onclick: () => app.setSort('oldestFirst') },
+  ]);
 
   const viewName = $derived.by(() => {
     const s = app.selection;
@@ -58,17 +78,6 @@
       {#if !app.hideCounts}<span class="total">{app.total.toLocaleString()}</span>{/if}
     </div>
     <div class="controls">
-      <div class="switcher" role="group" aria-label="Layout (v)">
-        {#each LAYOUTS as layout (layout)}
-          <button
-            class="segment"
-            aria-pressed={app.layout === layout}
-            title={`${layoutMeta[layout].label} (v)`}
-            aria-label={layoutMeta[layout].label}
-            onclick={() => app.setLayout(layout)}
-          ><Icon name={layoutMeta[layout].icon} size={16} /></button>
-        {/each}
-      </div>
       <label class="search">
         <Icon name="search" size={15} />
         {#if showScope}
@@ -99,12 +108,9 @@
           }}
         />
       </label>
-      <button
-        class="tool"
-        title={app.sort === 'newestFirst' ? 'Newest first' : 'Oldest first'}
-        aria-label={app.sort === 'newestFirst' ? 'Sorted newest first' : 'Sorted oldest first'}
-        onclick={() => app.toggleSort()}
-      ><Icon name="sort" size={16} /></button>
+      <Menu items={viewItems} label={viewLabel} align="end" class="tool">
+        <Icon name={layoutMeta[app.layout].icon} size={16} />
+      </Menu>
       <button class="tool" title="Mark all as read" aria-label="Mark all as read" onclick={() => app.markAllRead()}>
         <Icon name="check" size={16} />
       </button>
@@ -269,7 +275,8 @@
     font: inherit;
     outline: none;
   }
-  .tool {
+  .tool,
+  .controls :global(.menu-trigger.tool) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -281,7 +288,8 @@
     color: var(--color-text-muted);
     cursor: pointer;
   }
-  .tool:hover {
+  .tool:hover,
+  .controls :global(.menu-trigger.tool:hover) {
     background: var(--color-surface-hover);
     color: var(--color-text-default);
   }
@@ -323,32 +331,6 @@
   .empty,
   .list > :global(.viewport) {
     min-height: 0;
-  }
-  .switcher {
-    display: inline-flex;
-    padding: 2px;
-    border-radius: var(--radius-control);
-    background: var(--color-surface-sunken);
-  }
-  .segment {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: calc(var(--control-height) - 4px);
-    height: calc(var(--control-height) - 4px);
-    border: 0;
-    border-radius: calc(var(--radius-control) - 2px);
-    background: none;
-    color: var(--color-text-muted);
-    cursor: pointer;
-  }
-  .segment:hover {
-    color: var(--color-text-default);
-  }
-  .segment[aria-pressed='true'] {
-    background: var(--color-surface-raised);
-    color: var(--color-text-default);
-    box-shadow: var(--shadow-raised);
   }
   .note {
     color: var(--color-text-muted);
