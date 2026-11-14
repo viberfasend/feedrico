@@ -11,6 +11,7 @@ All your Feeds, Articles, Read and Starred state, cached content and settings li
 - [v1 specification](docs/spec/v1.md)
 - [Glossary](GLOSSARY.md): the words we use and the ones we avoid
 - [Architecture decisions](docs/adr/)
+- [Research: feed embeddings (video, code, math)](docs/research/feed-embeddings.md)
 
 ## Stack
 
