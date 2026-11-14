@@ -24,6 +24,7 @@
 pub mod article;
 pub mod ask;
 pub mod detect;
+pub mod folder_suggestions;
 pub mod prompts;
 pub mod run;
 pub mod translate;
