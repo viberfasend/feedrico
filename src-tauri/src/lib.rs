@@ -874,10 +874,32 @@ impl From<AssistantError> for CommandError {
     }
 }
 
+/// Which Assistant a run uses: only the machine-local setup, and only once its disclosure is
+/// accepted. Without that nothing runs (Assistants are off by default; ADR 0005).
+fn run_target(
+    setup: Option<assistant::AssistantSetup>,
+) -> CommandResult<(assistant::FoundAssistant, Option<String>)> {
+    let setup = setup
+        .ok_or_else(|| CommandError::new("notSetUp", "Set up an Assistant in Settings first."))?;
+    if !setup.disclosure_accepted {
+        return Err(CommandError::new(
+            "notSetUp",
+            "Read and accept the note in Settings, under Assistant, first.",
+        ));
+    }
+    let found = assistant::FoundAssistant {
+        kind: setup.kind,
+        path: setup.path,
+        version: None,
+        sign_in: assistant::SignIn::Unknown,
+    };
+    Ok((found, setup.model))
+}
+
 /// Run one Assistant task on the user's explicit action, streaming `assistant-event`s.
 ///
-/// Uses the machine-local Assistant setup once #114 stores one. Until then it takes the first
-/// Assistant `detect` finds.
+/// Runs only on the machine-local Assistant setup, and only once the user accepted the
+/// disclosure: no setup means Assistants are off, so nothing is detected or run behind it.
 #[tauri::command]
 async fn assistant_run(
     app: AppHandle,
@@ -885,19 +907,13 @@ async fn assistant_run(
     run_id: String,
     action: AssistantAction,
 ) -> CommandResult<AssistantResult> {
-    let task = match action {
+    let mut task = match action {
         AssistantAction::Test => assistant::prompts::test_task(),
     };
-    // TODO(#114): read the machine-local setup (kind, path, model) here when it exists.
-    let found = tauri::async_runtime::spawn_blocking(|| {
-        assistant::detect::detect(&assistant::detect::DetectOptions::default())
-    })
-    .await
-    .map_err(|e| CommandError::new("internal", e.to_string()))?;
-    let assistant = found
-        .into_iter()
-        .next()
-        .ok_or(AssistantError::NotInstalled)?;
+    let (assistant, model) = run_target(machine::assistant_setup(&app))?;
+    if model.is_some() {
+        task.model = model;
+    }
 
     let cancel = assistant::run::Cancel::new();
     state
@@ -1264,5 +1280,21 @@ mod tests {
             message: "x".into(),
         });
         assert_eq!(e.kind, "malformed");
+    }
+
+    #[test]
+    fn runs_need_a_setup_with_an_accepted_disclosure() {
+        let setup = |accepted| assistant::AssistantSetup {
+            kind: assistant::AssistantKind::ClaudeCode,
+            path: "/usr/bin/claude".into(),
+            model: Some("haiku".into()),
+            disclosure_accepted: accepted,
+        };
+        assert_eq!(run_target(None).unwrap_err().kind, "notSetUp");
+        assert_eq!(run_target(Some(setup(false))).unwrap_err().kind, "notSetUp");
+        let (found, model) = run_target(Some(setup(true))).unwrap();
+        assert_eq!(found.kind, assistant::AssistantKind::ClaudeCode);
+        assert_eq!(found.path, std::path::PathBuf::from("/usr/bin/claude"));
+        assert_eq!(model.as_deref(), Some("haiku"));
     }
 }

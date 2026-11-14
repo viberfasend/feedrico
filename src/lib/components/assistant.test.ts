@@ -97,6 +97,16 @@ describe('visibility', () => {
     expect(assist.menuOpen).toBe(false);
   });
 
+  it('stays hidden while the disclosure is not accepted, and runs nothing', async () => {
+    await render({ kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: false });
+    expect(q('[aria-label="Assistant"]')).toBeNull();
+    assist.start(assist.entries[0]!);
+    flushSync();
+    expect(tasks).toHaveLength(0);
+    press('i');
+    expect(assist.menuOpen).toBe(false);
+  });
+
   it('shows the toolbar button when a setup exists, and the shortcut opens its menu', async () => {
     await render();
     expect(q('.assistant-trigger')).not.toBeNull();
@@ -280,6 +290,7 @@ describe('errors', () => {
     ['timedOut', /too long/, /try again/i],
     ['malformed', /couldn't read/, /try again/i],
     ['failed', /couldn't finish/, /try again/i],
+    ['notSetUp', /No Assistant is set up/, /Settings/],
   ];
   for (const [kind, what, next] of cases) {
     it(`explains ${kind} in plain words with a next step`, async () => {

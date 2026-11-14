@@ -26,7 +26,7 @@
   <p class="title" aria-hidden="true" title={title}>{title}</p>
 
   <div class="group">
-    {#if assist.setup}
+    {#if assist.setup?.disclosureAccepted}
       <Menu
         label="Assistant"
         class="assistant-trigger"

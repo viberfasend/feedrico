@@ -7,7 +7,8 @@
 //   assistant_setup_set { setup }            -> void                      (#114)
 //   assistant_run { runId, action }          -> AssistantResult           (#113)
 //     streams 'assistant-event' with { runId, event: AssistantEvent } while running;
-//     rejects with a CommandError whose kind is an AssistantError kind
+//     rejects with a CommandError whose kind is an AssistantError kind, or 'notSetUp'
+//     when there is no setup or its disclosure isn't accepted (then nothing runs)
 //   assistant_cancel { runId }               -> void                      (#113)
 
 import { invoke } from '@tauri-apps/api/core';
@@ -52,7 +53,9 @@ export type AssistantErrorKind =
   | 'timedOut'
   | 'cancelled'
   | 'malformed'
-  | 'failed';
+  | 'failed'
+  /** No machine-local setup, or its disclosure isn't accepted yet: nothing was run. */
+  | 'notSetUp';
 
 export const assistantNames: Record<AssistantKind, string> = {
   claudeCode: 'Claude Code',
