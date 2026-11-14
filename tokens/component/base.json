@@ -35,7 +35,20 @@
       "$value": "3px"
     }
   },
+  "splitter": {
+    "$type": "dimension",
+    "hitSize": {
+      "$value": "8px"
+    },
+    "lineWidth": {
+      "$value": "2px"
+    }
+  },
   "reader": {
+    "minWidth": {
+      "$type": "dimension",
+      "$value": "420px"
+    },
     "measure": {
       "$type": "dimension",
       "$value": "66ch"
