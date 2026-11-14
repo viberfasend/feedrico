@@ -49,9 +49,9 @@
                 onerror={() => failedImages.add(article.leadImage!)}
               />
             {:else}
-              <span class="fallback">{article.title}</span>
+              <span class="fallback" title={article.title}>{article.title}</span>
             {/if}
-            <span class="caption">{article.title}</span>
+            <span class="caption" title={article.title}>{article.title}</span>
           </button>
         {:else if index < app.total}
           <div class="tile skeleton" style:height="{tile}px"></div>
@@ -132,6 +132,8 @@
     color: var(--color-text-muted);
     font-family: var(--font-family-reading);
     font-size: var(--font-size-small);
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
   .skeleton {
     background: var(--color-surface-hover);

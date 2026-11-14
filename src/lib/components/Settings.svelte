@@ -338,11 +338,11 @@
                       </div>
                       <div class="row">
                         <dt class="label">Size</dt>
-                        <dd>{fileSize(app.librarySize)}</dd>
+                        <dd title={fileSize(app.librarySize)}>{fileSize(app.librarySize)}</dd>
                       </div>
                       <div class="row">
                         <dt class="label">Format version</dt>
-                        <dd>{app.library?.formatVersion}</dd>
+                        <dd title={String(app.library?.formatVersion ?? "")}>{app.library?.formatVersion}</dd>
                       </div>
                     </dl>
                   {:else if item.value === 'about'}

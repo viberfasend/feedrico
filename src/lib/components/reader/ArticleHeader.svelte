@@ -34,7 +34,7 @@
 <header class="head">
   <div class="source" title={article.feedTitle}>
     <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
-    <span class="feed">{article.feedTitle}</span>
+    <span class="feed" title={article.feedTitle}>{article.feedTitle}</span>
   </div>
   <h1 bind:this={heading}>{article.title || 'Untitled'}</h1>
   <p class="byline">
@@ -83,6 +83,7 @@
     text-wrap: balance;
     /* "anywhere", not "break-word": a long compound word must not widen the grid column. */
     overflow-wrap: anywhere;
+    hyphens: auto;
   }
   .byline {
     display: flex;

@@ -84,7 +84,7 @@
         >
           <FeedIcon feedId={feed.id} title={feed.title} favicon={feed.favicon} />
           <div class="text">
-            <div class="title">{feed.title}</div>
+            <div class="title" title={feed.title}>{feed.title}</div>
             <div class="meta" title={feed.lastError}>
               {#if folder}<span class="folder">{folder}</span> ·{/if}
               <span class="error">{feed.lastError}</span>

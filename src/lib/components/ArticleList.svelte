@@ -74,7 +74,7 @@
 <section class="list" id="pane-list" aria-label="Articles" tabindex="-1">
   <header class="header">
     <div class="heading">
-      <h1>{title}</h1>
+      <h1 title={title}>{title}</h1>
       {#if !app.hideCounts}<span class="total">{app.total.toLocaleString()}</span>{/if}
     </div>
     <div class="controls">
@@ -87,7 +87,7 @@
             aria-label={`Searching in ${viewName}. Search everywhere instead`}
             onmousedown={(e) => e.preventDefault()}
             onclick={() => void app.searchEverywhere()}
-          ><span class="scope-name">in {viewName}</span><Icon name="close" size={12} /></button>
+          ><span class="scope-name" title="in {viewName}">in {viewName}</span><Icon name="close" size={12} /></button>
         {/if}
         <input
           id="search"

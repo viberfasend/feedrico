@@ -62,12 +62,12 @@
               <div class="meta">
                 <span class="dot" aria-hidden="true"></span>
                 <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
-                <span class="feed">{article.feedTitle}</span>
+                <span class="feed" title={article.feedTitle}>{article.feedTitle}</span>
                 {#if imageMissing}<span class="missing"><Icon name="image" size={12} label="Image not cached" /></span>{/if}
                 {#if article.isStarred}<span class="star"><Icon name="star" size={12} filled label="Starred" /></span>{/if}
                 <time>{shortDate(article.articleDate)}</time>
               </div>
-              <div class="title">{article.title}</div>
+              <div class="title" title={article.title}>{article.title}</div>
               <div class="excerpt">{article.excerpt}</div>
             </div>
           </button>
@@ -166,6 +166,7 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    hyphens: auto;
   }
   .card:not(.unread) .title {
     color: var(--color-text-muted);
