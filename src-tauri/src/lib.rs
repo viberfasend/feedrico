@@ -864,6 +864,16 @@ enum AssistantAction {
         term: String,
         context: String,
     },
+    #[serde(rename_all = "camelCase")]
+    Translate {
+        article_id: i64,
+    },
+    #[serde(rename_all = "camelCase")]
+    Ask {
+        article_id: i64,
+        question: String,
+        history: Vec<assistant::ask::Turn>,
+    },
 }
 
 impl AssistantAction {
@@ -874,6 +884,9 @@ impl AssistantAction {
             AssistantAction::Summarize { article_id }
             | AssistantAction::Explain { article_id }
             | AssistantAction::ExplainTerm { article_id, .. } => Some(*article_id),
+            AssistantAction::Translate { article_id } | AssistantAction::Ask { article_id, .. } => {
+                Some(*article_id)
+            }
         }
     }
 }
@@ -887,6 +900,8 @@ struct ArticleNotes {
     /// The Article was cut; the answer is based on the first `words_used` words.
     truncated: bool,
     words_used: usize,
+    /// Ask only: how many of the oldest turns were left out to stay inside the caps.
+    dropped_turns: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -896,26 +911,104 @@ struct AssistantResult {
     structured: Option<serde_json::Value>,
     /// Set for Article actions only.
     article: Option<ArticleNotes>,
+    /// Set for Translate only: the answer already sanitized in the core, images restored.
+    html: Option<String>,
+}
+
+fn article_notes(
+    excerpt_only: bool,
+    truncated: bool,
+    words_used: usize,
+    dropped_turns: Option<usize>,
+) -> ArticleNotes {
+    ArticleNotes {
+        excerpt_only,
+        truncated,
+        words_used,
+        dropped_turns,
+    }
 }
 
 /// Builds the Task for an action. `article` is the loaded Article for Article actions. The
 /// model is the user's choice from the setup, else the fast default for that Assistant.
+/// `target_language` is the machine-local translation target from the setup. The third element
+/// is the Article's original `<img>` tags for Translate, to restore after the run.
 fn build_task(
     action: &AssistantAction,
     article: Option<&ArticleDetail>,
     kind: assistant::AssistantKind,
     setup_model: Option<String>,
-) -> CommandResult<(assistant::Task, Option<ArticleNotes>)> {
+    target_language: Option<&str>,
+) -> CommandResult<(assistant::Task, Option<ArticleNotes>, Option<Vec<String>>)> {
     use assistant::article::{
         ArticleInput, explain_task, explain_term_task, fast_model, summarize_task,
     };
+    use assistant::{ask, translate};
     let input = article.map(ArticleInput::from_article);
-    let (mut task, input) = match (action, input) {
-        (AssistantAction::Test, _) => (assistant::prompts::test_task(), None),
-        (AssistantAction::Summarize { .. }, Some(input)) => (summarize_task(&input), Some(input)),
-        (AssistantAction::Explain { .. }, Some(input)) => (explain_task(&input), Some(input)),
-        (AssistantAction::ExplainTerm { term, context, .. }, Some(input)) => {
-            (explain_term_task(term, context), Some(input))
+    let (mut task, notes, images) = match (action, input.as_ref()) {
+        (AssistantAction::Test, _) => (assistant::prompts::test_task(), None, None),
+        (AssistantAction::Summarize { .. }, Some(input)) => (
+            summarize_task(input),
+            Some(article_notes(
+                input.excerpt_only,
+                input.truncated,
+                input.words_used,
+                None,
+            )),
+            None,
+        ),
+        (AssistantAction::Explain { .. }, Some(input)) => (
+            explain_task(input),
+            Some(article_notes(
+                input.excerpt_only,
+                input.truncated,
+                input.words_used,
+                None,
+            )),
+            None,
+        ),
+        (AssistantAction::ExplainTerm { term, context, .. }, Some(input)) => (
+            explain_term_task(term, context),
+            Some(article_notes(
+                input.excerpt_only,
+                input.truncated,
+                input.words_used,
+                None,
+            )),
+            None,
+        ),
+        (AssistantAction::Translate { .. }, Some(_)) => {
+            let prep = translate::prepare(article.expect("an input means an Article"));
+            // The UI defaults the target to the system language; without a setup value, English.
+            let target = target_language.unwrap_or("English");
+            (
+                translate::translate_task(&prep, target),
+                Some(article_notes(
+                    prep.excerpt_only,
+                    prep.truncated,
+                    prep.words_used,
+                    None,
+                )),
+                Some(prep.images),
+            )
+        }
+        (
+            AssistantAction::Ask {
+                question, history, ..
+            },
+            Some(input),
+        ) => {
+            let (task, dropped) = ask::ask_task(input, question, history);
+            (
+                task,
+                Some(article_notes(
+                    input.excerpt_only,
+                    input.truncated,
+                    input.words_used,
+                    Some(dropped),
+                )),
+                None,
+            )
         }
         (_, None) => {
             return Err(CommandError::new(
@@ -930,12 +1023,7 @@ fn build_task(
             .and_then(|_| fast_model(kind))
             .map(String::from)
     });
-    let notes = input.map(|i| ArticleNotes {
-        excerpt_only: i.excerpt_only,
-        truncated: i.truncated,
-        words_used: i.words_used,
-    });
-    Ok((task, notes))
+    Ok((task, notes, images))
 }
 
 impl From<AssistantError> for CommandError {
@@ -987,12 +1075,19 @@ async fn assistant_run(
     run_id: String,
     action: AssistantAction,
 ) -> CommandResult<AssistantResult> {
-    let (assistant, model) = run_target(machine::assistant_setup(&app))?;
+    let setup = machine::assistant_setup(&app);
+    let (assistant, model) = run_target(setup.clone())?;
     let article = match action.article_id() {
         Some(id) => Some(with_library(&state, |l| l.article(id))?),
         None => None,
     };
-    let (task, article_notes) = build_task(&action, article.as_ref(), assistant.kind, model)?;
+    let (task, article_notes, images) = build_task(
+        &action,
+        article.as_ref(),
+        assistant.kind,
+        model,
+        setup.as_ref().and_then(|s| s.target_language.as_deref()),
+    )?;
 
     let cancel = assistant::run::Cancel::new();
     state
@@ -1015,10 +1110,24 @@ async fn assistant_run(
         .unwrap_or_else(PoisonError::into_inner)
         .remove(&run_id);
     let (text, structured) = result?;
+    // Translate's answer is HTML: sanitize it in the core like Feed HTML and put the Article's
+    // cached-image tags back, so the webview only ever sees sanitized HTML.
+    let html = match (&action, images) {
+        (AssistantAction::Translate { .. }, Some(images)) => {
+            Some(assistant::translate::finish_translation(
+                &text,
+                &images,
+                article.as_ref().and_then(|a| a.url.as_deref()),
+                MEDIA_PREFIX,
+            ))
+        }
+        _ => None,
+    };
     Ok(AssistantResult {
         text,
         structured,
         article: article_notes,
+        html,
     })
 }
 
@@ -1399,6 +1508,29 @@ mod tests {
         assert_eq!(a.article_id(), Some(9));
         let a: AssistantAction = serde_json::from_str(r#"{"kind":"test"}"#).unwrap();
         assert_eq!(a.article_id(), None);
+        let a: AssistantAction =
+            serde_json::from_str(r#"{"kind":"translate","articleId":9}"#).unwrap();
+        assert_eq!(a.article_id(), Some(9));
+        let a: AssistantAction = serde_json::from_str(
+            r#"{"kind":"ask","articleId":10,"question":"Why?","history":[{"question":"Q","answer":"A"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(a.article_id(), Some(10));
+        match a {
+            AssistantAction::Ask {
+                question, history, ..
+            } => {
+                assert_eq!(question, "Why?");
+                assert_eq!(
+                    history,
+                    vec![assistant::ask::Turn {
+                        question: "Q".into(),
+                        answer: "A".into(),
+                    }]
+                );
+            }
+            _ => panic!("expected ask"),
+        }
     }
 
     #[test]
@@ -1406,22 +1538,132 @@ mod tests {
         use assistant::AssistantKind::{ClaudeCode, MistralVibe};
         let article = detail("<p>Hello body</p>");
         let summarize = AssistantAction::Summarize { article_id: 7 };
-        let (task, notes) = build_task(&summarize, Some(&article), ClaudeCode, None).unwrap();
+        let (task, notes, images) =
+            build_task(&summarize, Some(&article), ClaudeCode, None, None).unwrap();
         assert_eq!(task.model.as_deref(), Some("haiku"));
         assert!(task.system_prompt.contains("3 to 5"));
         assert!(task.prompt.contains("<<<FEEDRICO_DATA Article>>>"));
         assert!(task.prompt.contains("Hello body"));
         let notes = notes.unwrap();
-        assert!(notes.excerpt_only && !notes.truncated);
+        assert!(notes.excerpt_only && !notes.truncated && notes.dropped_turns.is_none());
+        assert!(images.is_none());
 
         let explain = AssistantAction::Explain { article_id: 7 };
-        let (task, _) =
-            build_task(&explain, Some(&article), ClaudeCode, Some("sonnet".into())).unwrap();
+        let (task, _, _) = build_task(
+            &explain,
+            Some(&article),
+            ClaudeCode,
+            Some("sonnet".into()),
+            None,
+        )
+        .unwrap();
         assert_eq!(task.model.as_deref(), Some("sonnet"));
         assert!(task.system_prompt.contains("plain language"));
 
-        let (task, _) = build_task(&summarize, Some(&article), MistralVibe, None).unwrap();
+        let (task, _, _) = build_task(&summarize, Some(&article), MistralVibe, None, None).unwrap();
         assert_eq!(task.model, None);
+    }
+
+    #[test]
+    fn the_test_action_has_no_article_and_an_article_action_needs_one() {
+        let (task, notes, images) = build_task(
+            &AssistantAction::Test,
+            None,
+            assistant::AssistantKind::ClaudeCode,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(notes.is_none() && images.is_none());
+        assert_eq!(task.model, None);
+        let err = build_task(
+            &AssistantAction::Summarize { article_id: 1 },
+            None,
+            assistant::AssistantKind::ClaudeCode,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind, "notFound");
+    }
+
+    #[test]
+    fn translate_builds_a_task_with_the_target_language_and_the_images_to_restore() {
+        let body = format!(
+            "<p>{}</p>",
+            "Bonjour le monde, voici un article long. ".repeat(15)
+        );
+        let article = detail(&format!(
+            r#"{body}<img src="media://localhost/abc" alt="Une image">"#
+        ));
+        let action = AssistantAction::Translate { article_id: 7 };
+        let (task, notes, images) = build_task(
+            &action,
+            Some(&article),
+            assistant::AssistantKind::ClaudeCode,
+            None,
+            Some("de-DE"),
+        )
+        .unwrap();
+        assert!(task.system_prompt.contains("into de-DE"));
+        assert!(task.system_prompt.contains("[[IMAGE_n]]"));
+        assert!(task.prompt.contains("[[IMAGE_1]]"));
+        assert!(!task.prompt.contains("<img"));
+        assert_eq!(task.model.as_deref(), Some("haiku"));
+        let notes = notes.unwrap();
+        assert!(!notes.excerpt_only && !notes.truncated && notes.dropped_turns.is_none());
+        let images = images.unwrap();
+        assert_eq!(images.len(), 1);
+        assert!(images[0].contains("media://localhost/abc"));
+        // Without a target language the UI default (the system language) is the shell's fallback.
+        let (task, _, _) = build_task(
+            &action,
+            Some(&article),
+            assistant::AssistantKind::ClaudeCode,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(task.system_prompt.contains("into English"));
+    }
+
+    #[test]
+    fn ask_builds_a_task_with_the_question_history_and_the_dropped_count() {
+        let article =
+            detail("<p>The buses become electric until 2030 and that is the whole story here.</p>");
+        let history: Vec<assistant::ask::Turn> = (0..10)
+            .map(|i| assistant::ask::Turn {
+                question: format!("Q{i}"),
+                answer: format!("A{i}"),
+            })
+            .collect();
+        let action = AssistantAction::Ask {
+            article_id: 7,
+            question: "Until when?".into(),
+            history,
+        };
+        let (task, notes, images) = build_task(
+            &action,
+            Some(&article),
+            assistant::AssistantKind::ClaudeCode,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(images.is_none());
+        assert!(task.prompt.contains("<<<FEEDRICO_DATA Article>>>"));
+        assert!(
+            task.prompt
+                .contains("<<<FEEDRICO_DATA Conversation so far>>>")
+        );
+        assert!(task.prompt.contains("Q: Q9"));
+        assert!(!task.prompt.contains("Q: Q3"));
+        assert!(
+            task.prompt
+                .contains("<<<FEEDRICO_DATA Question>>>\nUntil when?")
+        );
+        assert!(task.system_prompt.contains("The Article doesn't say"));
+        assert_eq!(notes.unwrap().dropped_turns, Some(4));
     }
 
     #[test]
@@ -1434,7 +1676,7 @@ mod tests {
             term: "quota".into(),
             context: "The quota is a limit on requests. It resets daily.".into(),
         };
-        let (task, notes) = build_task(&action, Some(&article), ClaudeCode, None).unwrap();
+        let (task, notes, _) = build_task(&action, Some(&article), ClaudeCode, None, None).unwrap();
         assert_eq!(task.model.as_deref(), Some("haiku"));
         assert!(task.system_prompt.contains("plain language"));
         assert!(
@@ -1455,7 +1697,7 @@ mod tests {
             term: "x".repeat(MAX_TERM_CHARS + 100),
             context: "y".repeat(MAX_CONTEXT_CHARS + 100),
         };
-        let (task, _) = build_task(&long, Some(&article), ClaudeCode, None).unwrap();
+        let (task, _, _) = build_task(&long, Some(&article), ClaudeCode, None, None).unwrap();
         let term = task
             .prompt
             .split("<<<FEEDRICO_DATA Selected term>>>\n")
@@ -1476,28 +1718,7 @@ mod tests {
         assert_eq!(context.chars().count(), MAX_CONTEXT_CHARS);
 
         // Without the Article there is nothing to anchor the selection to.
-        let err = build_task(&action, None, ClaudeCode, None).unwrap_err();
-        assert_eq!(err.kind, "notFound");
-    }
-
-    #[test]
-    fn the_test_action_has_no_article_and_an_article_action_needs_one() {
-        let (task, notes) = build_task(
-            &AssistantAction::Test,
-            None,
-            assistant::AssistantKind::ClaudeCode,
-            None,
-        )
-        .unwrap();
-        assert!(notes.is_none());
-        assert_eq!(task.model, None);
-        let err = build_task(
-            &AssistantAction::Summarize { article_id: 1 },
-            None,
-            assistant::AssistantKind::ClaudeCode,
-            None,
-        )
-        .unwrap_err();
+        let err = build_task(&action, None, ClaudeCode, None, None).unwrap_err();
         assert_eq!(err.kind, "notFound");
     }
 
@@ -1508,6 +1729,7 @@ mod tests {
             path: "/usr/bin/claude".into(),
             model: Some("haiku".into()),
             disclosure_accepted: accepted,
+            target_language: Some("de".into()),
         };
         assert_eq!(run_target(None).unwrap_err().kind, "notSetUp");
         assert_eq!(run_target(Some(setup(false))).unwrap_err().kind, "notSetUp");
