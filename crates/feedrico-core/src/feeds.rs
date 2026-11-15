@@ -29,6 +29,13 @@ pub enum AddOutcome {
     },
 }
 
+/// Folder and Feed names with their ids, in sidebar order (`Library::folder_feed_names`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderFeedNames {
+    pub folders: Vec<(i64, String)>,
+    pub feeds: Vec<(i64, String)>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sidebar {
@@ -491,6 +498,22 @@ impl Library {
         tx.commit()?;
         self.remove_unreferenced_media()?;
         Ok(removed)
+    }
+
+    /// Folder and Feed names with their ids, in sidebar order. An Assistant scopes a search by
+    /// name and validates against this list (#122); nothing else about the Library leaves the
+    /// machine for it.
+    pub fn folder_feed_names(&self) -> Result<FolderFeedNames> {
+        let conn = self.conn();
+        let folders = conn
+            .prepare("SELECT id, name FROM folder ORDER BY position, name COLLATE NOCASE")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let feeds = conn
+            .prepare("SELECT id, title FROM feed ORDER BY position, title COLLATE NOCASE")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(FolderFeedNames { folders, feeds })
     }
 
     pub fn export_opml(&self) -> Result<String> {
@@ -996,6 +1019,25 @@ mod tests {
             );
         }
         assert_eq!(tree(&library), before, "nothing was applied");
+    }
+
+    #[test]
+    fn folder_feed_names_lists_ids_and_names_in_sidebar_order() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", Some("Tech")),
+                opml_feed("https://b.example", None),
+            ])
+            .unwrap();
+        let names = library.folder_feed_names().unwrap();
+        assert_eq!(names.folders, vec![(1, "Tech".to_string())]);
+        assert_eq!(
+            names.feeds,
+            vec![(1, "a.example".to_string()), (2, "b.example".to_string())]
+        );
+        library.close().unwrap();
     }
 
     #[test]

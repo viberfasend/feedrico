@@ -25,7 +25,7 @@ pub mod update;
 pub use articles::{ArticleDetail, ArticleRow, ListQuery, Sort, View};
 pub use error::{Error, Result};
 pub use export::{Export, ExportProgress};
-pub use feeds::{AddOutcome, FeedToFetch, FetchResult, ImportSummary, Sidebar};
+pub use feeds::{AddOutcome, FeedToFetch, FetchResult, FolderFeedNames, ImportSummary, Sidebar};
 pub use fetch::{Discovery, Fetcher};
 pub use library::{Library, OpenOptions, Status};
 pub use lock::LockInfo;

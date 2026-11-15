@@ -132,6 +132,9 @@ impl Server {
                 let view = View::Search {
                     feed: opt_int(args, "feed"),
                     folder: opt_int(args, "folder"),
+                    since: None,
+                    until: None,
+                    fts: false,
                 };
                 self.articles(view, Some(query), limit(args), false)
             }

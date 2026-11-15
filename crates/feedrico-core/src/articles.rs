@@ -130,12 +130,20 @@ pub enum View {
         id: i64,
     },
     /// Full-text search; the query lives in `ListQuery::search`. Scoped to one Feed or one
-    /// Folder when set, otherwise the whole Library.
+    /// Folder when set, otherwise the whole Library. `since`/`until` bound the Article Date
+    /// (unix seconds, inclusive), `fts` says the query text is a raw FTS5 MATCH expression
+    /// (an Assistant's, #122) instead of plain text.
     Search {
         #[serde(default)]
         feed: Option<i64>,
         #[serde(default)]
         folder: Option<i64>,
+        #[serde(default)]
+        since: Option<i64>,
+        #[serde(default)]
+        until: Option<i64>,
+        #[serde(default)]
+        fts: bool,
     },
 }
 
@@ -212,8 +220,9 @@ pub struct Enclosure {
 }
 
 /// SQL `WHERE` clause and parameters for a query. Columns refer to `article a`.
-fn filter(q: &ListQuery) -> (String, Vec<rusqlite::types::Value>) {
-    let (clause, args) = view_filter(q);
+/// `match_expr` is the resolved FTS5 MATCH expression for a search (see `Library::search_match`).
+fn filter(q: &ListQuery, match_expr: &str) -> (String, Vec<rusqlite::types::Value>) {
+    let (clause, args) = view_filter(q, match_expr);
     if q.with_lead_image {
         (format!("({clause}) AND a.lead_image IS NOT NULL"), args)
     } else {
@@ -221,7 +230,7 @@ fn filter(q: &ListQuery) -> (String, Vec<rusqlite::types::Value>) {
     }
 }
 
-fn view_filter(q: &ListQuery) -> (String, Vec<rusqlite::types::Value>) {
+fn view_filter(q: &ListQuery, match_expr: &str) -> (String, Vec<rusqlite::types::Value>) {
     use rusqlite::types::Value;
     match q.view {
         View::AllUnread => ("a.is_read = 0".into(), vec![]),
@@ -232,17 +241,30 @@ fn view_filter(q: &ListQuery) -> (String, Vec<rusqlite::types::Value>) {
             "a.feed_id IN (SELECT id FROM feed WHERE folder_id = ?)".into(),
             vec![Value::Integer(id)],
         ),
-        View::Search { feed, folder } => {
-            let query = fts_query(q.search.as_deref().unwrap_or(""));
+        View::Search {
+            feed,
+            folder,
+            since,
+            until,
+            ..
+        } => {
             let mut clause =
                 String::from("a.id IN (SELECT rowid FROM article_fts WHERE article_fts MATCH ?)");
-            let mut args = vec![Value::Text(query)];
+            let mut args = vec![Value::Text(match_expr.to_string())];
             if let Some(id) = feed {
                 clause.push_str(" AND a.feed_id = ?");
                 args.push(Value::Integer(id));
             } else if let Some(id) = folder {
                 clause.push_str(" AND a.feed_id IN (SELECT id FROM feed WHERE folder_id = ?)");
                 args.push(Value::Integer(id));
+            }
+            if let Some(s) = since {
+                clause.push_str(" AND a.article_date >= ?");
+                args.push(Value::Integer(s));
+            }
+            if let Some(u) = until {
+                clause.push_str(" AND a.article_date <= ?");
+                args.push(Value::Integer(u));
             }
             (clause, args)
         }
@@ -269,8 +291,33 @@ fn fts_query(input: &str) -> String {
 }
 
 impl Library {
+    /// The FTS5 MATCH expression a search runs. Plain text is escaped into a safe prefix query
+    /// as always; a raw expression (`View::Search { fts: true }`, an Assistant's #122) is used
+    /// as written, but only when it parses against the index — anything invalid falls back to
+    /// the escaped plain-text query, so a broken generated query still searches.
+    fn search_match(&self, q: &ListQuery) -> String {
+        let input = q.search.as_deref().unwrap_or("");
+        let raw = matches!(q.view, View::Search { fts: true, .. });
+        if !raw {
+            return fts_query(input);
+        }
+        let parses = match self.conn().query_row(
+            "SELECT rowid FROM article_fts WHERE article_fts MATCH ? LIMIT 1",
+            rusqlite::params![input],
+            |_| Ok(()),
+        ) {
+            Ok(_) | Err(rusqlite::Error::QueryReturnedNoRows) => true,
+            Err(_) => false,
+        };
+        if parses {
+            input.to_string()
+        } else {
+            fts_query(input)
+        }
+    }
+
     pub fn count_articles(&self, q: &ListQuery) -> Result<i64> {
-        let (clause, args) = filter(q);
+        let (clause, args) = filter(q, &self.search_match(q));
         Ok(self.conn().query_row(
             &format!("SELECT count(*) FROM article a WHERE {clause}"),
             rusqlite::params_from_iter(args),
@@ -279,7 +326,7 @@ impl Library {
     }
 
     pub fn list_articles(&self, q: &ListQuery, offset: i64, limit: i64) -> Result<Vec<ArticleRow>> {
-        let (clause, mut args) = filter(q);
+        let (clause, mut args) = filter(q, &self.search_match(q));
         let order = match q.sort {
             Sort::NewestFirst => "a.article_date DESC, a.id DESC",
             Sort::OldestFirst => "a.article_date ASC, a.id ASC",
@@ -383,7 +430,7 @@ impl Library {
 
     /// Marks every Article in the view as Read. Returns their ids so the action can be undone.
     pub fn mark_all_read(&self, q: &ListQuery) -> Result<Vec<i64>> {
-        let (clause, args) = filter(q);
+        let (clause, args) = filter(q, &self.search_match(q));
         let tx = self.conn().unchecked_transaction()?;
         let ids: Vec<i64> = tx
             .prepare(&format!(
@@ -692,6 +739,9 @@ mod tests {
             view: View::Search {
                 feed: None,
                 folder: None,
+                since: None,
+                until: None,
+                fts: false,
             },
             sort: Sort::NewestFirst,
             search: Some(s.into()),
@@ -719,7 +769,13 @@ mod tests {
             .query_row("SELECT feed_id FROM article LIMIT 1", [], |r| r.get(0))
             .unwrap();
         let scoped = |feed: Option<i64>, folder: Option<i64>| ListQuery {
-            view: View::Search { feed, folder },
+            view: View::Search {
+                feed,
+                folder,
+                since: None,
+                until: None,
+                fts: false,
+            },
             ..search("spinn")
         };
         assert_eq!(
@@ -744,7 +800,8 @@ mod tests {
                 wire,
                 View::Search {
                     feed: None,
-                    folder: None
+                    folder: None,
+                    ..
                 }
             ),
             "unscoped on the wire"
@@ -933,6 +990,9 @@ mod edge_tests {
             view: View::Search {
                 feed: Some(1),
                 folder: Some(999),
+                since: None,
+                until: None,
+                fts: false,
             },
             sort: Sort::NewestFirst,
             search: Some("spinn".into()),
@@ -942,6 +1002,170 @@ mod edge_tests {
             library.count_articles(&q).unwrap(),
             1,
             "the Feed scope wins over the Folder scope"
+        );
+        library.close().unwrap();
+    }
+
+    // #122: an Assistant-generated search runs its FTS5 expression as written, but an invalid
+    // one falls back to the escaped plain-text query, and the date range bounds the Article Date.
+    fn search_query(
+        search: &str,
+        feed: Option<i64>,
+        folder: Option<i64>,
+        since: Option<i64>,
+        until: Option<i64>,
+        fts: bool,
+    ) -> ListQuery {
+        ListQuery {
+            view: View::Search {
+                feed,
+                folder,
+                since,
+                until,
+                fts,
+            },
+            sort: Sort::NewestFirst,
+            search: Some(search.into()),
+            with_lead_image: false,
+        }
+    }
+
+    #[test]
+    fn raw_fts_search_runs_the_expression_as_written() {
+        let (_root, library) = library_with_feed();
+        library
+            .apply_fetch(
+                1,
+                fetched(vec![
+                    entry("a", "SQLite WAL mode", Some(1_700_000_000)),
+                    entry("b", "Honey harvest", Some(1_600_000_000)),
+                ]),
+            )
+            .unwrap();
+        // A column filter only works as a raw expression: escaped, "title" and "wal" would
+        // both have to appear as words, and no Article contains the word "title".
+        assert_eq!(
+            library
+                .count_articles(&search_query("title:wal", None, None, None, None, false))
+                .unwrap(),
+            0,
+            "plain text never becomes an FTS column filter"
+        );
+        assert_eq!(
+            library
+                .count_articles(&search_query("title:wal", None, None, None, None, true))
+                .unwrap(),
+            1,
+            "the raw FTS expression is used as written"
+        );
+        assert_eq!(
+            library
+                .count_articles(&search_query(
+                    "\"wal\"* NOT honey",
+                    None,
+                    None,
+                    None,
+                    None,
+                    true
+                ))
+                .unwrap(),
+            1
+        );
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn invalid_raw_fts_falls_back_to_plain_text_search() {
+        let (_root, library) = library_with_feed();
+        library
+            .apply_fetch(
+                1,
+                fetched(vec![
+                    entry("a", "SQLite WAL mode", Some(1_700_000_000)),
+                    entry("b", "Honey harvest", Some(1_600_000_000)),
+                ]),
+            )
+            .unwrap();
+        // Unbalanced quote: fts5 rejects it, so the words are searched as plain text.
+        assert_eq!(
+            library
+                .count_articles(&search_query("\"wal", None, None, None, None, true))
+                .unwrap(),
+            1,
+            "the fallback still finds the Article"
+        );
+        assert_eq!(
+            library
+                .count_articles(&search_query("wal AND (", None, None, None, None, true))
+                .unwrap(),
+            0,
+            "AND and ( are not words in these Articles, so the fallback matches nothing"
+        );
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn search_date_range_bounds_the_article_date() {
+        let (_root, library) = library_with_feed();
+        library
+            .apply_fetch(
+                1,
+                fetched(vec![
+                    entry("a", "Old post", Some(1_600_000_000)), // 2020-09
+                    entry("b", "New post", Some(1_700_000_000)), // 2023-11
+                ]),
+            )
+            .unwrap();
+        let count = |since: Option<i64>, until: Option<i64>| {
+            library
+                .count_articles(&search_query("post", None, None, since, until, false))
+                .unwrap()
+        };
+        assert_eq!(count(None, None), 2);
+        assert_eq!(count(Some(1_650_000_000), None), 1, "since only");
+        assert_eq!(count(None, Some(1_650_000_000)), 1, "until only");
+        assert_eq!(count(Some(1_650_000_000), Some(1_750_000_000)), 1);
+        assert_eq!(count(Some(1_750_000_000), None), 0);
+        // The range combines with a Feed or Folder scope.
+        assert_eq!(
+            library
+                .count_articles(&search_query(
+                    "post",
+                    Some(1),
+                    None,
+                    Some(1_650_000_000),
+                    None,
+                    false
+                ))
+                .unwrap(),
+            1
+        );
+        library
+            .import_opml(&[OpmlFeed {
+                url: "https://y.example/feed".into(),
+                title: "Y".into(),
+                site_url: None,
+                folder: Some("F".into()),
+            }])
+            .unwrap();
+        let folder_id: i64 = library
+            .conn()
+            .query_row("SELECT id FROM folder WHERE name = 'F'", [], |r| r.get(0))
+            .unwrap();
+        library.move_feed(1, Some(folder_id)).unwrap();
+        assert_eq!(
+            library
+                .count_articles(&search_query(
+                    "post",
+                    None,
+                    Some(folder_id),
+                    None,
+                    Some(1_650_000_000),
+                    false
+                ))
+                .unwrap(),
+            1,
+            "the Folder scope holds the Feed"
         );
         library.close().unwrap();
     }

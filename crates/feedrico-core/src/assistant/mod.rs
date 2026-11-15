@@ -20,6 +20,7 @@
 //! - [`run`]: run one [`Task`], stream [`Event`]s, cancel, map errors (#113).
 //! - [`ask`]: ask a question about the Article, resending the capped conversation (#119).
 //! - [`translate`]: translate the Article, structure and image placeholders kept (#117).
+//! - [`search`]: turn a question into a local search query (#122).
 
 pub mod article;
 pub mod ask;
@@ -28,6 +29,7 @@ pub mod folder_suggestions;
 pub mod prompts;
 pub mod run;
 pub mod translate;
+pub mod search;
 
 use std::path::PathBuf;
 use std::time::Duration;
