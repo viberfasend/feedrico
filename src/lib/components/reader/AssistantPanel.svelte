@@ -102,7 +102,6 @@
               id="ask-question"
               bind:value={assist.question}
               placeholder="What does it say about…?"
-              disabled={run?.phase === 'running'}
               onkeydown={onAskKeydown}
             />
             <Button type="submit" disabled={!assist.question.trim() || run?.phase === 'running'}>Ask</Button>
