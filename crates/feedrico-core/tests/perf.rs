@@ -173,6 +173,9 @@ fn query_budgets() {
                 View::Search {
                     feed: None,
                     folder: None,
+                    since: None,
+                    until: None,
+                    fts: false,
                 },
                 Some("zephyrine"),
                 false,
@@ -185,6 +188,9 @@ fn query_budgets() {
                 View::Search {
                     feed: None,
                     folder: None,
+                    since: None,
+                    until: None,
+                    fts: false,
                 },
                 Some("rust benchmark"),
                 false,

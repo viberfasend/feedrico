@@ -86,6 +86,9 @@ pub fn fixture(root: &Path) -> PathBuf {
                 view: feedrico_core::View::Search {
                     feed: None,
                     folder: None,
+                    since: None,
+                    until: None,
+                    fts: false,
                 },
                 sort: Default::default(),
                 search: Some(q.into()),
