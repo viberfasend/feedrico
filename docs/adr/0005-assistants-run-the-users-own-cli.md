@@ -91,6 +91,20 @@ the end user using Claude Code. Offering a login, touching credentials or routin
 ourselves would not be. If these pages change, this ADR must be revisited, and the Claude adapter
 may have to go. Mistral's side: <https://docs.mistral.ai/vibe/code/cli/work-with-cli>.
 
+## Policy per provider (added in #125)
+
+The question for every Assistant: may a third-party app (Feedrico) launch the user's own signed-in
+CLI under the user's own plan? Recorded on 2026-11-14; re-check before each release that touches
+Assistants. "Unclear" is an honest answer.
+
+| Assistant | Answer | Sources |
+|---|---|---|
+| Claude Code | Allowed for the end user running the unmodified binary; not for us routing requests (quotes above). | <https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan>, <https://code.claude.com/docs/en/legal-and-compliance>, <https://code.claude.com/docs/en/agent-sdk/overview> |
+| Mistral Vibe | Same shape: the user runs their own signed-in CLI; no credential access by us. | <https://docs.mistral.ai/vibe/code/cli/work-with-cli> |
+| Codex CLI (OpenAI) | Codex is included in ChatGPT plans and CLI runs draw from the plan's usage limits, so a run is the user's own plan usage. The pages we checked do not say whether a third-party app may launch the signed-in CLI — **unclear**. Our reading is the same as for Claude: the end user running their own binary on their own click; Feedrico never offers a login or touches `CODEX_HOME`. | <https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan>, <https://developers.openai.com/codex/cli>, <https://openai.com/codex/>, <https://openai.com/policies/terms-of-use> |
+| Gemini CLI (Google) | With a personal Google account the Google Terms of Service and the Gemini Code Assist for individuals terms apply; API-key use is governed by the Gemini API Terms. Whether a third-party app may launch the signed-in CLI is not stated — **unclear**. A Google GitHub discussion treats third-party tooling routing through the CLI's own OAuth as an expected use, but a discussion is not policy. Same reading as above: no login offered, no credential files read (Gemini has no status command, so sign-in reads as Unknown). | <https://geminicli.com/terms>, <https://geminicli.com/docs/resources/tos-privacy/>, <https://github.com/google-gemini/gemini-cli/discussions/22970> |
+| Ollama | No account and no cloud: the model runs on the user's computer and Ollama's privacy policy states it does not collect, store, transmit or access content processed locally, so there is no third-party plan to draw from. The software's own terms cover the website, the app and the cloud APIs, not local inference. Caveat: model weights carry their own licences (for example Meta's Llama community licence), which the user accepts when pulling a model; Feedrico only calls the local API on a loopback address. | <https://ollama.com/privacy>, <https://ollama.com/terms>, <https://docs.ollama.com/api/chat> |
+
 ## Personas
 
 - **The Offline Reader (Paul): hurt and protected.** Article text leaves the machine for
