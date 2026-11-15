@@ -587,6 +587,28 @@ describe('ask about the Article (#119)', () => {
     expect(shown).toHaveLength(1);
   });
 
+  it('the question field keeps focus while the answer runs, for a follow-up by keyboard', async () => {
+    await render();
+    assist.start(askEntry());
+    flushSync();
+    await settle();
+    const input = q('#ask-question') as HTMLInputElement;
+    input.focus();
+    await typeAndSend('What about buses?');
+    // Browsers drop focus from a disabled field (jsdom doesn't), so the field stays enabled.
+    expect(input.disabled).toBe(false);
+    expect(document.activeElement).toBe(input);
+    tasks.at(-1)!.resolve({ text: 'Electric by 2030.', structured: null, article: null });
+    await settle();
+    flushSync();
+    expect(document.activeElement).toBe(input);
+    // A second Enter while a question runs sends nothing.
+    await typeAndSend('And trams?');
+    expect(tasks).toHaveLength(2);
+    await typeAndSend('And ferries?');
+    expect(tasks).toHaveLength(2);
+  });
+
   it('Enter sends the question on the open Article; the next question resends the conversation', async () => {
     await render();
     assist.start(askEntry());
