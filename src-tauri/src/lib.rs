@@ -612,6 +612,27 @@ async fn check_for_updates(app: AppHandle) -> CommandResult<UpdateStatus> {
     Ok(fetcher.check_for_updates(&current).await?)
 }
 
+/// Saves the open Article to Ferrico, the local bookmark manager, through its loopback-only
+/// extension API (`POST 127.0.0.1:59432/bookmarks`, Bearer token from Ferrico's settings).
+/// Runs only on an explicit click (spec: network policy — nothing leaves the machine otherwise).
+#[tauri::command]
+async fn save_to_ferrico(
+    input: feedrico_core::ferrico::SaveBookmarkInput,
+    app: AppHandle,
+) -> CommandResult<feedrico_core::ferrico::SavedBookmark> {
+    use feedrico_core::ferrico::SaveError::*;
+    let fetcher = app.state::<AppState>().fetcher.clone();
+    feedrico_core::ferrico::save(fetcher.client(), &input)
+        .await
+        .map_err(|e| match e {
+            InvalidUrl => CommandError::new("invalidUrl", e.to_string()),
+            NotInstalled => CommandError::new("ferricoNotInstalled", e.to_string()),
+            NotRunning => CommandError::new("ferricoNotRunning", e.to_string()),
+            Unauthorized => CommandError::new("ferricoUnauthorized", e.to_string()),
+            Rejected(m) => CommandError::new("ferricoRejected", m),
+        })
+}
+
 /// Only web links open in the system browser; nothing else is allowed through.
 fn is_web_url(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
@@ -1530,6 +1551,7 @@ pub fn run() {
             set_autostart,
             check_for_updates,
             open_external,
+            save_to_ferrico,
             refresh,
             perf_interactive,
             perf_finish,

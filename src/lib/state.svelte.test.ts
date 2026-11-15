@@ -2,7 +2,7 @@
 // Regression tests for the app state. Each test names the bug it guards against.
 import { flushSync } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ArticleRow, ListQuery, Sidebar } from './api';
+import type { ArticleDetail, ArticleRow, ListQuery, Sidebar } from './api';
 
 /** A promise we resolve by hand, to replay exact orderings of IPC responses. */
 function deferred<T>() {
@@ -55,6 +55,7 @@ const mockApi = {
   refresh: vi.fn(async () => true),
   onRefreshProgress: vi.fn(async () => () => {}),
   openExternal: vi.fn(async () => {}),
+  saveToFerrico: vi.fn(async () => ({ id: 'abc', createdAt: 1_700_000_000 })),
   appVersion: vi.fn(async () => '0.1.0'),
   checkForUpdates: vi.fn(),
   startup: vi.fn(async () => ({ kind: 'welcome', defaultPath: '' })),
@@ -425,5 +426,61 @@ describe('Check for updates', () => {
     }
     expect(selectionKey({ kind: 'feed', id: 7 })).toBe('feed:7');
     for (const bad of [null, '', 'search', 'feed:', 'feed:x', 'tag:1']) expect(parseSelection(bad)).toBeNull();
+  });
+});
+
+describe('Save to Ferrico', () => {
+  const detail = (url: string | null): ArticleDetail => ({
+    id: 5,
+    feedId: 1,
+    feedTitle: 'Blog',
+    title: 'Post',
+    excerpt: 'the excerpt',
+    articleDate: 1_700_000_000,
+    isRead: false,
+    isStarred: false,
+    leadImage: null,
+    favicon: null,
+    feedSiteUrl: 'https://blog.example',
+    url,
+    author: null,
+    contentHtml: '',
+    enclosures: [],
+  });
+
+  // Feature: saving the open Article to the local bookmark manager via its loopback API, only
+  // on an explicit action.
+  it('sends the open Article and confirms with a toast', async () => {
+    const app = new AppState();
+    app.article = detail('https://blog.example/post');
+    await app.saveToFerrico();
+    expect(mockApi.saveToFerrico).toHaveBeenCalledWith({
+      url: 'https://blog.example/post',
+      title: 'Post',
+      description: 'the excerpt',
+      feedUrl: 'https://blog.example',
+    });
+    expect(app.toasts.at(-1)?.message).toBe('Saved to Ferrico');
+    expect(app.savingToFerrico).toBe(false);
+  });
+
+  it('shows the shell error as a toast when Ferrico is not running', async () => {
+    const app = new AppState();
+    app.article = detail('https://blog.example/post');
+    mockApi.saveToFerrico.mockRejectedValueOnce({
+      kind: 'ferricoNotRunning',
+      message: "Ferrico isn't running — start the Ferrico app and try again",
+    });
+    await app.saveToFerrico();
+    expect(app.toasts.at(-1)?.message).toBe("Ferrico isn't running — start the Ferrico app and try again");
+    expect(app.savingToFerrico).toBe(false);
+  });
+
+  it('does nothing without an open Article or a web link', async () => {
+    const app = new AppState();
+    await app.saveToFerrico();
+    app.article = detail(null);
+    await app.saveToFerrico();
+    expect(mockApi.saveToFerrico).not.toHaveBeenCalled();
   });
 });

@@ -142,6 +142,7 @@
       s: () => void app.toggleStar(),
       m: () => void app.toggleRead(),
       o: () => app.openInBrowser(),
+      b: () => void app.saveToFerrico(),
       r: () => void app.startRefresh(true),
       a: () => (app.addFeedOpen = true),
       '/': () => document.getElementById('search')?.focus(),
