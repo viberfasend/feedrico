@@ -1256,6 +1256,46 @@ html:not(.js) .sky__time {
   }
 }
 
+/* --- A closer look: screenshots of the real app ------------------------------------------- */
+
+.chapter--shots {
+  padding-top: 0;
+}
+.shots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(1.5rem, 3vw, 2.5rem);
+  margin-top: clamp(2rem, 4vw, 3rem);
+}
+.shot {
+  margin: 0;
+}
+.shot--wide {
+  grid-column: 1 / -1;
+}
+.shot a {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: 0.75rem;
+  box-shadow: 0 1.25rem 3rem -1.5rem rgb(30 26 47 / 0.35);
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.shot figcaption {
+  margin-top: 0.75rem;
+  color: var(--color-text-muted);
+  font: var(--font-size-small) / 1.5 var(--font-family-ui);
+}
+@media (max-width: 48rem) {
+  .shots {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* --- Placeholder Lead Images: flat colour fields, one point of light each ------------------- */
 
 .plate {
