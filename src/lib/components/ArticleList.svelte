@@ -251,7 +251,10 @@
   }
   /* With an Assistant panel above the list (#120/#121), the list gets the remaining row. */
   .list.has-panel {
-    grid-template-rows: auto auto minmax(0, 1fr);
+    /* The panel row takes what the panel needs, at most 45% of the pane; the panel scrolls
+       inside it. A percentage max-height on the panel itself would resolve against its own
+       content-sized row and leave a gap below it. */
+    grid-template-rows: auto fit-content(45%) minmax(0, 1fr);
   }
   .controls :global(.menu-trigger.assistant-trigger) {
     height: var(--control-height);

@@ -169,8 +169,9 @@
     font-size: var(--font-size-body);
     line-height: var(--font-line-height-body);
     overflow-wrap: anywhere;
-    /* A long picks list scrolls inside the panel instead of squeezing the Article list away. */
-    max-block-size: 45%;
+    /* A long picks list scrolls inside the panel instead of squeezing the Article list away;
+       the list's grid caps the panel's row (ArticleList.svelte). */
+    min-block-size: 0;
     overflow-y: auto;
   }
   @media (prefers-reduced-motion: no-preference) {
