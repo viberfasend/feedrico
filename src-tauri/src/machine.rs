@@ -159,6 +159,7 @@ mod tests {
             path: "/usr/bin/claude".into(),
             model: Some("haiku".into()),
             disclosure_accepted: true,
+            target_language: Some("de".into()),
         }
     }
 
@@ -189,6 +190,7 @@ mod tests {
         let json = fs::read_to_string(&file).unwrap();
         assert!(json.contains("\"disclosureAccepted\": true"), "{json}");
         assert!(json.contains("\"claudeCode\""), "{json}");
+        assert!(json.contains("\"targetLanguage\": \"de\""), "{json}");
         write_assistant(&file, None).unwrap();
         assert_eq!(read_assistant(&file), None, "turning off deletes the file");
         assert!(!file.exists());
@@ -203,5 +205,20 @@ mod tests {
         let file = root.path().join(ASSISTANT_FILE);
         fs::write(&file, "not json").unwrap();
         assert_eq!(read_assistant(&file), None);
+    }
+
+    // The target language was added later: a setup file from before it still loads, with None.
+    #[test]
+    fn an_older_setup_file_without_the_target_language_still_loads() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join(ASSISTANT_FILE);
+        fs::write(
+            &file,
+            r#"{"kind":"claudeCode","path":"/usr/bin/claude","model":"haiku","disclosureAccepted":true}"#,
+        )
+        .unwrap();
+        let setup = read_assistant(&file).unwrap();
+        assert_eq!(setup.target_language, None);
+        assert!(setup.disclosure_accepted);
     }
 }
