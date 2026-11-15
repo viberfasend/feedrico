@@ -17,14 +17,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ListQuery } from './api';
 
-export type AssistantKind = 'claudeCode' | 'mistralVibe';
-export type SignIn = 'plan' | 'apiKey' | 'notSignedIn' | 'unknown';
+export type AssistantKind = 'claudeCode' | 'mistralVibe' | 'codex' | 'gemini' | 'ollama';
+export type SignIn = 'plan' | 'apiKey' | 'notSignedIn' | 'unknown' | 'notApplicable';
 
 export interface FoundAssistant {
   kind: AssistantKind;
   path: string;
   version: string | null;
   signIn: SignIn;
+  /** The models installed on this computer; only Ollama fills this. */
+  models: string[];
 }
 
 /** Machine-local, never in the Library. `null` from assistant_setup_get means off. */
@@ -168,12 +170,23 @@ export type AssistantErrorKind =
 export const assistantNames: Record<AssistantKind, string> = {
   claudeCode: 'Claude Code',
   mistralVibe: 'Mistral Vibe',
+  codex: 'Codex',
+  gemini: 'Gemini CLI',
+  ollama: 'Ollama',
 };
 
 export const assistantProviders: Record<AssistantKind, string> = {
   claudeCode: 'Anthropic',
   mistralVibe: 'Mistral',
+  codex: 'OpenAI',
+  gemini: 'Google',
+  ollama: 'Ollama on this computer',
 };
+
+/** Nothing leaves the computer: the model runs here. */
+export function isLocalAssistant(kind: AssistantKind): boolean {
+  return kind === 'ollama';
+}
 
 export function detectAssistants(manualPath: string | null = null): Promise<FoundAssistant[]> {
   return invoke('assistant_detect', { manualPath });

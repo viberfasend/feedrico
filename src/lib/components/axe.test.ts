@@ -111,8 +111,17 @@ vi.mock('../assistant', async (importOriginal) => ({
   getAssistantSetup: async () => assistantSetup,
   setAssistantSetup: async () => {},
   detectAssistants: async () => [
-    { kind: 'claudeCode', path: '/usr/bin/claude', version: '2.1.0', signIn: 'apiKey' },
-    { kind: 'mistralVibe', path: '/usr/bin/vibe', version: '1.0', signIn: 'notSignedIn' },
+    { kind: 'claudeCode', path: '/usr/bin/claude', version: '2.1.0', signIn: 'apiKey', models: [] },
+    { kind: 'mistralVibe', path: '/usr/bin/vibe', version: '1.0', signIn: 'notSignedIn', models: [] },
+    { kind: 'codex', path: '/usr/bin/codex', version: '0.153.4', signIn: 'plan', models: [] },
+    { kind: 'gemini', path: '/usr/bin/gemini', version: '0.20.0', signIn: 'unknown', models: [] },
+    {
+      kind: 'ollama',
+      path: 'http://127.0.0.1:11434',
+      version: '0.12.6',
+      signIn: 'notApplicable',
+      models: ['llama3.2:latest', 'qwen3:8b'],
+    },
   ],
   runAssistant: vi.fn(() => {
     let resolve!: FakeTask['resolve'];
@@ -235,12 +244,18 @@ describe('axe over every screen state', () => {
     await expectNoViolations('settings dialog');
   });
 
-  for (const state of ['off', 'listed', 'set up'] as const) {
+  const assistantStates: [string, unknown][] = [
+    ['off', null],
+    ['listed', null],
+    ['set up', { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: false }],
+    [
+      'set up (Ollama)',
+      { kind: 'ollama', path: 'http://127.0.0.1:11434', model: 'llama3.2:latest', disclosureAccepted: false },
+    ],
+  ];
+  for (const [state, stateSetup] of assistantStates) {
     it(`has no violations in the Assistant section (${state})`, async () => {
-      assistantSetup =
-        state === 'set up'
-          ? { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: false }
-          : null;
+      assistantSetup = stateSetup;
       await mountReady('list');
       await app.openSettings();
       await settle();
