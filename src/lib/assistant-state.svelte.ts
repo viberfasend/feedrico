@@ -129,6 +129,12 @@ export function describeError(kind: AssistantErrorKind, assistant: AssistantKind
   }
 }
 
+/** Focus is in the reader pane, or nowhere in particular (the page body). */
+function focusInReader(): boolean {
+  const active = document.activeElement;
+  return !active || active === document.body || !!document.getElementById('pane-reader')?.contains(active);
+}
+
 class AssistantState {
   /** The entries that apply right now (Translate only when the language differs). */
   get entries(): AssistantEntry[] {
@@ -176,13 +182,15 @@ class AssistantState {
       this.setup = null;
     }
     if (!this.setup) this.discard();
-    // Keep the selection current while the user selects; a collapsed selection never clears it,
-    // because opening the palette moves focus and collapses the live selection.
+    // Keep the selection current while the user selects. Opening the palette or the menu moves
+    // focus and collapses the live selection, so that keeps the last one; a selection cleared
+    // while focus stays in the reader (a click on the text) forgets it.
     if (!this.listening && typeof document !== 'undefined') {
       this.listening = true;
       document.addEventListener('selectionchange', () => {
         const s = readerSelection();
         if (s) this.selection = s;
+        else if (focusInReader()) this.selection = null;
       });
     }
   }

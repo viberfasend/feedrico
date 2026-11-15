@@ -508,6 +508,24 @@ describe('explain the selected term (#118)', () => {
     expect(labels).toContain('Explain selection');
   });
 
+  it('clearing the selection in the reader removes the entry', async () => {
+    app.phase = 'ready';
+    app.article = richArticle();
+    setup = { kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: true };
+    mounted = mount(Reader, { target: document.body });
+    await settle();
+    flushSync();
+    selectTerm();
+    expect(assist.entries.some((e) => e.id === 'explainTerm' && e.when!())).toBe(true);
+    // A click in the reader collapses the selection while focus stays there.
+    window.getSelection()!.removeAllRanges();
+    document.dispatchEvent(new Event('selectionchange'));
+    flushSync();
+    press('i');
+    const labels = [...document.querySelectorAll('.menu-item')].map((el) => el.textContent?.trim());
+    expect(labels).not.toContain('Explain selection');
+  });
+
   it('a selection outside the reader does not offer the entry', async () => {
     await render();
     const outside = document.createElement('p');
