@@ -888,6 +888,11 @@ enum AssistantAction {
         #[serde(default)]
         folder_id: Option<i64>,
     },
+    /// Turn a question into a local search (#122). Only the question and the Library's Folder
+    /// and Feed names go to the Assistant, never Article content.
+    SearchQuery {
+        question: String,
+    },
 }
 
 impl AssistantAction {
@@ -901,7 +906,7 @@ impl AssistantAction {
             AssistantAction::Translate { article_id } | AssistantAction::Ask { article_id, .. } => {
                 Some(*article_id)
             }
-            AssistantAction::FolderSuggestions { .. } => None,
+            AssistantAction::FolderSuggestions { .. } | AssistantAction::SearchQuery { .. } => None,
         }
     }
 }
@@ -1068,10 +1073,10 @@ fn build_task(
                 None,
             )
         }
-        (AssistantAction::FolderSuggestions { .. }, _) => {
+        (AssistantAction::FolderSuggestions { .. } | AssistantAction::SearchQuery { .. }, _) => {
             return Err(CommandError::new(
                 "invalid",
-                "Folder suggestions don't work on an Article.",
+                "This Assistant action doesn't work on an Article.",
             ));
         }
         (_, None) => {
@@ -1126,6 +1131,12 @@ fn run_target(
         sign_in: assistant::SignIn::Unknown,
     };
     Ok((found, setup.model))
+}
+
+/// The open Library's Folder and Feed names for a SearchQuery run (#122): the prompt gets only
+/// these names plus the question, never Article content.
+fn search_query_names(state: &AppState) -> CommandResult<feedrico_core::FolderFeedNames> {
+    with_library(state, |l| l.folder_feed_names())
 }
 
 /// Run `task`, streaming `assistant-event`s for `run_id`; `assistant_cancel` can stop it.
@@ -1201,6 +1212,32 @@ async fn assistant_run(
         return Ok(AssistantResult {
             text: String::new(),
             structured: Some(serde_json::json!({ "moves": moves })),
+            article: None,
+            html: None,
+        });
+    }
+
+    // Natural-language search (#122): the answer is validated against the Library before it
+    // crosses to the UI: scope names become ids, unknown ones are dropped, the query is capped.
+    if let AssistantAction::SearchQuery { question } = &action {
+        let names = search_query_names(&state)?;
+        let today = assistant::search::today_ymd();
+        let mut task = assistant::search::task(question, &names.folders, &names.feeds, &today);
+        if model.is_some() {
+            task.model = model;
+        }
+        let (text, structured) = run_task(&app, &state, &assistant, &task, run_id).await?;
+        let parsed = assistant::search::parse_output(
+            &text,
+            structured.as_ref(),
+            &names.folders,
+            &names.feeds,
+        )?;
+        let structured = serde_json::to_value(parsed)
+            .map_err(|e| CommandError::new("internal", e.to_string()))?;
+        return Ok(AssistantResult {
+            text,
+            structured: Some(structured),
             article: None,
             html: None,
         });
@@ -1851,6 +1888,35 @@ mod tests {
         // Without the Article there is nothing to anchor the selection to.
         let err = build_task(&action, None, ClaudeCode, None, None).unwrap_err();
         assert_eq!(err.kind, "notFound");
+    }
+
+    #[test]
+    fn a_search_query_task_carries_only_the_question_and_the_folder_feed_names() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join(feedrico_core::library::DIR_NAME);
+        let library = Library::create(&dir).unwrap();
+        library
+            .add_feed("https://a.example/feed", "Rust Blog", None, None)
+            .unwrap();
+        let state = state_with(Some(library));
+        let names = search_query_names(&state).unwrap();
+        assert!(names.folders.is_empty());
+        assert_eq!(names.feeds, vec![(1, "Rust Blog".to_string())]);
+        let task = assistant::search::task(
+            "wal mode last spring",
+            &names.folders,
+            &names.feeds,
+            "2026-11-14",
+        );
+        assert!(
+            task.prompt
+                .contains("<<<FEEDRICO_DATA Question>>>\nwal mode last spring")
+        );
+        assert!(task.prompt.contains("Rust Blog"));
+        assert!(task.json_schema.is_some());
+
+        let empty = state_with(None);
+        assert_eq!(search_query_names(&empty).unwrap_err().kind, "noLibrary");
     }
 
     #[test]
