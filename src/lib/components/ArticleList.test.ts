@@ -450,6 +450,40 @@ describe('Assistant search trigger (#122)', () => {
     expect(app.query().view).toEqual({ kind: 'search', feed: 5, since: 1_740_787_200, until: 1_748_649_599, fts: true });
   });
 
+  it('shows the Assistant-picked date range as a chip that removes it', async () => {
+    assistantSetup = setup;
+    app.search = 'wal mode last spring';
+    await renderList();
+    await settle();
+    trigger()!.click();
+    await settle();
+    assistantTasks[0]!.resolve({
+      text: '',
+      structured: { query: 'sqlite wal', feed: null, folder: null, since: 1_740_787_200, until: 1_748_649_599, dropped: [] },
+    });
+    await settle();
+    flushSync();
+    const fmt = (t: number) => new Date(t * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' });
+    const label = `${fmt(1_740_787_200)} – ${fmt(1_748_649_599)}`;
+    const chip = buttonByLabel(`Only Articles from ${label}. Remove the date range`);
+    expect(chip, 'the date range is visible').not.toBeNull();
+    expect(chip!.textContent).toContain(label);
+    chip!.click();
+    await settle();
+    flushSync();
+    expect(app.query().view).toEqual({ kind: 'search', fts: true });
+    expect(app.search).toBe('sqlite wal');
+    expect(document.querySelector('.dates')).toBeNull();
+  });
+
+  it('shows no date chip for a plain search', async () => {
+    app.search = 'sqlite';
+    await renderList();
+    await settle();
+    flushSync();
+    expect(document.querySelector('.dates')).toBeNull();
+  });
+
   it('does nothing on an empty field, and reports Assistant errors as a toast', async () => {
     assistantSetup = setup;
     await renderList();
