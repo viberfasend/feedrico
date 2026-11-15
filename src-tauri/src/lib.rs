@@ -449,6 +449,17 @@ fn get_article(id: i64, state: State<'_, AppState>) -> CommandResult<ArticleDeta
     with_library(&state, |l| l.article(id))
 }
 
+/// The 0-based position of an Article in the View's sorted list, so a link in an Assistant
+/// result opens it exactly like a click in the list (#120/#121). `None` when not in the View.
+#[tauri::command]
+fn article_index(
+    query: ListQuery,
+    id: i64,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<i64>> {
+    with_library(&state, |l| l.article_index(&query, id))
+}
+
 #[tauri::command]
 fn set_read(id: i64, read: bool, state: State<'_, AppState>) -> CommandResult<()> {
     with_library(&state, |l| l.set_read(id, read))
@@ -893,6 +904,14 @@ enum AssistantAction {
     SearchQuery {
         question: String,
     },
+    /// A briefing of the View's Articles (#120): `query` is the View exactly as the list shows it.
+    Briefing {
+        query: ListQuery,
+    },
+    /// Rank the View's unread Articles against the user's interests (#121).
+    Picks {
+        query: ListQuery,
+    },
 }
 
 impl AssistantAction {
@@ -906,7 +925,10 @@ impl AssistantAction {
             AssistantAction::Translate { article_id } | AssistantAction::Ask { article_id, .. } => {
                 Some(*article_id)
             }
-            AssistantAction::FolderSuggestions { .. } | AssistantAction::SearchQuery { .. } => None,
+            AssistantAction::FolderSuggestions { .. }
+            | AssistantAction::SearchQuery { .. }
+            | AssistantAction::Briefing { .. }
+            | AssistantAction::Picks { .. } => None,
         }
     }
 }
@@ -1073,7 +1095,13 @@ fn build_task(
                 None,
             )
         }
-        (AssistantAction::FolderSuggestions { .. } | AssistantAction::SearchQuery { .. }, _) => {
+        (
+            AssistantAction::FolderSuggestions { .. }
+            | AssistantAction::SearchQuery { .. }
+            | AssistantAction::Briefing { .. }
+            | AssistantAction::Picks { .. },
+            _,
+        ) => {
             return Err(CommandError::new(
                 "invalid",
                 "This Assistant action doesn't work on an Article.",
@@ -1137,6 +1165,20 @@ fn run_target(
 /// these names plus the question, never Article content.
 fn search_query_names(state: &AppState) -> CommandResult<feedrico_core::FolderFeedNames> {
     with_library(state, |l| l.folder_feed_names())
+}
+
+/// Runs `f` against the open Library, mapping an [`AssistantError`] to its IPC kind. Used where a
+/// run's answer is validated against the Library after the CLI finished (the lock is taken only
+/// for the validation, never held across the run).
+fn with_library_assist<T>(
+    state: &AppState,
+    f: impl FnOnce(&Library) -> Result<T, AssistantError>,
+) -> CommandResult<T> {
+    let guard = state.library.lock().unwrap_or_else(PoisonError::into_inner);
+    let library = guard
+        .as_ref()
+        .ok_or_else(|| CommandError::new("noLibrary", "no Library is open"))?;
+    Ok(f(library)?)
 }
 
 /// Run `task`, streaming `assistant-event`s for `run_id`; `assistant_cancel` can stop it.
@@ -1237,6 +1279,64 @@ async fn assistant_run(
             .map_err(|e| CommandError::new("internal", e.to_string()))?;
         return Ok(AssistantResult {
             text,
+            structured: Some(structured),
+            article: None,
+            html: None,
+        });
+    }
+
+    // Briefing (#120) and picks (#121) work on a View's newest Articles (titles, Feed names,
+    // excerpts). Their answers are validated against the Library; Read and Starred never change.
+    let with_model = |task: &mut assistant::Task| {
+        if let Some(model) = &model {
+            task.model = Some(model.clone());
+        }
+    };
+    if let AssistantAction::Briefing { query } = &action {
+        let plan = with_library(&state, |l| assistant::briefing::plan(l, query))?;
+        let mut task = plan.task.clone();
+        with_model(&mut task);
+        let (text, structured) = run_task(&app, &state, &assistant, &task, run_id).await?;
+        let briefing = with_library_assist(&state, |l| {
+            assistant::briefing::validate(l, &plan, &text, structured.as_ref())
+        })?;
+        let structured = serde_json::to_value(&briefing)
+            .map_err(|e| CommandError::new("internal", e.to_string()))?;
+        return Ok(AssistantResult {
+            text,
+            structured: Some(structured),
+            article: None,
+            html: None,
+        });
+    }
+    if let AssistantAction::Picks { query } = &action {
+        let interests = setup
+            .as_ref()
+            .map(|s| s.interests.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let Some(interests) = interests else {
+            return Err(CommandError::new(
+                "noInterests",
+                "Describe your interests in Settings, under Assistant, first.",
+            ));
+        };
+        let plan = with_library(&state, |l| assistant::picks::plan(l, query, &interests))?;
+        let mut batches = Vec::new();
+        for batch_task in &plan.tasks {
+            let mut task = batch_task.clone();
+            with_model(&mut task);
+            let (text, structured) =
+                run_task(&app, &state, &assistant, &task, run_id.clone()).await?;
+            let batch = with_library_assist(&state, |l| {
+                assistant::picks::validate_batch(l, &text, structured.as_ref())
+            })?;
+            batches.push(batch);
+        }
+        let picks = with_library_assist(&state, |l| assistant::picks::merge(l, &plan, batches))?;
+        let structured = serde_json::to_value(&picks)
+            .map_err(|e| CommandError::new("internal", e.to_string()))?;
+        return Ok(AssistantResult {
+            text: format!("{} Articles considered", plan.considered),
             structured: Some(structured),
             article: None,
             html: None,
@@ -1433,6 +1533,7 @@ pub fn run() {
             perf_interactive,
             perf_finish,
             assistant_detect,
+            article_index,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Feedrico")
@@ -1920,6 +2021,37 @@ mod tests {
     }
 
     #[test]
+    fn view_actions_deserialize_with_their_query() {
+        let query = serde_json::json!({
+            "view": { "kind": "folder", "id": 3 },
+            "sort": "oldestFirst",
+            "search": null,
+            "withLeadImage": false,
+        });
+        let briefing: AssistantAction = serde_json::from_value(serde_json::json!({
+            "kind": "briefing", "query": query,
+        }))
+        .unwrap();
+        let AssistantAction::Briefing { query: q } = briefing else {
+            panic!("expected a briefing")
+        };
+        assert_eq!(q.view, feedrico_core::View::Folder { id: 3 });
+        assert_eq!(q.sort, feedrico_core::Sort::OldestFirst);
+        let picks: AssistantAction = serde_json::from_value(serde_json::json!({
+            "kind": "picks", "query": { "view": { "kind": "allUnread" } },
+        }))
+        .unwrap();
+        assert!(matches!(picks, AssistantAction::Picks { .. }));
+        // The setup's interests load even from an older file without the field.
+        let old = serde_json::json!({
+            "kind": "claudeCode", "path": "/usr/bin/claude", "model": null,
+            "disclosureAccepted": true,
+        });
+        let setup: assistant::AssistantSetup = serde_json::from_value(old).unwrap();
+        assert_eq!(setup.interests, "");
+    }
+
+    #[test]
     fn runs_need_a_setup_with_an_accepted_disclosure() {
         let setup = |accepted| assistant::AssistantSetup {
             kind: assistant::AssistantKind::ClaudeCode,
@@ -1927,6 +2059,7 @@ mod tests {
             model: Some("haiku".into()),
             disclosure_accepted: accepted,
             target_language: Some("de".into()),
+            interests: String::new(),
         };
         assert_eq!(run_target(None).unwrap_err().kind, "notSetUp");
         assert_eq!(run_target(Some(setup(false))).unwrap_err().kind, "notSetUp");

@@ -160,6 +160,7 @@ mod tests {
             model: Some("haiku".into()),
             disclosure_accepted: true,
             target_language: Some("de".into()),
+            interests: "Rust, local-first software".into(),
         }
     }
 
@@ -191,12 +192,31 @@ mod tests {
         assert!(json.contains("\"disclosureAccepted\": true"), "{json}");
         assert!(json.contains("\"claudeCode\""), "{json}");
         assert!(json.contains("\"targetLanguage\": \"de\""), "{json}");
+        assert!(
+            json.contains("\"interests\": \"Rust, local-first software\""),
+            "{json}"
+        );
         write_assistant(&file, None).unwrap();
         assert_eq!(read_assistant(&file), None, "turning off deletes the file");
         assert!(!file.exists());
         write_assistant(&file, None).unwrap();
 
         assert_eq!(snapshot(&library), before, "the Library is untouched");
+    }
+
+    // The interests field is serde-defaulted, so a setup file from before #121 still loads.
+    #[test]
+    fn an_older_setup_file_without_interests_still_loads() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join(ASSISTANT_FILE);
+        std::fs::write(
+            &file,
+            r#"{"kind":"claudeCode","path":"/usr/bin/claude","model":"haiku","disclosureAccepted":true}"#,
+        )
+        .unwrap();
+        let setup = read_assistant(&file).unwrap();
+        assert_eq!(setup.interests, "");
+        assert!(setup.disclosure_accepted);
     }
 
     #[test]
