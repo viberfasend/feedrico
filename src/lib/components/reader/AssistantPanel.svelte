@@ -53,6 +53,14 @@
     else assist.startEntry('summarize');
   }
 
+  // Choosing Ask means the user wants to type: move focus to the question field once, a frame
+  // later, so it lands after the menu has handed focus back to its trigger.
+  $effect(() => {
+    if (!assist.askOpen) return;
+    const frame = requestAnimationFrame(() => document.getElementById('ask-question')?.focus());
+    return () => cancelAnimationFrame(frame);
+  });
+
   /** Enter in the question field sends the question. */
   function onAskKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter') return;
@@ -131,8 +139,9 @@
           </div>
         {:else if run.phase === 'running'}
           <p class="stream" aria-busy="true">{run.text || 'Working…'}</p>
-        {:else}
-          <!-- Sanitized in the core (Translate) or escaped and reduced by assistant-markdown.ts. -->
+        {:else if !(assist.askOpen && run.phase === 'done')}
+          <!-- Sanitized in the core (Translate) or escaped and reduced by assistant-markdown.ts.
+               A finished Ask answer is already in the conversation above, so it isn't repeated. -->
           <div class="rendered">{@html run.html}</div>
           {#if run.phase === 'stopped'}<p class="note">Stopped. This is what arrived so far.</p>{/if}
         {/if}

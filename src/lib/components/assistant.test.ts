@@ -569,6 +569,24 @@ describe('ask about the Article (#119)', () => {
     expect(q('.panel')!.getAttribute('aria-label')).toBe('Assistant: Ask about this Article');
   });
 
+  it('an answer appears once, in the conversation, and focus moves to the question field', async () => {
+    await render();
+    assist.start(askEntry());
+    flushSync();
+    await settle();
+    expect(document.activeElement?.id).toBe('ask-question');
+    await typeAndSend('What about buses?');
+    tasks.at(-1)!.resolve({
+      text: 'Electric by 2030.',
+      structured: null,
+      article: { excerptOnly: false, truncated: false, wordsUsed: 9, droppedTurns: 0 },
+    });
+    await settle();
+    flushSync();
+    const shown = [...document.querySelectorAll('.panel .rendered')].filter((el) => el.textContent?.includes('Electric by 2030.'));
+    expect(shown).toHaveLength(1);
+  });
+
   it('Enter sends the question on the open Article; the next question resends the conversation', async () => {
     await render();
     assist.start(askEntry());
