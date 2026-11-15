@@ -1,6 +1,7 @@
 <script lang="ts">
   import { articleOptionLabel } from '../../aria';
   import { shortDate } from '../../format';
+  import { assist } from '../../assistant-state.svelte';
   import { app } from '../../state.svelte';
   import { tokens } from '../../tokens/runtime.svelte';
   import FeedIcon from '../FeedIcon.svelte';
@@ -14,6 +15,7 @@
 <VirtualRows {rowHeight} {label}>
   {#snippet row(index)}
     {@const article = app.rowAt(index)}
+    {@const pick = article ? assist.pickFor(article.id) : null}
     <div
       class="row"
       class:unread={article && !article.isRead}
@@ -33,6 +35,7 @@
           <FeedIcon feedId={article.feedId} title={article.feedTitle} favicon={article.favicon} />
           <span class="feed" title={article.feedTitle}>{article.feedTitle}</span>
           {#if article.isStarred}<span class="star"><Icon name="star" size={12} filled label="Starred" /></span>{/if}
+          {#if pick}<span class="pick" title={pick.reason}>Pick</span>{/if}
           <time>{shortDate(article.articleDate)}</time>
         </div>
         <div class="title" title={article.title}>{article.title}</div>
@@ -90,6 +93,15 @@
   .star {
     display: inline-flex;
     color: var(--color-text-accent);
+  }
+  /* A pick of the session's last picks run (#121); the reason is its tooltip. */
+  .pick {
+    flex: none;
+    padding-inline: var(--space-inset-xs);
+    border-radius: var(--radius-pill);
+    background: var(--color-accent-subtle);
+    color: var(--color-text-accent);
+    font-size: var(--font-size-caption);
   }
   time {
     flex: none;

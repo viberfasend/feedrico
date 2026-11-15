@@ -85,12 +85,14 @@
       disclosureAccepted: setup?.disclosureAccepted ?? false,
       // Translate's target language defaults to the system language.
       targetLanguage: setup?.targetLanguage ?? navigator.language,
+      interests: setup?.interests ?? '',
     });
   }
 
   const setModel = (model: string) => setup && save({ ...setup, model: model.trim() || null });
   const setLanguage = (language: string) => setup && save({ ...setup, targetLanguage: language.trim() || null });
   const accept = (accepted: boolean) => setup && save({ ...setup, disclosureAccepted: accepted });
+  const setInterests = (interests: string) => setup && save({ ...setup, interests });
 
   async function turnOff() {
     await save(null);
@@ -304,6 +306,27 @@
           </div>
         </div>
 
+        <div class="row">
+          <div class="row-text">
+            <label class="label" for="{ids}-interests">Your interests</label>
+            <span class="desc" id="{ids}-interests-hint">
+              What you like to read, in a few sentences. Only used when you ask for Picks. Stored on
+              this computer, never in the Library.
+            </span>
+          </div>
+          <div class="control">
+            <textarea
+              id="{ids}-interests"
+              class="interests"
+              rows="3"
+              placeholder="Rust, local-first software; not crypto"
+              aria-describedby="{ids}-interests-hint"
+              value={setup.interests ?? ''}
+              onchange={(e) => setInterests((e.currentTarget as HTMLTextAreaElement).value)}
+            ></textarea>
+          </div>
+        </div>
+
         <div class="row stack">
           <p class="disclosure" id="{ids}-disclosure">{providerLine}</p>
           <label class="accept">
@@ -393,6 +416,19 @@
   }
   .control {
     min-width: 0;
+  }
+  .interests {
+    width: 100%;
+    resize: vertical;
+    padding: var(--space-inset-sm);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-control);
+    background: var(--color-surface-base);
+    color: var(--color-text-default);
+    font: inherit;
+  }
+  .interests:focus-visible {
+    border-color: var(--color-border-focus);
   }
   .found {
     display: grid;
