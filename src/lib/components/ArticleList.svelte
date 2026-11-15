@@ -37,6 +37,19 @@
       onclick: () => app.setSort('newestFirst'),
     },
     { label: 'Oldest first', checked: app.sort === 'oldestFirst', onclick: () => app.setSort('oldestFirst') },
+    // The Assistant's View actions (#120, #121), only with a setup. They live here rather than
+    // in a button of their own, so the header keeps room for the search field at 880 px.
+    ...(assist.viewAvailable
+      ? assist.viewEntries.map(
+          (e, i): MenuItem => ({
+            label: e.menuLabel,
+            disabled: app.total === 0,
+            separatorBefore: i === 0,
+            headingBefore: i === 0 ? 'Assistant' : undefined,
+            onclick: () => assist.start(e),
+          }),
+        )
+      : []),
   ]);
 
   const viewName = $derived.by(() => {
@@ -74,13 +87,10 @@
 
   const hasFeeds = $derived((app.library?.feedCount ?? 0) > 0);
   const refreshing = $derived(app.refresh !== null && !app.refresh.finished);
-  /** The View-level Assistant actions (#120/#121), disabled when the View is empty. */
-  const assistantItems = $derived<MenuItem[]>(
-    assist.viewEntries.map((e) => ({ label: e.menuLabel, disabled: app.total === 0, onclick: () => assist.start(e) })),
-  );
   const showAssistantPanel = $derived(assist.viewRun !== null);
 
-  // The Assistant search trigger needs the machine-local setup; reading it is cheap and local.
+  // The search trigger and the View menu's Assistant actions need the machine-local setup, even
+  // with no Article open (the reader's panel loads it only then); reading it is cheap and local.
   onMount(() => void assist.loadSetup());
 
   let searchTimer: ReturnType<typeof setTimeout>;
@@ -101,9 +111,7 @@
     await assist.askSearch(question);
   }
 
-  // The list pane is always present, so the machine-local setup loads here even when no Article
-  // is open (the reader's panel loads it only with an Article, #115).
-  onMount(() => void assist.loadSetup());
+
 </script>
 
 <section class="list" class:has-panel={showAssistantPanel} id="pane-list" aria-label="Articles" tabindex="-1">
@@ -158,11 +166,6 @@
       <Menu items={viewItems} label={viewLabel} align="end" class="tool">
         <Icon name={layoutMeta[app.layout].icon} size={16} />
       </Menu>
-      {#if assist.viewAvailable}
-        <Menu label="Assistant" class="assistant-trigger" align="end" bind:open={assist.viewMenuOpen} items={assistantItems}>
-          Assistant
-        </Menu>
-      {/if}
       <button class="tool" title="Mark all as read" aria-label="Mark all as read" onclick={() => app.markAllRead()}>
         <Icon name="check" size={16} />
       </button>
@@ -255,21 +258,6 @@
        inside it. A percentage max-height on the panel itself would resolve against its own
        content-sized row and leave a gap below it. */
     grid-template-rows: auto fit-content(45%) minmax(0, 1fr);
-  }
-  .controls :global(.menu-trigger.assistant-trigger) {
-    height: var(--control-height);
-    padding-inline: var(--space-inset-sm);
-    border: 0;
-    border-radius: var(--radius-control);
-    background: none;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-small);
-    cursor: pointer;
-  }
-  .controls :global(.menu-trigger.assistant-trigger:hover),
-  .controls :global(.menu-trigger.assistant-trigger[data-state='open']) {
-    background: var(--color-surface-hover);
-    color: var(--color-text-default);
   }
   .header {
     position: relative;

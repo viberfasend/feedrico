@@ -193,8 +193,6 @@ class AssistantState {
   setup = $state<AssistantSetup | null>(null);
   /** The reader's Assistant menu, opened by the toolbar button or the shortcut. */
   menuOpen = $state(false);
-  /** The Article list's Assistant menu for View actions (#120/#121). */
-  viewMenuOpen = $state(false);
   run = $state<AssistantRun | null>(null);
   /** The Assistant search next to the search field (#122): idle, running or failed. */
   searchRun = $state<'idle' | 'running' | 'error'>('idle');
@@ -548,7 +546,6 @@ class AssistantState {
     this.menuOpen = false;
     this.searchRun = 'idle';
     this.searchError = null;
-    this.viewMenuOpen = false;
   }
 
   private cancelTask() {
