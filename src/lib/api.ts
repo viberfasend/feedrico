@@ -304,6 +304,8 @@ export const api = {
   list: (query: ListQuery, offset: number, limit: number) =>
     invoke<ArticleRow[]>('list_articles', { query, offset, limit }),
   article: (id: number) => invoke<ArticleDetail>('get_article', { id }),
+  /** The Article's position in the View's sorted list, so a result link opens it like a list click. */
+  articleIndex: (query: ListQuery, id: number) => invoke<number | null>('article_index', { query, id }),
   setRead: (id: number, read: boolean) => invoke<void>('set_read', { id, read }),
   setStarred: (id: number, starred: boolean) => invoke<void>('set_starred', { id, starred }),
   markAllRead: (query: ListQuery) => invoke<number[]>('mark_all_read', { query }),

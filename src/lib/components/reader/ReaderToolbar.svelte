@@ -15,7 +15,7 @@
   // The entries that apply right now (an entry can need a text selection, for example), and the
   // selection captured while the menu opens, before focus moves into it.
   const items = $derived(
-    assist.entries.filter((e) => !e.when || e.when()).map((e) => ({ label: e.menuLabel, onclick: () => assist.start(e) })),
+    assist.readerEntries.filter((e) => !e.when || e.when()).map((e) => ({ label: e.menuLabel, onclick: () => assist.start(e) })),
   );
   $effect(() => {
     if (assist.menuOpen) assist.captureSelection();

@@ -741,6 +741,17 @@ export class AppState {
     if (!detail.isRead) await this.setRead(true);
   }
 
+  /**
+   * Opens an Article by id exactly like a click in the list (briefing/picks links, #120/#121):
+   * same index lookup, same reader, Read marked as usual. False when it is not in the View.
+   */
+  async openArticleById(id: number): Promise<boolean> {
+    const index = await api.articleIndex(this.query(), id).catch(() => null);
+    if (index === null || index < 0 || index >= this.total) return false;
+    await this.selectIndex(index);
+    return true;
+  }
+
   /** Moves the highlight without opening: in grids, seeing an Article doesn't make it Read. */
   focusIndex(index: number) {
     if (index < 0 || index >= this.total) return;

@@ -132,6 +132,7 @@ describe('Assistant settings', () => {
       model: 'haiku',
       disclosureAccepted: false,
       targetLanguage: navigator.language,
+      interests: '',
     });
     expect(text()).toContain('gives the Article\'s text to Claude Code on this computer, which sends it to Anthropic under your Claude plan');
     expect(button('Test').disabled, 'Test waits for the disclosure').toBe(true);
@@ -157,7 +158,7 @@ describe('Assistant settings', () => {
   });
 
   it('names Mistral for Vibe and has a free-text model, empty by default', async () => {
-    stored = { kind: 'mistralVibe', path: '/usr/bin/vibe', model: null, disclosureAccepted: false };
+    stored = { kind: 'mistralVibe', path: '/usr/bin/vibe', model: null, disclosureAccepted: false, interests: '' };
     await open();
     expect(text()).toContain('sends it to Mistral. Nothing is sent unless you ask.');
     expect(text()).not.toContain('Claude plan');
@@ -170,7 +171,7 @@ describe('Assistant settings', () => {
   });
 
   it('offers default, haiku, sonnet and opus for Claude, and saves the choice', async () => {
-    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: false };
+    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: false, interests: '' };
     await open();
     const select = document.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
     expect([...select.options].map((o) => o.value)).toEqual(['', 'haiku', 'sonnet', 'opus']);
@@ -186,7 +187,7 @@ describe('Assistant settings', () => {
   });
 
   it('accepting the disclosure enables Test; Test streams the answer and shows the time', async () => {
-    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: false };
+    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: false, interests: '' };
     await open();
     await click(document.querySelector('input[type="checkbox"]')!);
     expect(stored?.disclosureAccepted).toBe(true);
@@ -200,7 +201,7 @@ describe('Assistant settings', () => {
   });
 
   it('shows the streamed text while testing', async () => {
-    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true };
+    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true, interests: '' };
     events = [{ kind: 'text', delta: 'Hel' }];
     runResult = new Promise(() => {});
     await open();
@@ -210,7 +211,7 @@ describe('Assistant settings', () => {
   });
 
   it('turns plain errors into words with a next step', async () => {
-    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true };
+    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true, interests: '' };
     await open();
     runResult = Promise.reject({ kind: 'notSignedIn', message: 'x' });
     await click(button('Test'));
@@ -223,7 +224,7 @@ describe('Assistant settings', () => {
   });
 
   it('Turn off deletes the setup and returns to the off state', async () => {
-    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true };
+    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true, interests: '' };
     await open();
     await click(button('Turn off'));
     expect(mockAssistant.setAssistantSetup).toHaveBeenLastCalledWith(null);
@@ -233,7 +234,7 @@ describe('Assistant settings', () => {
   });
 
   it('keeps the set-up Assistant in the list, selected, when it is no longer found', async () => {
-    stored = { kind: 'claudeCode', path: '/gone/claude', model: 'haiku', disclosureAccepted: true };
+    stored = { kind: 'claudeCode', path: '/gone/claude', model: 'haiku', disclosureAccepted: true, interests: '' };
     mockAssistant.detectAssistants.mockImplementation(async () => [vibe]);
     await open();
     await click(button('Change'));
@@ -243,8 +244,27 @@ describe('Assistant settings', () => {
     expect(text()).toContain('Not found at /gone/claude \u2014 check the path or Look again');
   });
 
+  it('saves the interests as free text, and keeps them when the Assistant changes', async () => {
+    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true, interests: '' };
+    await open();
+    const area = document.querySelector<HTMLTextAreaElement>('textarea')!;
+    expect(area.placeholder).toContain('Rust');
+    area.value = 'Rust, local-first software; not crypto';
+    area.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    flushSync();
+    expect(stored?.interests).toBe('Rust, local-first software; not crypto');
+    expect(text()).toContain('never in the Library');
+    // Changing the Assistant keeps the interests.
+    mockAssistant.detectAssistants.mockImplementation(async () => [claude('plan'), vibe]);
+    await click(button('Change'));
+    await click([...document.querySelectorAll<HTMLInputElement>('input[type="radio"]')].at(-1)!);
+    expect(stored?.kind).toBe('mistralVibe');
+    expect(stored?.interests).toBe('Rust, local-first software; not crypto');
+  });
+
   it('lists the set-up Assistant even when nothing is found', async () => {
-    stored = { kind: 'claudeCode', path: '/gone/claude', model: 'haiku', disclosureAccepted: true };
+    stored = { kind: 'claudeCode', path: '/gone/claude', model: 'haiku', disclosureAccepted: true, interests: '' };
     await open();
     await click(button('Change'));
     expect(text()).toContain('Not found at /gone/claude');

@@ -61,7 +61,7 @@ const press = (key: string, init: KeyboardEventInit = {}) => {
   flushSync();
 };
 
-async function render(s: AssistantSetup | null = { kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: true }) {
+async function render(s: AssistantSetup | null = { kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: true, interests: '' }) {
   setup = s;
   app.phase = 'ready';
   app.article = article();
@@ -105,7 +105,7 @@ describe('visibility', () => {
   });
 
   it('stays hidden while the disclosure is not accepted, and runs nothing', async () => {
-    await render({ kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: false });
+    await render({ kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: false, interests: '' });
     expect(q('[aria-label="Assistant"]')).toBeNull();
     assist.start(assist.entries[0]!);
     flushSync();
@@ -144,7 +144,7 @@ describe('a run', () => {
   });
 
   it('labels Mistral Vibe by name', async () => {
-    await render({ kind: 'mistralVibe', path: '/bin/vibe', model: null, disclosureAccepted: true });
+    await render({ kind: 'mistralVibe', path: '/bin/vibe', model: null, disclosureAccepted: true, interests: '' });
     await start();
     expect(q('.panel')!.textContent).toContain('Written by Mistral Vibe · may be wrong');
   });

@@ -15,6 +15,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { ListQuery } from './api';
 
 export type AssistantKind = 'claudeCode' | 'mistralVibe';
 export type SignIn = 'plan' | 'apiKey' | 'notSignedIn' | 'unknown';
@@ -35,6 +36,8 @@ export interface AssistantSetup {
   disclosureAccepted: boolean;
   /** The language Translate renders Articles into; null/absent means the system language. */
   targetLanguage?: string | null;
+  /** Free text: what the user likes to read; used only by the picks run (#121). */
+  interests?: string;
 }
 
 /** What to run. Wave 1 has only 'test'; each feature issue adds its action. */
@@ -55,12 +58,37 @@ export type AssistantAction =
       /** The Folder whose Feeds are being sorted, or null for the top level. */
       folderId: number | null;
     }
-  | { kind: 'searchQuery'; question: string };
+  | { kind: 'searchQuery'; question: string }
+  | { kind: 'briefing'; query: ListQuery }
+  | { kind: 'picks'; query: ListQuery };
 
 /** One proposed move from a 'folderSuggestions' run: the run's structured output. */
 export interface FolderSuggestion {
   feedId: number;
   folder: string;
+}
+
+/** The validated briefing of a View (#120), as the shell returns it in `structured`. */
+export interface BriefingResult {
+  considered: number;
+  capped: boolean;
+  topics: { topic: string; sentence: string; articleIds: number[] }[];
+  articles: { id: number; title: string; feedTitle: string }[];
+}
+
+/** The validated picks of a View (#121), as the shell returns it in `structured`. */
+export interface PicksResult {
+  considered: number;
+  capped: boolean;
+  picks: { id: number; title: string; feedTitle: string; score: number; reason: string }[];
+}
+
+export function isBriefingResult(v: unknown): v is BriefingResult {
+  return typeof v === 'object' && v !== null && Array.isArray((v as BriefingResult).topics) && Array.isArray((v as BriefingResult).articles);
+}
+
+export function isPicksResult(v: unknown): v is PicksResult {
+  return typeof v === 'object' && v !== null && typeof (v as PicksResult).considered === 'number' && Array.isArray((v as PicksResult).picks);
 }
 
 export type AssistantEvent =
@@ -131,7 +159,11 @@ export type AssistantErrorKind =
   | 'malformed'
   | 'failed'
   /** No machine-local setup, or its disclosure isn't accepted yet: nothing was run. */
-  | 'notSetUp';
+  | 'notSetUp'
+  /** The picks run needs the user's interests first (#121). */
+  | 'noInterests'
+  /** The action did not fit the current View (for example no Articles). */
+  | 'invalid';
 
 export const assistantNames: Record<AssistantKind, string> = {
   claudeCode: 'Claude Code',

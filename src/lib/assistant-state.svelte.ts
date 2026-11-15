@@ -1,8 +1,10 @@
-// The current Assistant run, shown in the reader's panel (#115). Results are ephemeral: one run
-// at a time, never persisted, discarded when the Article changes or the reader closes.
+// The current Assistant run, shown in the reader's panel (#115) or, for View actions, above the
+// Article list (#120/#121). Results are ephemeral: one run per scope at a time, never persisted,
+// discarded when the Article (reader runs) or the View (View runs) changes.
 //
-// Feature issues (#116 and later) add an action to `assistantEntries`; the menu, the command
-// palette and the panel pick it up from there.
+// Feature issues add an action to `assistantEntries`; the menu, the command palette and the
+// panels pick it up from there. Entries default to the reader's scope; 'view' entries act on the
+// current View and need no open Article.
 import { isCommandError } from './api';
 import { guessLanguage, primarySubtag } from './assistant-language';
 import { renderMarkdown } from './assistant-markdown';
@@ -12,6 +14,7 @@ import {
   assistantProviders,
   getAssistantSetup,
   parseSearchQueryResult,
+  isPicksResult,
   runAssistant,
   type ArticleNotes,
   type AssistantAction,
@@ -19,19 +22,23 @@ import {
   type AssistantKind,
   type AssistantResult,
   type AssistantSetup,
+  type PicksResult,
   type RunningTask,
 } from './assistant';
 import { app } from './state.svelte';
 
 export interface AssistantEntry {
   id: string;
-  /** The item in the reader's Assistant menu. */
+  /** The item in the Assistant menu. */
   menuLabel: string;
   /** The command palette entry. */
   paletteLabel: string;
   /** Names the run in the panel. */
   title: string;
-  /** Article actions build their action from the open Article's id when the run starts. */
+  /** Where the entry is offered: the reader ('reader', the default) or the current View ('view'). */
+  scope?: 'reader' | 'view';
+  /** Reader actions build their action from the open Article's id when the run starts; View
+   *  actions ignore it. */
   action: AssistantAction | ((articleId: number) => AssistantAction);
   /** Optional gate, re-checked whenever the menu or palette renders (a selection exists, …). */
   when?: () => boolean;
@@ -77,6 +84,22 @@ export const assistantEntries: AssistantEntry[] = [
     title: 'Ask about this Article',
     action: (articleId) => ({ kind: 'ask', articleId, question: '', history: [] }),
   },
+  {
+    id: 'briefing',
+    scope: 'view',
+    menuLabel: 'Brief this View',
+    paletteLabel: 'Assistant: Brief this View',
+    title: 'Briefing',
+    action: () => ({ kind: 'briefing', query: app.query() }),
+  },
+  {
+    id: 'picks',
+    scope: 'view',
+    menuLabel: 'Picks for this View',
+    paletteLabel: 'Assistant: Picks for this View',
+    title: 'Picks',
+    action: () => ({ kind: 'picks', query: app.query() }),
+  },
 ];
 
 export type RunPhase = 'running' | 'done' | 'stopped' | 'error';
@@ -92,6 +115,8 @@ export interface AssistantRun {
   error: AssistantErrorKind | null;
   /** What the input was: excerpt, truncation, dropped turns. */
   notes: ArticleNotes | null;
+  /** The validated structured result of a View run (#120/#121). */
+  structured: unknown | null;
 }
 
 /** One earlier question and its answer in the Ask conversation (ephemeral, in memory only). */
@@ -102,7 +127,7 @@ export interface AskTurn {
 }
 
 const BINARY: Record<AssistantKind, string> = { claudeCode: 'claude', mistralVibe: 'vibe' };
-const KINDS: AssistantErrorKind[] = ['notInstalled', 'notSignedIn', 'usageLimit', 'offline', 'timedOut', 'cancelled', 'malformed', 'failed', 'notSetUp'];
+const KINDS: AssistantErrorKind[] = ['notInstalled', 'notSignedIn', 'usageLimit', 'offline', 'timedOut', 'cancelled', 'malformed', 'failed', 'notSetUp', 'noInterests', 'invalid'];
 
 /** Plain words for an error and what to do next. */
 export function describeError(kind: AssistantErrorKind, assistant: AssistantKind): { what: string; next: string } {
@@ -124,6 +149,10 @@ export function describeError(kind: AssistantErrorKind, assistant: AssistantKind
       return { what: `${name} sent an answer Feedrico couldn't read.`, next: 'Try again.' };
     case 'notSetUp':
       return { what: 'No Assistant is set up on this computer.', next: 'Set one up in Settings, under Assistant.' };
+    case 'noInterests':
+      return { what: 'Picks need to know what you like to read.', next: 'Add a few sentences in Settings, under Assistant, Your interests.' };
+    case 'invalid':
+      return { what: 'That did not work for this View.', next: 'Try again, or choose another View.' };
     case 'failed':
       return { what: `${name} couldn't finish.`, next: `Try again. If it keeps failing, run \`${BINARY[assistant]}\` in a terminal to see what is wrong.` };
   }
@@ -150,10 +179,16 @@ class AssistantState {
   setup = $state<AssistantSetup | null>(null);
   /** The reader's Assistant menu, opened by the toolbar button or the shortcut. */
   menuOpen = $state(false);
+  /** The Article list's Assistant menu for View actions (#120/#121). */
+  viewMenuOpen = $state(false);
   run = $state<AssistantRun | null>(null);
   /** The Assistant search next to the search field (#122): idle, running or failed. */
   searchRun = $state<'idle' | 'running' | 'error'>('idle');
   searchError = $state<AssistantErrorKind | null>(null);
+  /** The current View-level run (briefing, picks), shown above the Article list. */
+  viewRun = $state<AssistantRun | null>(null);
+  /** The picks of the last picks run, highlighted in the list for this session. */
+  picks = $state<PicksResult | null>(null);
   /** What the polite live region says: completion, never tokens. */
   announcement = $state('');
   /** Ask mode (#119): the question field and the conversation so far, gone on Article change. */
@@ -173,6 +208,8 @@ class AssistantState {
   private articleLanguage = $derived(
     app.article ? guessLanguage(`${app.article.title}\n${app.article.contentHtml}`) : null,
   );
+  private viewSeq = 0;
+  private viewTask: RunningTask | null = null;
 
   /** Reads the setup; cheap and local. Call again after the user changes it in Settings. */
   async loadSetup() {
@@ -181,7 +218,10 @@ class AssistantState {
     } catch {
       this.setup = null;
     }
-    if (!this.setup) this.discard();
+    if (!this.setup) {
+      this.discard();
+      this.discardView();
+    }
     // Keep the selection current while the user selects. Opening the palette or the menu moves
     // focus and collapses the live selection, so that keeps the last one; a selection cleared
     // while focus stays in the reader (a click on the text) forgets it.
@@ -217,8 +257,32 @@ class AssistantState {
     if (entry) this.start(entry);
   }
 
+  /** Whether the View-level entries apply: set up, with a Library ready. */
+  get viewAvailable() {
+    return this.setup?.disclosureAccepted === true && app.phase === 'ready';
+  }
+
+  /** The entries offered in the reader's Assistant menu. */
+  get readerEntries() {
+    return this.entries.filter((e) => (e.scope ?? 'reader') === 'reader');
+  }
+
+  /** The entries offered for the current View. */
+  get viewEntries() {
+    return assistantEntries.filter((e) => e.scope === 'view');
+  }
+
+  /** The pick for an Article id, if the last picks run ranked it. */
+  pickFor(id: number) {
+    return this.picks?.picks.find((p) => p.id === id) ?? null;
+  }
+
   start(entry: AssistantEntry) {
     if (!this.setup?.disclosureAccepted) return;
+    if ((entry.scope ?? 'reader') === 'view') {
+      this.startView(entry);
+      return;
+    }
     if (entry.when && !entry.when()) return;
     // Article actions need the open Article; resolve the action before discard() clears state.
     const action =
@@ -271,7 +335,7 @@ class AssistantState {
     hooks?: { onDone?: (result: AssistantResult) => void; onError?: () => void },
   ) {
     const id = ++this.seq;
-    this.run = { id, entry, phase: 'running', text: '', html: '', error: null, notes: null };
+    this.run = { id, entry, phase: 'running', text: '', html: '', error: null, notes: null, structured: null };
     this.announcement = '';
     const live = () => (this.seq === id && this.run?.phase === 'running' ? this.run : null);
     const task = runAssistant(action, (event) => {
@@ -287,6 +351,7 @@ class AssistantState {
         // Translate's answer is HTML sanitized in the core; everything else is Markdown.
         run.html = result.html ?? renderMarkdown(result.text);
         run.notes = result.article ?? null;
+        run.structured = result.structured;
         run.phase = 'done';
         this.announcement = 'Answer ready';
         hooks?.onDone?.(result);
@@ -351,6 +416,51 @@ class AssistantState {
     }
   }
 
+  /** A View-level run: briefing (#120) or picks (#121) of the current View. */
+  private startView(entry: AssistantEntry) {
+    this.discardView();
+    const id = ++this.viewSeq;
+    this.viewRun = { id, entry, phase: 'running', text: '', html: '', error: null, notes: null, structured: null };
+    this.announcement = '';
+    const live = () => (this.viewSeq === id && this.viewRun?.phase === 'running' ? this.viewRun : null);
+    // View actions read the current View, not an Article; the id argument is unused.
+    const action = typeof entry.action === 'function' ? entry.action(app.article?.id ?? 0) : entry.action;
+    const task = runAssistant(action, (event) => {
+      const run = live();
+      if (run && event.kind === 'text') run.text += event.delta;
+    });
+    this.viewTask = task;
+    task.result.then(
+      (result) => {
+        const run = live();
+        if (!run) return;
+        run.text = result.text;
+        if (!result.structured) {
+          run.phase = 'error';
+          run.error = 'malformed';
+          this.announcement = describeError('malformed', this.setup?.kind ?? 'claudeCode').what;
+          return;
+        }
+        run.structured = result.structured;
+        run.phase = 'done';
+        if (entry.id === 'picks' && isPicksResult(result.structured)) this.picks = result.structured;
+        this.announcement = 'Answer ready';
+      },
+      (e: unknown) => {
+        const run = live();
+        if (!run) return;
+        const kind = isCommandError(e) && KINDS.includes(e.kind as AssistantErrorKind) ? (e.kind as AssistantErrorKind) : 'failed';
+        if (kind === 'cancelled') {
+          run.phase = 'stopped';
+          return;
+        }
+        run.phase = 'error';
+        run.error = kind;
+        this.announcement = describeError(kind, this.setup?.kind ?? 'claudeCode').what;
+      },
+    );
+  }
+
   /** Stop: ends the process, keeps what already arrived. */
   stop() {
     const run = this.run;
@@ -358,6 +468,14 @@ class AssistantState {
     run.phase = 'stopped';
     run.html = renderMarkdown(run.text);
     this.cancelTask();
+  }
+
+  /** Stop a View-level run the same way. */
+  stopView() {
+    const run = this.viewRun;
+    if (!run || run.phase !== 'running') return;
+    run.phase = 'stopped';
+    this.cancelViewTask();
   }
 
   retry() {
@@ -388,6 +506,15 @@ class AssistantState {
     this.selection = null;
   }
 
+  /** The View changed or the panel closed: cancel a View run and drop its result and picks. */
+  discardView() {
+    this.viewSeq++;
+    if (this.viewRun?.phase === 'running') this.cancelViewTask();
+    this.viewTask = null;
+    this.viewRun = null;
+    this.picks = null;
+  }
+
   async copy() {
     const text = this.run?.text;
     if (!text) return;
@@ -402,15 +529,23 @@ class AssistantState {
   /** For tests: back to the initial state. */
   reset() {
     this.discard();
+    this.discardView();
     this.setup = null;
     this.menuOpen = false;
     this.searchRun = 'idle';
     this.searchError = null;
+    this.viewMenuOpen = false;
   }
 
   private cancelTask() {
     const task = this.task;
     this.task = null;
+    task?.cancel().catch(() => {});
+  }
+
+  private cancelViewTask() {
+    const task = this.viewTask;
+    this.viewTask = null;
     task?.cancel().catch(() => {});
   }
 }

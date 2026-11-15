@@ -49,9 +49,12 @@
       // Assistant entries only exist with a setup and an Article in the reader; an entry can
       // also gate itself (a text selection exists, for example).
       ...(assist.available
-        ? assist.entries
+        ? assist.readerEntries
             .filter((e) => !e.when || e.when())
             .map((e) => ({ id: `action:assistant:${e.id}`, group: 'action' as const, icon: 'check' as const, label: e.paletteLabel, run: () => assist.start(e) }))
+        : []),
+      ...(assist.viewAvailable
+        ? assist.viewEntries.map((e) => ({ id: `action:assistant:${e.id}`, group: 'action' as const, icon: 'check' as const, label: e.paletteLabel, run: () => assist.start(e) }))
         : []),
       // Folder suggestions work on the sidebar, no Article needed; still only with a setup.
       ...(assist.setup?.disclosureAccepted

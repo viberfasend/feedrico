@@ -81,6 +81,7 @@ const mockApi = {
     }),
   ),
   setRead: vi.fn(async () => {}),
+  articleIndex: vi.fn(async (_q: ListQuery, id: number) => (id <= 4 ? id - 1 : null)),
   deleteFolder: vi.fn(async () => {}),
   openExternal: vi.fn(async () => {}),
   appVersion: vi.fn(async () => '0.1.0'),
@@ -100,6 +101,11 @@ vi.mock('../api', async (importOriginal) => ({
 }));
 
 let assistantSetup: unknown = null;
+interface FakeTask {
+  resolve: (r: { text: string; structured: unknown }) => void;
+  reject: (e: unknown) => void;
+}
+const assistantTasks: FakeTask[] = [];
 vi.mock('../assistant', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../assistant')>()),
   getAssistantSetup: async () => assistantSetup,
@@ -108,6 +114,14 @@ vi.mock('../assistant', async (importOriginal) => ({
     { kind: 'claudeCode', path: '/usr/bin/claude', version: '2.1.0', signIn: 'apiKey' },
     { kind: 'mistralVibe', path: '/usr/bin/vibe', version: '1.0', signIn: 'notSignedIn' },
   ],
+  runAssistant: vi.fn(() => {
+    let resolve!: FakeTask['resolve'];
+    let reject!: FakeTask['reject'];
+    const result = new Promise<{ text: string; structured: unknown }>((res, rej) => ((resolve = res), (reject = rej)));
+    result.catch(() => {});
+    assistantTasks.push({ resolve, reject });
+    return { runId: `r${assistantTasks.length}`, result, cancel: async () => reject({ kind: 'cancelled', message: 'x' }) };
+  }),
 }));
 
 // happy-dom's Animation has no cancel(); zero-duration transitions skip it entirely.
@@ -154,6 +168,7 @@ async function expectNoViolations(label: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  assistantTasks.length = 0;
   localStorage.clear();
   assistantSetup = null;
   assist.reset();
@@ -260,6 +275,44 @@ describe('axe over every screen state', () => {
     flushSync();
     await expectNoViolations('broken feeds confirmation');
     app.brokenFeedsOpen = false;
+  });
+
+  it('has no violations with the Assistant View panel open while running, done and failed', async () => {
+    assistantSetup = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true, interests: 'Rust' };
+    await mountReady('list');
+    const entry = assist.viewEntries.find((e) => e.id === 'briefing')!;
+    assist.start(entry);
+    flushSync();
+    await settle();
+    expect(document.querySelector('.vpanel')).not.toBeNull();
+    await expectNoViolations('assistant view panel (running)');
+    assistantTasks.at(-1)!.resolve({
+      text: '',
+      structured: {
+        considered: 4,
+        capped: false,
+        topics: [{ topic: 'Rust', sentence: 'Four posts about Rust.', articleIds: [1, 2] }],
+        articles: [
+          { id: 1, title: 'Article 1', feedTitle: 'Rust Blog' },
+          { id: 2, title: 'Article 2', feedTitle: 'Rust Blog' },
+        ],
+      },
+    });
+    await settle();
+    flushSync();
+    await settle();
+    flushSync();
+    expect(document.querySelector('.vpanel .topics')).not.toBeNull();
+    await expectNoViolations('assistant view panel (done)');
+    assist.start(assist.viewEntries.find((e) => e.id === 'picks')!);
+    flushSync();
+    await settle();
+    assistantTasks.at(-1)!.reject({ kind: 'noInterests', message: 'x' });
+    await settle();
+    flushSync();
+    expect(document.querySelector('.vpanel .error')).not.toBeNull();
+    await expectNoViolations('assistant view panel (error)');
+    assist.discardView();
   });
 
   it('has no violations with the command palette open', async () => {

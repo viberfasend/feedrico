@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { LAYOUTS, type Layout } from '../api';
-  import { app } from '../state.svelte';
   import { assist } from '../assistant-state.svelte';
+  import { app } from '../state.svelte';
   import Button from '../ui/Button.svelte';
   import Menu, { type MenuItem } from '../ui/Menu.svelte';
+  import AssistantViewPanel from './AssistantViewPanel.svelte';
   import EmptyState from './EmptyState.svelte';
   import Icon, { type IconName } from './Icon.svelte';
   import CardsLayout from './layouts/CardsLayout.svelte';
@@ -73,6 +74,11 @@
 
   const hasFeeds = $derived((app.library?.feedCount ?? 0) > 0);
   const refreshing = $derived(app.refresh !== null && !app.refresh.finished);
+  /** The View-level Assistant actions (#120/#121), disabled when the View is empty. */
+  const assistantItems = $derived<MenuItem[]>(
+    assist.viewEntries.map((e) => ({ label: e.menuLabel, disabled: app.total === 0, onclick: () => assist.start(e) })),
+  );
+  const showAssistantPanel = $derived(assist.viewRun !== null);
 
   // The Assistant search trigger needs the machine-local setup; reading it is cheap and local.
   onMount(() => void assist.loadSetup());
@@ -94,9 +100,13 @@
     }
     await assist.askSearch(question);
   }
+
+  // The list pane is always present, so the machine-local setup loads here even when no Article
+  // is open (the reader's panel loads it only with an Article, #115).
+  onMount(() => void assist.loadSetup());
 </script>
 
-<section class="list" id="pane-list" aria-label="Articles" tabindex="-1">
+<section class="list" class:has-panel={showAssistantPanel} id="pane-list" aria-label="Articles" tabindex="-1">
   <header class="header">
     <div class="heading">
       <h1 title={title}>{title}</h1>
@@ -148,6 +158,11 @@
       <Menu items={viewItems} label={viewLabel} align="end" class="tool">
         <Icon name={layoutMeta[app.layout].icon} size={16} />
       </Menu>
+      {#if assist.viewAvailable}
+        <Menu label="Assistant" class="assistant-trigger" align="end" bind:open={assist.viewMenuOpen} items={assistantItems}>
+          Assistant
+        </Menu>
+      {/if}
       <button class="tool" title="Mark all as read" aria-label="Mark all as read" onclick={() => app.markAllRead()}>
         <Icon name="check" size={16} />
       </button>
@@ -170,6 +185,10 @@
       </div>
     {/if}
   </header>
+
+  {#if showAssistantPanel}
+    <AssistantViewPanel />
+  {/if}
 
   {#if app.hasNewArticles}
     <button class="new-pill" onclick={() => app.resetList()}>New Articles · show</button>
@@ -229,6 +248,25 @@
     height: 100%;
     background: var(--color-surface-base);
     border-inline-end: 1px solid var(--color-border-subtle);
+  }
+  /* With an Assistant panel above the list (#120/#121), the list gets the remaining row. */
+  .list.has-panel {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .controls :global(.menu-trigger.assistant-trigger) {
+    height: var(--control-height);
+    padding-inline: var(--space-inset-sm);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-small);
+    cursor: pointer;
+  }
+  .controls :global(.menu-trigger.assistant-trigger:hover),
+  .controls :global(.menu-trigger.assistant-trigger[data-state='open']) {
+    background: var(--color-surface-hover);
+    color: var(--color-text-default);
   }
   .header {
     position: relative;
