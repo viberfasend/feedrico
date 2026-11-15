@@ -84,6 +84,11 @@ export class AppState {
   search = $state('');
   /** False once the user widened a search from the selected Folder or Feed to everything. */
   searchScoped = $state(true);
+  /**
+   * Set by an Assistant-generated search (#122): the scope and date range the Assistant picked.
+   * While set, `search` is a raw FTS5 expression and stays editable in the search field.
+   */
+  searchAssisted = $state<{ feed?: number; folder?: number; since?: number; until?: number } | null>(null);
 
   /** Number of Articles in the current list. */
   total = $state(0);
@@ -195,6 +200,7 @@ export class AppState {
     this.attention = null;
     this.selection = { kind: 'allUnread' };
     this.search = '';
+    this.searchAssisted = null;
     this.phase = 'ready';
     this.layouts = await api.layouts();
     this.settings = await api.settings();
@@ -528,12 +534,15 @@ export class AppState {
     const search = this.search.trim();
     if (search) {
       const scope = this.searchScope;
-      const view: View =
-        scope?.kind === 'feed'
-          ? { kind: 'search', feed: scope.id }
-          : scope?.kind === 'folder'
-            ? { kind: 'search', folder: scope.id }
-            : { kind: 'search' };
+      const assisted = this.searchAssisted;
+      const view: View = {
+        kind: 'search',
+        feed: scope?.kind === 'feed' ? scope.id : undefined,
+        folder: scope?.kind === 'folder' ? scope.id : undefined,
+        since: assisted?.since,
+        until: assisted?.until,
+        ...(assisted ? { fts: true } : {}),
+      };
       return { view, sort: this.sort, search, withLeadImage };
     }
     const s = this.selection;
@@ -578,6 +587,7 @@ export class AppState {
   select(selection: Selection) {
     this.selection = selection;
     this.search = '';
+    this.searchAssisted = null;
     this.searchScoped = true;
     if (!this.perf) {
       // Best effort: a failed save only means the next start opens All Unread.
@@ -593,6 +603,10 @@ export class AppState {
    * removes the scope. Smart Views always search everything.
    */
   get searchScope(): { kind: 'feed' | 'folder'; id: number } | null {
+    // An Assistant-picked scope (#122) wins over the selected Folder or Feed.
+    const assisted = this.searchAssisted;
+    if (assisted?.feed != null) return { kind: 'feed', id: assisted.feed };
+    if (assisted?.folder != null) return { kind: 'folder', id: assisted.folder };
     const s = this.selection;
     return this.searchScoped && (s.kind === 'feed' || s.kind === 'folder') ? s : null;
   }
@@ -600,10 +614,25 @@ export class AppState {
   /** Drops the Folder or Feed scope for this search; selecting a View brings it back. */
   searchEverywhere() {
     this.searchScoped = false;
+    if (this.searchAssisted) {
+      const { since, until } = this.searchAssisted;
+      this.searchAssisted = { since, until };
+    }
     return this.search.trim() ? this.resetList() : Promise.resolve();
   }
 
   setSearch(search: string) {
+    this.search = search;
+    if (!search.trim()) this.searchAssisted = null;
+    return this.resetList();
+  }
+
+  /**
+   * An Assistant-generated search (#122): the query text for the search field (editable there)
+   * plus the scope and date range the Assistant picked, already validated against the Library.
+   */
+  setSearchQuery(search: string, scope: { feed?: number; folder?: number; since?: number; until?: number } = {}) {
+    this.searchAssisted = scope;
     this.search = search;
     return this.resetList();
   }

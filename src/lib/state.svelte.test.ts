@@ -377,6 +377,47 @@ describe('Check for updates', () => {
     expect(app.query().view, 'Smart Views search everything').toEqual({ kind: 'search' });
   });
 
+  // #122: an Assistant-generated search runs as a raw FTS expression with the Assistant's scope
+  // and date range, and normal search (no Assistant involved) stays plain text.
+  it('maps an Assistant search to a raw FTS Search View with scope and date range', () => {
+    const app = new AppState();
+    app.selection = { kind: 'allUnread' };
+    app.search = 'rust';
+    expect(app.query().view).toEqual({ kind: 'search' });
+    expect(app.query().view).not.toHaveProperty('fts', true);
+
+    void app.setSearchQuery('title:"wal"* AND sqlite', { feed: 7, since: 1_740_787_200, until: 1_748_649_599 });
+    expect(app.search).toBe('title:"wal"* AND sqlite');
+    expect(app.query().view).toEqual({
+      kind: 'search',
+      feed: 7,
+      since: 1_740_787_200,
+      until: 1_748_649_599,
+      fts: true,
+    });
+    expect(app.query().search).toBe('title:"wal"* AND sqlite');
+    // The Assistant-picked scope wins over the selected View and shows in the chip.
+    app.selection = { kind: 'folder', id: 3 };
+    expect(app.searchScope).toEqual({ kind: 'feed', id: 7 });
+    // "Search everywhere" drops the Assistant scope but keeps the date range.
+    void app.searchEverywhere();
+    expect(app.searchScope).toBeNull();
+    expect(app.query().view).toEqual({ kind: 'search', since: 1_740_787_200, until: 1_748_649_599, fts: true });
+    // Editing the generated query keeps it a raw, editable FTS expression.
+    void app.setSearch('title:"wal"* OR wal2');
+    expect(app.query().view).toEqual({ kind: 'search', since: 1_740_787_200, until: 1_748_649_599, fts: true });
+    // Clearing the field ends the assisted search: back to plain text.
+    void app.setSearch('');
+    app.search = 'wal';
+    expect(app.query().view).toEqual({ kind: 'search' });
+    expect(app.query().view).not.toHaveProperty('fts', true);
+    // Selecting a View also ends it.
+    void app.setSearchQuery('wal', { folder: 2 });
+    void app.select({ kind: 'starred' });
+    app.search = 'wal';
+    expect(app.query().view).toEqual({ kind: 'search' });
+  });
+
   // #62: every start opened All Unread. The last View is stored in the Library as a View key.
   it('turns Selections into View keys and back, rejecting unknown keys', () => {
     for (const s of [{ kind: 'allUnread' }, { kind: 'today' }, { kind: 'starred' }, { kind: 'feed', id: 7 }, { kind: 'folder', id: 2 }] as const) {

@@ -28,8 +28,8 @@ pub mod detect;
 pub mod folder_suggestions;
 pub mod prompts;
 pub mod run;
-pub mod translate;
 pub mod search;
+pub mod translate;
 
 use std::path::PathBuf;
 use std::time::Duration;

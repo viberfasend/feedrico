@@ -118,6 +118,7 @@ vi.mock('svelte/transition', () => ({
 
 const { app } = await import('../state.svelte');
 const { folderSuggestions } = await import('../folder-suggestions.svelte');
+const { assist } = await import('../assistant-state.svelte');
 const { default: App } = await import('../../App.svelte');
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -154,6 +155,8 @@ async function expectNoViolations(label: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  assistantSetup = null;
+  assist.reset();
   app.settingsOpen = false;
   app.brokenFeedsOpen = false;
   app.addFeedOpen = false;
@@ -304,5 +307,21 @@ describe('axe over every screen state', () => {
     await expectNoViolations('command palette with Assistant entry');
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
     folderSuggestions.reset();
+  });
+
+  // #122: the Assistant search trigger next to the search field, idle and busy.
+  it('has no violations with the Assistant search trigger shown and busy', async () => {
+    assistantSetup = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true };
+    await mountReady('list');
+    await settle();
+    flushSync();
+    const trigger = document.querySelector<HTMLButtonElement>('#assistant-search');
+    expect(trigger, 'the trigger is shown once an Assistant is set up').not.toBeNull();
+    expect(trigger!.getAttribute('aria-label')).toBe('Ask the Assistant to search');
+    await expectNoViolations('assistant search trigger');
+    assist.searchRun = 'running';
+    flushSync();
+    expect(trigger!.getAttribute('aria-busy')).toBe('true');
+    await expectNoViolations('assistant search trigger busy');
   });
 });
