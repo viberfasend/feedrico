@@ -87,6 +87,14 @@
 
   const hasFeeds = $derived((app.library?.feedCount ?? 0) > 0);
   const refreshing = $derived(app.refresh !== null && !app.refresh.finished);
+  /** The date range an Assistant search picked (#122), shown so the filter is never hidden. */
+  const dateRange = $derived.by(() => {
+    const a = app.searchAssisted;
+    if (!app.search.trim() || !a || (a.since == null && a.until == null)) return null;
+    const fmt = (t: number) => new Date(t * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' });
+    if (a.since != null && a.until != null) return `from ${fmt(a.since)} – ${fmt(a.until)}`;
+    return a.since != null ? `since ${fmt(a.since)}` : `until ${fmt(a.until!)}`;
+  });
   const showAssistantPanel = $derived(assist.viewRun !== null);
 
   // The search trigger and the View menu's Assistant actions need the machine-local setup, even
@@ -119,6 +127,14 @@
     <div class="heading">
       <h1 title={title}>{title}</h1>
       {#if !app.hideCounts}<span class="total">{app.total.toLocaleString()}</span>{/if}
+      {#if dateRange}
+        <button
+          class="dates"
+          title="Remove the date range"
+          aria-label={`Only Articles ${dateRange}. Remove the date range`}
+          onclick={() => void app.clearSearchDates()}
+        ><span class="scope-name" title={dateRange}>{dateRange.replace(/^from /, '')}</span><Icon name="close" size={12} /></button>
+      {/if}
     </div>
     <div class="controls">
       <label class="search">
@@ -268,8 +284,11 @@
   }
   .heading {
     display: flex;
+    /* The date chip of an Assistant search moves to its own line rather than squeezing the
+       title at the window's minimum width. */
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--space-inline-sm);
+    gap: var(--space-stack-2xs) var(--space-inline-sm);
     min-width: 0;
   }
   h1 {
@@ -313,6 +332,23 @@
     align-items: center;
     gap: var(--space-stack-2xs);
     max-width: 45%;
+    min-height: 24px;
+    padding-inline: var(--space-inset-sm);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--color-accent-subtle);
+    color: var(--color-text-default);
+    font: inherit;
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+  }
+  .dates {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-stack-2xs);
+    min-width: 0;
+    max-width: 100%;
     min-height: 24px;
     padding-inline: var(--space-inset-sm);
     border: 0;

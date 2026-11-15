@@ -621,6 +621,14 @@ export class AppState {
     return this.search.trim() ? this.resetList() : Promise.resolve();
   }
 
+  /** Drops the Assistant-picked date range (#122) from this search; the query stays. */
+  clearSearchDates() {
+    if (!this.searchAssisted) return Promise.resolve();
+    const { feed, folder } = this.searchAssisted;
+    this.searchAssisted = { feed, folder };
+    return this.resetList();
+  }
+
   setSearch(search: string) {
     this.search = search;
     if (!search.trim()) this.searchAssisted = null;
