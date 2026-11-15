@@ -30,6 +30,7 @@ pub mod ask;
 pub mod briefing;
 pub mod detect;
 pub mod folder_suggestions;
+pub mod ollama;
 pub mod picks;
 pub mod prompts;
 pub mod run;
@@ -62,23 +63,42 @@ pub struct AssistantSetup {
     pub interests: String,
 }
 
-/// The Assistants Feedrico knows how to drive. New CLIs (Codex, Gemini, Ollama: #125) add a
-/// variant and an adapter.
+/// The Assistants Feedrico knows how to drive. New ones add a variant and an adapter.
+///
+/// `Ollama` is not a CLI: it is the model server on this computer, spoken to over HTTP on a
+/// loopback address (see [`ollama`]). Its `AssistantSetup::path` holds the server's base URL
+/// (for example `http://127.0.0.1:11434`) instead of a file path, which keeps the setup shape
+/// unchanged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AssistantKind {
     ClaudeCode,
     MistralVibe,
+    /// OpenAI Codex CLI, signed in with ChatGPT.
+    Codex,
+    /// Google Gemini CLI.
+    Gemini,
+    /// Models running on this computer, through Ollama's local HTTP API.
+    Ollama,
 }
 
 impl AssistantKind {
-    pub const ALL: [AssistantKind; 2] = [AssistantKind::ClaudeCode, AssistantKind::MistralVibe];
+    pub const ALL: [AssistantKind; 5] = [
+        AssistantKind::ClaudeCode,
+        AssistantKind::MistralVibe,
+        AssistantKind::Codex,
+        AssistantKind::Gemini,
+        AssistantKind::Ollama,
+    ];
 
     /// The executable name without extension.
     pub fn binary_name(self) -> &'static str {
         match self {
             AssistantKind::ClaudeCode => "claude",
             AssistantKind::MistralVibe => "vibe",
+            AssistantKind::Codex => "codex",
+            AssistantKind::Gemini => "gemini",
+            AssistantKind::Ollama => "ollama",
         }
     }
 
@@ -87,6 +107,9 @@ impl AssistantKind {
         match self {
             AssistantKind::ClaudeCode => "Claude Code",
             AssistantKind::MistralVibe => "Mistral Vibe",
+            AssistantKind::Codex => "Codex",
+            AssistantKind::Gemini => "Gemini CLI",
+            AssistantKind::Ollama => "Ollama",
         }
     }
 
@@ -95,7 +118,15 @@ impl AssistantKind {
         match self {
             AssistantKind::ClaudeCode => "Anthropic",
             AssistantKind::MistralVibe => "Mistral",
+            AssistantKind::Codex => "OpenAI",
+            AssistantKind::Gemini => "Google",
+            AssistantKind::Ollama => "Ollama on this computer",
         }
+    }
+
+    /// Nothing leaves the computer: the model runs here.
+    pub fn is_local(self) -> bool {
+        self == AssistantKind::Ollama
     }
 }
 
@@ -110,6 +141,8 @@ pub enum SignIn {
     NotSignedIn,
     /// The CLI gives no cheap way to tell, or the check failed.
     Unknown,
+    /// There is no account (Ollama runs on this computer).
+    NotApplicable,
 }
 
 /// An Assistant found on this machine.
@@ -120,6 +153,9 @@ pub struct FoundAssistant {
     pub path: PathBuf,
     pub version: Option<String>,
     pub sign_in: SignIn,
+    /// The models installed on this computer, for Ollama. Empty for the CLIs.
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
 /// One unit of work for an Assistant. Features (#116 and later) build a `Task` from a prompt
