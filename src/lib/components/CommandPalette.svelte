@@ -1,5 +1,6 @@
 <script lang="ts">
   import { assist } from '../assistant-state.svelte';
+  import { folderSuggestions } from '../folder-suggestions.svelte';
   import { rank, type Rankable } from '../palette';
   import { panes } from '../pane-state.svelte';
   import { app } from '../state.svelte';
@@ -51,6 +52,18 @@
         ? assist.entries
             .filter((e) => !e.when || e.when())
             .map((e) => ({ id: `action:assistant:${e.id}`, group: 'action' as const, icon: 'check' as const, label: e.paletteLabel, run: () => assist.start(e) }))
+        : []),
+      // Folder suggestions work on the sidebar, no Article needed; still only with a setup.
+      ...(assist.setup?.disclosureAccepted
+        ? [
+            {
+              id: 'action:suggestFolders',
+              group: 'action' as const,
+              icon: 'folder' as const,
+              label: 'Assistant: Suggest Folders for unsorted Feeds…',
+              run: () => folderSuggestions.start({ kind: 'topLevel' }),
+            },
+          ]
         : []),
     ];
   }
