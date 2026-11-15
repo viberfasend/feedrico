@@ -846,7 +846,11 @@ fn perf_finish(
 
 /// What the UI asks an Assistant to do. Features add variants.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 enum AssistantAction {
     Test,
     #[serde(rename_all = "camelCase")]
@@ -874,6 +878,16 @@ enum AssistantAction {
         question: String,
         history: Vec<assistant::ask::Turn>,
     },
+    /// One batch of Feeds in `folder_id` (or at the top level when `None`), at most
+    /// `BATCH_SIZE` of them. `new_folders` are Folder names the earlier batches of the same
+    /// run proposed, so later batches reuse them.
+    #[serde(rename_all = "camelCase")]
+    FolderSuggestions {
+        feed_ids: Vec<i64>,
+        new_folders: Vec<String>,
+        #[serde(default)]
+        folder_id: Option<i64>,
+    },
 }
 
 impl AssistantAction {
@@ -887,8 +901,52 @@ impl AssistantAction {
             AssistantAction::Translate { article_id } | AssistantAction::Ask { article_id, .. } => {
                 Some(*article_id)
             }
+            AssistantAction::FolderSuggestions { .. } => None,
         }
     }
+}
+
+/// What a Folder suggestions run needs from the Library: the Task, and the Feeds and Folder
+/// names the answer is checked against. `None` when none of the Feeds is in the scope anymore,
+/// so there is nothing to ask.
+type FolderSuggestionsInput = (
+    assistant::Task,
+    Vec<feedrico_core::feeds::UnsortedFeed>,
+    Vec<String>,
+);
+
+fn folder_suggestions_input(
+    library: &Library,
+    feed_ids: &[i64],
+    new_folders: &[String],
+    folder_id: Option<i64>,
+) -> feedrico_core::Result<Option<FolderSuggestionsInput>> {
+    use assistant::folder_suggestions::{BATCH_SIZE, Scope};
+    if feed_ids.len() > BATCH_SIZE {
+        return Err(feedrico_core::Error::Invalid(format!(
+            "ask about at most {BATCH_SIZE} Feeds at a time"
+        )));
+    }
+    let (feeds, scope) = match folder_id {
+        None => (library.top_level_feeds(feed_ids)?, Scope::TopLevel),
+        Some(id) => {
+            let name = library
+                .folder_name(id)?
+                .ok_or(feedrico_core::Error::NotFound)?;
+            (library.folder_feeds(id, feed_ids)?, Scope::Folder(name))
+        }
+    };
+    if feeds.is_empty() {
+        return Ok(None);
+    }
+    let mut folders = library.folder_names()?;
+    for name in new_folders {
+        if !folders.iter().any(|f| f.eq_ignore_ascii_case(name)) {
+            folders.push(name.clone());
+        }
+    }
+    let task = assistant::folder_suggestions::task(&feeds, &folders, &scope);
+    Ok(Some((task, feeds, folders)))
 }
 
 /// What the panel should say about the input an Article result is based on.
@@ -1010,6 +1068,12 @@ fn build_task(
                 None,
             )
         }
+        (AssistantAction::FolderSuggestions { .. }, _) => {
+            return Err(CommandError::new(
+                "invalid",
+                "Folder suggestions don't work on an Article.",
+            ));
+        }
         (_, None) => {
             return Err(CommandError::new(
                 "notFound",
@@ -1064,6 +1128,37 @@ fn run_target(
     Ok((found, setup.model))
 }
 
+/// Run `task`, streaming `assistant-event`s for `run_id`; `assistant_cancel` can stop it.
+async fn run_task(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    assistant: &assistant::FoundAssistant,
+    task: &assistant::Task,
+    run_id: String,
+) -> CommandResult<(String, Option<serde_json::Value>)> {
+    let cancel = assistant::run::Cancel::new();
+    state
+        .assistant_runs
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(run_id.clone(), cancel.clone());
+    let event_app = app.clone();
+    let event_run_id = run_id.clone();
+    let result = assistant::run::run(assistant, task, cancel, move |event| {
+        let _ = event_app.emit(
+            "assistant-event",
+            serde_json::json!({ "runId": event_run_id, "event": event }),
+        );
+    })
+    .await;
+    state
+        .assistant_runs
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(&run_id);
+    Ok(result?)
+}
+
 /// Run one Assistant task on the user's explicit action, streaming `assistant-event`s.
 ///
 /// Runs only on the machine-local Assistant setup, and only once the user accepted the
@@ -1077,6 +1172,40 @@ async fn assistant_run(
 ) -> CommandResult<AssistantResult> {
     let setup = machine::assistant_setup(&app);
     let (assistant, model) = run_target(setup.clone())?;
+
+    // Folder suggestions (#123) read Feeds, not an Article, and their answer is checked
+    // against exactly the Feeds and Folder names that were sent.
+    if let AssistantAction::FolderSuggestions {
+        feed_ids,
+        new_folders,
+        folder_id,
+    } = &action
+    {
+        let input = with_library(&state, |l| {
+            folder_suggestions_input(l, feed_ids, new_folders, *folder_id)
+        })?;
+        let Some((mut task, feeds, folders)) = input else {
+            return Ok(AssistantResult {
+                text: String::new(),
+                structured: Some(serde_json::json!({ "moves": [] })),
+                article: None,
+                html: None,
+            });
+        };
+        if model.is_some() {
+            task.model = model;
+        }
+        let (text, structured) = run_task(&app, &state, &assistant, &task, run_id).await?;
+        let moves =
+            assistant::folder_suggestions::parse(structured.as_ref(), &text, &feeds, &folders)?;
+        return Ok(AssistantResult {
+            text: String::new(),
+            structured: Some(serde_json::json!({ "moves": moves })),
+            article: None,
+            html: None,
+        });
+    }
+
     let article = match action.article_id() {
         Some(id) => Some(with_library(&state, |l| l.article(id))?),
         None => None,
@@ -1089,27 +1218,7 @@ async fn assistant_run(
         setup.as_ref().and_then(|s| s.target_language.as_deref()),
     )?;
 
-    let cancel = assistant::run::Cancel::new();
-    state
-        .assistant_runs
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(run_id.clone(), cancel.clone());
-    let event_app = app.clone();
-    let event_run_id = run_id.clone();
-    let result = assistant::run::run(&assistant, &task, cancel, move |event| {
-        let _ = event_app.emit(
-            "assistant-event",
-            serde_json::json!({ "runId": event_run_id, "event": event }),
-        );
-    })
-    .await;
-    state
-        .assistant_runs
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .remove(&run_id);
-    let (text, structured) = result?;
+    let (text, structured) = run_task(&app, &state, &assistant, &task, run_id).await?;
     // Translate's answer is HTML: sanitize it in the core like Feed HTML and put the Article's
     // cached-image tags back, so the webview only ever sees sanitized HTML.
     let html = match (&action, images) {
@@ -1129,6 +1238,26 @@ async fn assistant_run(
         article: article_notes,
         html,
     })
+}
+
+/// Applies accepted Folder suggestions as one step and returns what it did, which the UI
+/// hands back to `undo_folder_moves`. Only Feeds still in `scope_folder_id` (or at the top
+/// level when `None`) move.
+#[tauri::command]
+fn apply_folder_moves(
+    moves: Vec<feedrico_core::feeds::FolderMove>,
+    scope_folder_id: Option<i64>,
+    state: State<'_, AppState>,
+) -> CommandResult<feedrico_core::feeds::AppliedMoves> {
+    with_library(&state, |l| l.apply_folder_moves(&moves, scope_folder_id))
+}
+
+#[tauri::command]
+fn undo_folder_moves(
+    applied: feedrico_core::feeds::AppliedMoves,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    with_library(&state, |l| l.undo_folder_moves(&applied))
 }
 
 /// Stop a running Assistant task. Unknown run ids are ignored (it may have just finished).
@@ -1223,6 +1352,8 @@ pub fn run() {
             assistant_setup_set,
             assistant_run,
             assistant_cancel,
+            apply_folder_moves,
+            undo_folder_moves,
             library_inspect,
             library_create,
             library_open,
@@ -1737,5 +1868,145 @@ mod tests {
         assert_eq!(found.kind, assistant::AssistantKind::ClaudeCode);
         assert_eq!(found.path, std::path::PathBuf::from("/usr/bin/claude"));
         assert_eq!(model.as_deref(), Some("haiku"));
+    }
+
+    #[test]
+    fn folder_suggestions_action_deserializes_camel_case_with_an_optional_folder() {
+        let a: AssistantAction = serde_json::from_value(serde_json::json!({
+            "kind": "folderSuggestions", "feedIds": [1, 2], "newFolders": ["Cooking"]
+        }))
+        .unwrap();
+        let AssistantAction::FolderSuggestions {
+            feed_ids,
+            new_folders,
+            folder_id,
+        } = a
+        else {
+            panic!("expected FolderSuggestions")
+        };
+        assert_eq!(feed_ids, [1, 2]);
+        assert_eq!(new_folders, ["Cooking"]);
+        assert_eq!(folder_id, None, "folderId may be omitted");
+
+        let a: AssistantAction = serde_json::from_value(serde_json::json!({
+            "kind": "folderSuggestions", "feedIds": [], "newFolders": [], "folderId": 7
+        }))
+        .unwrap();
+        let AssistantAction::FolderSuggestions { folder_id, .. } = a else {
+            panic!("expected FolderSuggestions")
+        };
+        assert_eq!(folder_id, Some(7));
+
+        let t: AssistantAction =
+            serde_json::from_value(serde_json::json!({ "kind": "test" })).unwrap();
+        assert!(matches!(t, AssistantAction::Test));
+    }
+
+    /// A Library with one sorted Feed in "Tech", one top-level Feed, and the Folder id.
+    fn suggestions_library() -> (tempfile::TempDir, Library, i64, i64, i64) {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join(feedrico_core::library::DIR_NAME);
+        let library = Library::create(&dir).unwrap();
+        library
+            .add_feed("https://a.example/feed", "A", None, None)
+            .unwrap();
+        library
+            .add_feed("https://b.example/feed", "B", None, None)
+            .unwrap();
+        library
+            .import_opml(&[feedrico_core::opml::OpmlFeed {
+                url: "https://c.example/feed".into(),
+                title: "C".into(),
+                site_url: None,
+                folder: Some("Tech".into()),
+            }])
+            .unwrap();
+        let tech_id = library.sidebar(0).unwrap().folders[0].id;
+        let sorted = library.sidebar(0).unwrap().feeds[0].id;
+        library.move_feed(sorted, Some(tech_id)).unwrap();
+        let free = library.sidebar(0).unwrap().feeds[0].id;
+        (root, library, tech_id, sorted, free)
+    }
+
+    #[test]
+    fn folder_suggestions_input_caps_the_batch_and_builds_the_task() {
+        use assistant::folder_suggestions::BATCH_SIZE;
+        let (_root, library, tech_id, sorted, free) = suggestions_library();
+
+        // More than one batch per run is refused; the UI batches.
+        let too_many: Vec<i64> = (0..(BATCH_SIZE as i64 + 1)).collect();
+        assert!(matches!(
+            folder_suggestions_input(&library, &too_many, &[], None),
+            Err(feedrico_core::Error::Invalid(_))
+        ));
+
+        // Feeds outside the scope: nothing to ask.
+        assert!(
+            folder_suggestions_input(&library, &[sorted], &[], None)
+                .unwrap()
+                .is_none()
+        );
+
+        // Top-level scope: the task carries the Feeds, the existing Folders plus the new ones
+        // earlier batches proposed.
+        let (task, feeds, folders) = folder_suggestions_input(
+            &library,
+            &[sorted, free, 9999],
+            &["Cooking".to_string()],
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].id, free);
+        assert_eq!(folders, ["Tech", "Cooking"]);
+        assert!(task.prompt.contains("Feeds without a Folder"));
+
+        // Folder scope: only that Folder's Feeds are sent, and the prompt names the Folder.
+        let (task, feeds, _) =
+            folder_suggestions_input(&library, &[sorted, free], &[], Some(tech_id))
+                .unwrap()
+                .unwrap();
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].id, sorted);
+        assert!(task.system_prompt.contains("Feeds of the Folder \"Tech\""));
+
+        // An unknown Folder is a not-found, not an empty run.
+        assert!(matches!(
+            folder_suggestions_input(&library, &[free], &[], Some(9999)),
+            Err(feedrico_core::Error::NotFound)
+        ));
+    }
+
+    #[test]
+    fn apply_and_undo_folder_moves_work_as_one_step_over_ipc() {
+        // The commands are thin `with_library` wrappers; this exercises what they call.
+        let (_root, library, _tech_id, _sorted, free) = suggestions_library();
+        let state = state_with(Some(library));
+        let moves = vec![feedrico_core::feeds::FolderMove {
+            feed_id: free,
+            folder: "Cooking".into(),
+        }];
+        let applied = with_library(&state, |l| l.apply_folder_moves(&moves, None)).unwrap();
+        assert_eq!(applied.moved.len(), 1);
+        assert_eq!(applied.created_folder_ids.len(), 1);
+        with_library(&state, |l| {
+            assert_eq!(l.folder_names().unwrap(), ["Tech", "Cooking"]);
+            assert!(l.top_level_feeds(&[free]).unwrap().is_empty());
+            Ok(())
+        })
+        .unwrap();
+
+        with_library(&state, |l| l.undo_folder_moves(&applied)).unwrap();
+        with_library(&state, |l| {
+            assert_eq!(
+                l.folder_names().unwrap(),
+                ["Tech"],
+                "the empty Folder is gone again"
+            );
+            assert_eq!(l.top_level_feeds(&[free]).unwrap().len(), 1);
+            Ok(())
+        })
+        .unwrap();
     }
 }
