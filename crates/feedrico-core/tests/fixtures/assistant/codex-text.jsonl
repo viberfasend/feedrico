@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"thread-7f3a"}
+{"type":"turn.started","turn_id":"turn-1"}
+{"type":"item.started","item":{"id":"item_1","type":"reasoning","text":""}}
+{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"The user wants the exact phrase."}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Feedrico can talk to you."}}
+{"type":"turn.completed","turn":{"id":"turn-1","status":"completed","error":null}}

@@ -45,6 +45,7 @@ impl Fake {
                 path,
                 version: None,
                 sign_in: SignIn::Plan,
+                models: Vec::new(),
             },
         }
     }

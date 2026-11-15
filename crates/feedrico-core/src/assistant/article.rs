@@ -150,11 +150,15 @@ fn replace_ci(haystack: &str, needle: &str, with: &str) -> String {
 }
 
 /// The model alias used for short reading aids unless the user chose one in the setup.
-/// Claude Code gets its small, fast model; Mistral Vibe uses its own default.
+/// Claude Code gets its small, fast model; the others use their own default (Ollama: the model
+/// chosen in the setup).
 pub fn fast_model(kind: AssistantKind) -> Option<&'static str> {
     match kind {
         AssistantKind::ClaudeCode => Some("haiku"),
-        AssistantKind::MistralVibe => None,
+        AssistantKind::MistralVibe
+        | AssistantKind::Codex
+        | AssistantKind::Gemini
+        | AssistantKind::Ollama => None,
     }
 }
 

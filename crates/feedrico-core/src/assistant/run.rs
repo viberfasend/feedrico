@@ -48,6 +48,8 @@ const CANCEL_POLL: Duration = Duration::from_millis(25);
 const STDERR_CAP: usize = 64 * 1024;
 const MESSAGE_CAP: usize = 500;
 const SYSTEM_PROMPT_FILE: &str = "system-prompt.txt";
+/// Where a `Task::json_schema` is written for CLIs that take it as a file.
+const SCHEMA_FILE: &str = "output-schema.json";
 
 /// Run `task` on `assistant`. On success it returns the [`Event::Done`] payload, which has also
 /// been sent to `on_event`.
@@ -60,6 +62,11 @@ pub async fn run(
     if cancel.is_cancelled() {
         return Err(AssistantError::Cancelled);
     }
+    if assistant.kind == AssistantKind::Ollama {
+        // Not a process: the setup's path is the loopback base URL of the local server.
+        let base_url = assistant.path.to_string_lossy();
+        return super::ollama::run(&base_url, task, cancel, &mut on_event).await;
+    }
     let adapter = adapter_for(assistant.kind);
 
     // Deleted when it drops, on every exit path.
@@ -71,11 +78,16 @@ pub async fn run(
         std::fs::write(dir.path().join(SYSTEM_PROMPT_FILE), text)
             .map_err(|e| failed(format!("couldn't write the system prompt: {e}")))?;
     }
+    if let Some(schema) = &task.json_schema {
+        std::fs::write(dir.path().join(SCHEMA_FILE), schema.to_string())
+            .map_err(|e| failed(format!("couldn't write the output schema: {e}")))?;
+    }
 
     let mut command = Command::new(&assistant.path);
     command
-        .args(adapter.args(task, &dir.path().join(SYSTEM_PROMPT_FILE)))
+        .args(adapter.args(task, dir.path()))
         .current_dir(dir.path())
+        .envs(adapter.env(dir.path()))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -108,7 +120,7 @@ pub async fn run(
     });
     let mut lines = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
 
-    let mut parser = adapter.parser();
+    let mut parser = adapter.parser(task);
     let mut poll = tokio::time::interval(CANCEL_POLL);
     let stream_result: Result<(), AssistantError> = loop {
         tokio::select! {
@@ -224,14 +236,19 @@ fn kill_group(pid: u32) {
 
 /// What an Assistant adapter does. One per CLI; new CLIs add an implementation.
 trait Adapter {
-    /// The exact arguments. `system_prompt_file` is where `system_prompt_file()` text is written.
-    fn args(&self, task: &Task, system_prompt_file: &Path) -> Vec<OsString>;
+    /// The exact arguments. `dir` is the empty temporary directory; the files named by
+    /// [`SYSTEM_PROMPT_FILE`] and [`SCHEMA_FILE`] are written there before the spawn.
+    fn args(&self, task: &Task, dir: &Path) -> Vec<OsString>;
     /// Text to put in a file in the temporary directory, for CLIs that take the system prompt
     /// from a file.
     fn system_prompt_file(&self, _task: &Task) -> Option<String> {
         None
     }
-    fn parser(&self) -> Box<dyn Parser>;
+    /// Extra environment variables for the CLI, for CLIs that take the system prompt from one.
+    fn env(&self, _dir: &Path) -> Vec<(OsString, OsString)> {
+        Vec::new()
+    }
+    fn parser(&self, task: &Task) -> Box<dyn Parser>;
 }
 
 /// Reads one CLI's output, a line at a time.
@@ -245,6 +262,9 @@ fn adapter_for(kind: AssistantKind) -> Box<dyn Adapter + Send> {
     match kind {
         AssistantKind::ClaudeCode => Box::new(ClaudeCode),
         AssistantKind::MistralVibe => Box::new(MistralVibe),
+        AssistantKind::Codex => Box::new(Codex),
+        AssistantKind::Gemini => Box::new(Gemini),
+        AssistantKind::Ollama => unreachable!("Ollama is an HTTP API, handled in run()"),
     }
 }
 
@@ -258,7 +278,7 @@ impl Adapter for ClaudeCode {
     /// `--verbose` is required with `--output-format stream-json` in `-p` mode.
     /// `--system-prompt` replaces Claude Code's own coding prompt, so the answer depends only on
     /// our prompt. Never `--bare`: it disables the plan login.
-    fn args(&self, task: &Task, _system_prompt_file: &Path) -> Vec<OsString> {
+    fn args(&self, task: &Task, _dir: &Path) -> Vec<OsString> {
         let mut args = os(&[
             "-p",
             "--output-format",
@@ -282,7 +302,7 @@ impl Adapter for ClaudeCode {
         args
     }
 
-    fn parser(&self) -> Box<dyn Parser> {
+    fn parser(&self, _task: &Task) -> Box<dyn Parser> {
         Box::new(ClaudeParser::default())
     }
 }
@@ -354,7 +374,8 @@ fn claude_error(text: &str, status: Option<u64>) -> AssistantError {
 struct MistralVibe;
 
 impl Adapter for MistralVibe {
-    fn args(&self, task: &Task, system_prompt_file: &Path) -> Vec<OsString> {
+    fn args(&self, task: &Task, dir: &Path) -> Vec<OsString> {
+        let system_prompt_file = dir.join(SYSTEM_PROMPT_FILE);
         let mut args = os(&[
             "-p",
             "--output",
@@ -380,7 +401,7 @@ impl Adapter for MistralVibe {
         Some(task.system_prompt.clone())
     }
 
-    fn parser(&self) -> Box<dyn Parser> {
+    fn parser(&self, _task: &Task) -> Box<dyn Parser> {
         Box::new(VibeParser::default())
     }
 }
@@ -464,6 +485,275 @@ fn is_not_found(text: &str) -> bool {
     t.contains("command not found") || t.contains("no such file")
 }
 
+/// OpenAI Codex CLI (`codex exec`; flags checked against `codex exec --help` of codex-cli 0.153.4
+/// installed on the dev machine, and against the strings of that binary, on 2026-11-14).
+///
+/// Codex cannot switch every tool off with one flag, so the hardening is layered:
+/// - `-s read-only`: the strictest sandbox. Commands the model asks for can read but never write.
+/// - `-c approval_policy="never"`: it never waits for a human, and a refused command just fails.
+/// - `--disable shell_tool` (and `unified_exec`): the shell tool is not offered to the model at
+///   all (the same effect as `--tools ""` for Claude). Multi-agent, plugins, image viewing and
+///   every web-search variant are disabled too; `web_search="disabled"` turns the tool off.
+///   Unknown feature names make Codex exit with an error, so only names that exist in 0.153.4
+///   are used. Apps, hooks and MCP servers come from the user's and project's config files,
+///   which are not loaded (next bullet) and whose project directory is empty anyway.
+/// - `--ignore-user-config` and `--ignore-rules`: the user's config.toml (MCP servers, profiles)
+///   and execpolicy rules are not loaded. Auth still comes from `CODEX_HOME`, which Feedrico
+///   never reads.
+/// - `--ephemeral`: no session files are written.
+/// - The prompt arrives on stdin (`-`). The system prompt replaces Codex's base instructions
+///   through `model_instructions_file`, a file in the temporary directory, and a
+///   `json_schema` goes through `--output-schema`, also a file there.
+struct Codex;
+
+impl Adapter for Codex {
+    fn args(&self, task: &Task, dir: &Path) -> Vec<OsString> {
+        let mut args = os(&[
+            "exec",
+            "--json",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "-s",
+            "read-only",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "web_search=\"disabled\"",
+            "--disable",
+            "shell_tool",
+            "--disable",
+            "unified_exec",
+            "--disable",
+            "multi_agent",
+            "--disable",
+            "multi_agent_v2",
+            "--disable",
+            "plugins",
+            "--disable",
+            "view_image",
+            "--disable",
+            "web_search_request",
+            "--disable",
+            "web_search_cached",
+            "--disable",
+            "standalone_web_search",
+        ]);
+        if let Some(model) = &task.model {
+            args.extend(os(&["-m", model]));
+        }
+        if task.json_schema.is_some() {
+            args.extend(os(&["--output-schema"]));
+            args.push(dir.join(SCHEMA_FILE).into_os_string());
+        }
+        args.push("-c".into());
+        let mut instructions = OsString::from("model_instructions_file=\"");
+        instructions.push(dir.join(SYSTEM_PROMPT_FILE));
+        instructions.push("\"");
+        args.push(instructions);
+        args.push("-".into());
+        args
+    }
+
+    fn system_prompt_file(&self, task: &Task) -> Option<String> {
+        Some(task.system_prompt.clone())
+    }
+
+    fn parser(&self, task: &Task) -> Box<dyn Parser> {
+        Box::new(CodexParser {
+            has_schema: task.json_schema.is_some(),
+            ..CodexParser::default()
+        })
+    }
+}
+
+/// `codex exec --json` writes one event per line (event types `thread.started`, `turn.started`,
+/// `item.started`, `item.updated`, `item.completed`, `turn.completed`, `turn.failed`, `error` in
+/// codex-cli 0.153.4). It does not stream deltas: an `item.completed` event of type
+/// `agent_message` carries a whole message. `turn.failed` carries the error, after an `error`
+/// event with the same text.
+#[derive(Default)]
+struct CodexParser {
+    messages: Vec<String>,
+    last_error: Option<String>,
+    outcome: Option<Result<(), AssistantError>>,
+    /// A `--output-schema` was given: the final message must parse as that JSON.
+    has_schema: bool,
+}
+
+impl Parser for CodexParser {
+    fn line(&mut self, line: &str, emit: &mut dyn FnMut(Event)) -> Result<(), AssistantError> {
+        let v = parse_json(line)?;
+        match v["type"].as_str() {
+            Some("item.completed") if v["item"]["type"] == "agent_message" => {
+                if let Some(text) = v["item"]["text"].as_str()
+                    && !text.is_empty()
+                {
+                    // Several messages in one turn read as paragraphs. With an output schema the
+                    // message is JSON, not text for the reader: buffer it and send only Done.
+                    let delta = if self.messages.is_empty() {
+                        text.to_string()
+                    } else {
+                        format!("\n\n{text}")
+                    };
+                    self.messages.push(text.to_string());
+                    if !self.has_schema {
+                        emit(Event::Text { delta });
+                    }
+                }
+            }
+            Some("error") => self.last_error = v["message"].as_str().map(str::to_string),
+            Some("turn.failed") => {
+                let message = v["error"]["message"]
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| self.last_error.clone())
+                    .unwrap_or_default();
+                self.outcome = Some(Err(from_text_or_failed(&message, None)));
+            }
+            Some("turn.completed") => self.outcome = Some(Ok(())),
+            // Reasoning, command and tool items, thread and turn starts, and `error` items
+            // (warnings) show nothing. Tool items are never acted on: nothing is offered.
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self, code: Option<i32>, stderr: &str) -> Result<Answer, AssistantError> {
+        match self.outcome.take() {
+            Some(Err(e)) => Err(e),
+            Some(Ok(())) if !self.messages.is_empty() => {
+                let text = self.messages.join("\n\n");
+                let structured = if self.has_schema {
+                    Some(
+                        serde_json::from_str(&text).map_err(|e| AssistantError::Malformed {
+                            message: format!("the answer wasn't the JSON that was asked for: {e}"),
+                        })?,
+                    )
+                } else {
+                    None
+                };
+                Ok((text, structured))
+            }
+            _ => match code {
+                Some(0) => Err(AssistantError::Malformed {
+                    message: "the Assistant ended without an answer".into(),
+                }),
+                _ => Err(from_text_or_failed(
+                    self.last_error.as_deref().unwrap_or(stderr),
+                    code,
+                )),
+            },
+        }
+    }
+}
+
+/// Google Gemini CLI headless mode (`gemini -p`; flags verified against the official docs at
+/// geminicli.com/docs/cli/cli-reference and docs/cli/headless, 2026-11; the binary is not
+/// installed on the dev machine, so no flag was run).
+///
+/// Gemini has no flag that turns every tool off, so it runs in the strictest mode it documents:
+/// - `--approval-mode plan` (choices: default, auto_edit, yolo, plan): read-only; the model may
+///   not edit files or run commands.
+/// - `--extensions none`: the list of extensions to use is only "none", which is never
+///   installed, so no extension (and its tools or MCP servers) loads.
+/// - It runs in the empty temporary directory, an untrusted folder to Gemini, and Feedrico never
+///   passes `--yolo` or `--skip-trust`.
+/// - The prompt arrives on stdin; `-p` switches to headless mode and its own text is appended to
+///   stdin. The system prompt replaces Gemini's through `GEMINI_SYSTEM_MD`, a file path.
+/// - A `json_schema` cannot be passed as a flag: callers must put the JSON shape into the prompt
+///   and validate in Rust (as for Vibe).
+struct Gemini;
+
+const GEMINI_HEADLESS_PROMPT: &str = "Follow the instructions given on stdin.";
+
+impl Adapter for Gemini {
+    fn args(&self, task: &Task, _dir: &Path) -> Vec<OsString> {
+        let mut args = os(&[
+            "--output-format",
+            "stream-json",
+            "--approval-mode",
+            "plan",
+            "--extensions",
+            "none",
+        ]);
+        if let Some(model) = &task.model {
+            args.extend(os(&["--model", model]));
+        }
+        args.extend(os(&["-p", GEMINI_HEADLESS_PROMPT]));
+        args
+    }
+
+    fn system_prompt_file(&self, task: &Task) -> Option<String> {
+        Some(task.system_prompt.clone())
+    }
+
+    fn env(&self, dir: &Path) -> Vec<(OsString, OsString)> {
+        vec![(
+            "GEMINI_SYSTEM_MD".into(),
+            dir.join(SYSTEM_PROMPT_FILE).into_os_string(),
+        )]
+    }
+
+    fn parser(&self, _task: &Task) -> Box<dyn Parser> {
+        Box::new(GeminiParser::default())
+    }
+}
+
+/// `--output-format stream-json`: `init`, `message` (`role` plus a `content` chunk; assistant
+/// chunks carry `delta: true` and are incremental, per packages/core/src/output/types.ts),
+/// `tool_use`, `tool_result`, `error` (non-fatal warnings) and a final `result` whose `status`
+/// is `success` or `error`.
+#[derive(Default)]
+struct GeminiParser {
+    text: String,
+    outcome: Option<Result<(), AssistantError>>,
+}
+
+impl Parser for GeminiParser {
+    fn line(&mut self, line: &str, emit: &mut dyn FnMut(Event)) -> Result<(), AssistantError> {
+        let v = parse_json(line)?;
+        match v["type"].as_str() {
+            Some("message") if v["role"] == "assistant" => {
+                if let Some(delta) = v["content"].as_str()
+                    && !delta.is_empty()
+                {
+                    self.text.push_str(delta);
+                    emit(Event::Text {
+                        delta: delta.to_string(),
+                    });
+                }
+            }
+            Some("result") => {
+                self.outcome = Some(if v["status"] == "error" {
+                    let message = v["error"]["message"].as_str().unwrap_or_default();
+                    Err(from_text_or_failed(message, None))
+                } else {
+                    Ok(())
+                });
+            }
+            // `init`, user messages and warnings carry nothing we show; tool events are never
+            // acted on.
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self, code: Option<i32>, stderr: &str) -> Result<Answer, AssistantError> {
+        match self.outcome.take() {
+            Some(Err(e)) => Err(e),
+            Some(Ok(())) if !self.text.trim().is_empty() => Ok((self.text.clone(), None)),
+            _ => match code {
+                Some(0) => Err(AssistantError::Malformed {
+                    message: "the Assistant ended without an answer".into(),
+                }),
+                _ => Err(from_text_or_failed(stderr, code)),
+            },
+        }
+    }
+}
+
 // ---- shared ---------------------------------------------------------------------------------
 
 fn parse_json(line: &str) -> Result<Value, AssistantError> {
@@ -481,11 +771,20 @@ fn map_error_text(text: &str) -> Option<AssistantError> {
         "invalid api key",
         "missing api key",
         "no api key",
+        "api key not valid",
+        "api key not found",
         "/login",
         "not logged in",
         "not signed in",
         "unauthorized",
         "authentication",
+        "sign in again",
+        "log in again",
+        "refresh token",
+        "token_expired",
+        "auth method",
+        "gemini_api_key",
+        "failed to login",
         "401",
     ]) {
         Some(AssistantError::NotSignedIn)
@@ -559,7 +858,7 @@ mod tests {
 
     #[test]
     fn claude_command_line_is_exact() {
-        let args = strings(ClaudeCode.args(&task(), Path::new("unused")));
+        let args = strings(ClaudeCode.args(&task(), Path::new("/t")));
         assert_eq!(
             args,
             [
@@ -585,7 +884,7 @@ mod tests {
         let mut t = task();
         t.model = Some("haiku".into());
         t.json_schema = Some(json!({"type": "object"}));
-        let args = strings(ClaudeCode.args(&t, Path::new("unused")));
+        let args = strings(ClaudeCode.args(&t, Path::new("/t")));
         let at = |flag: &str| args.iter().position(|a| a == flag).unwrap();
         assert_eq!(args[at("--model") + 1], "haiku");
         assert_eq!(args[at("--json-schema") + 1], "{\"type\":\"object\"}");
@@ -594,7 +893,7 @@ mod tests {
 
     #[test]
     fn vibe_command_line_is_exact() {
-        let args = strings(MistralVibe.args(&task(), Path::new("/t/system-prompt.txt")));
+        let args = strings(MistralVibe.args(&task(), Path::new("/t")));
         assert_eq!(
             args,
             [
@@ -613,8 +912,265 @@ mod tests {
         );
         let mut t = task();
         t.model = Some("m".into());
-        let args = strings(MistralVibe.args(&t, Path::new("f")));
+        let args = strings(MistralVibe.args(&t, Path::new("/t")));
         assert_eq!(&args[7..9], ["--model", "m"]);
+        assert_eq!(args.last().unwrap(), "/t/system-prompt.txt");
+    }
+
+    fn codex_task() -> Task {
+        let mut t = task();
+        t.model = Some("gpt-5".into());
+        t
+    }
+
+    #[test]
+    fn codex_command_line_is_exact() {
+        let args = strings(Codex.args(&codex_task(), Path::new("/t")));
+        assert_eq!(
+            args,
+            [
+                "exec",
+                "--json",
+                "--ephemeral",
+                "--skip-git-repo-check",
+                "--ignore-user-config",
+                "--ignore-rules",
+                "-s",
+                "read-only",
+                "-c",
+                "approval_policy=\"never\"",
+                "-c",
+                "web_search=\"disabled\"",
+                "--disable",
+                "shell_tool",
+                "--disable",
+                "unified_exec",
+                "--disable",
+                "multi_agent",
+                "--disable",
+                "multi_agent_v2",
+                "--disable",
+                "plugins",
+                "--disable",
+                "view_image",
+                "--disable",
+                "web_search_request",
+                "--disable",
+                "web_search_cached",
+                "--disable",
+                "standalone_web_search",
+                "-m",
+                "gpt-5",
+                "-c",
+                "model_instructions_file=\"/t/system-prompt.txt\"",
+                "-",
+            ]
+        );
+        let args = strings(Codex.args(&task(), Path::new("/t")));
+        assert!(!args.iter().any(|a| a == "-m"));
+        assert!(!args.iter().any(|a| a == "--output-schema"));
+        for banned in [
+            "--dangerously-bypass-approvals-and-sandbox",
+            "danger-full-access",
+            "workspace-write",
+            "--search",
+            "PROMPT",
+        ] {
+            assert!(!args.iter().any(|a| a == banned), "{banned}");
+        }
+    }
+
+    #[test]
+    fn codex_adds_output_schema_file_when_asked() {
+        let mut t = codex_task();
+        t.json_schema = Some(json!({"type": "object"}));
+        let args = strings(Codex.args(&t, Path::new("/t")));
+        let at = |flag: &str| args.iter().position(|a| a == flag).unwrap();
+        assert_eq!(args[at("--output-schema") + 1], "/t/output-schema.json");
+    }
+
+    #[test]
+    fn codex_parser_collects_agent_messages_and_reads_schema_json() {
+        let mut p = CodexParser::default();
+        let mut events = Vec::new();
+        for line in [
+            r#"{"type":"thread.started","thread_id":"t"}"#,
+            r#"{"type":"item.completed","item":{"type":"reasoning","text":"thinking"}}"#,
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"Hello"}}"#,
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"world"}}"#,
+            r#"{"type":"turn.completed","turn":{"status":"completed"}}"#,
+        ] {
+            p.line(line, &mut |e| events.push(e)).unwrap();
+        }
+        let (text, structured) = p.finish(Some(0), "").unwrap();
+        assert_eq!(text, "Hello\n\nworld");
+        assert_eq!(structured, None);
+        assert_eq!(
+            events,
+            vec![
+                Event::Text {
+                    delta: "Hello".into()
+                },
+                Event::Text {
+                    delta: "\n\nworld".into()
+                },
+            ]
+        );
+
+        let mut p = CodexParser {
+            has_schema: true,
+            ..CodexParser::default()
+        };
+        p.line(
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"{\"answer\":4}"}}"#,
+            &mut |_| {},
+        )
+        .unwrap();
+        p.line(r#"{"type":"turn.completed"}"#, &mut |_| {}).unwrap();
+        let (text, structured) = p.finish(Some(0), "").unwrap();
+        assert_eq!(text, "{\"answer\":4}");
+        assert_eq!(structured, Some(json!({"answer": 4})));
+    }
+
+    #[test]
+    fn codex_parser_turn_failed_and_stderr_map_to_errors() {
+        let mut p = CodexParser::default();
+        p.line(
+            r#"{"type":"error","message":"rate limit reached"}"#,
+            &mut |_| {},
+        )
+        .unwrap();
+        p.line(
+            r#"{"type":"turn.failed","error":{"message":"You've hit your usage limit"}}"#,
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            p.finish(Some(1), "").unwrap_err(),
+            AssistantError::UsageLimit
+        );
+
+        let mut p = CodexParser::default();
+        p.line(
+            r#"{"type":"turn.failed","error":{"message":"Not logged in"}}"#,
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            p.finish(Some(1), "").unwrap_err(),
+            AssistantError::NotSignedIn
+        );
+        // No turn event, non-zero exit: stderr explains it.
+        let mut p = CodexParser::default();
+        assert_eq!(
+            p.finish(Some(1), "boom").unwrap_err(),
+            AssistantError::Failed {
+                message: "boom".into()
+            }
+        );
+        // Clean exit without an answer.
+        let mut p = CodexParser::default();
+        assert!(matches!(
+            p.finish(Some(0), "").unwrap_err(),
+            AssistantError::Malformed { .. }
+        ));
+    }
+
+    #[test]
+    fn gemini_parser_streams_assistant_deltas_and_reads_result() {
+        let mut p = GeminiParser::default();
+        let mut events = Vec::new();
+        for line in [
+            r#"{"type":"init","session_id":"s","model":"m"}"#,
+            r#"{"type":"message","role":"user","content":"PROMPT"}"#,
+            r#"{"type":"message","role":"assistant","content":"Feedrico can talk","delta":true}"#,
+            r#"{"type":"message","role":"assistant","content":" to you.","delta":true}"#,
+            r#"{"type":"tool_use","tool_name":"x"}"#,
+            r#"{"type":"error","severity":"warning","message":"w"}"#,
+            r#"{"type":"result","status":"success","stats":{}}"#,
+        ] {
+            p.line(line, &mut |e| events.push(e)).unwrap();
+        }
+        let (text, structured) = p.finish(Some(0), "").unwrap();
+        assert_eq!(text, "Feedrico can talk to you.");
+        assert_eq!(structured, None);
+        assert_eq!(
+            events,
+            vec![
+                Event::Text {
+                    delta: "Feedrico can talk".into()
+                },
+                Event::Text {
+                    delta: " to you.".into()
+                },
+            ]
+        );
+
+        let mut p = GeminiParser::default();
+        p.line(
+            r#"{"type":"result","status":"error","error":{"type":"auth","message":"API key not valid. Please pass a valid API key."}}"#,
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            p.finish(Some(1), "").unwrap_err(),
+            AssistantError::NotSignedIn
+        );
+        let mut p = GeminiParser::default();
+        assert!(matches!(
+            p.finish(Some(0), "").unwrap_err(),
+            AssistantError::Malformed { .. }
+        ));
+    }
+
+    #[test]
+    fn gemini_command_line_is_exact() {
+        let args = strings(Gemini.args(&codex_task(), Path::new("/t")));
+        assert_eq!(
+            args,
+            [
+                "--output-format",
+                "stream-json",
+                "--approval-mode",
+                "plan",
+                "--extensions",
+                "none",
+                "--model",
+                "gpt-5",
+                "-p",
+                "Follow the instructions given on stdin.",
+            ]
+        );
+        for banned in [
+            "--yolo",
+            "-y",
+            "yolo",
+            "auto_edit",
+            "--skip-trust",
+            "PROMPT",
+            "SYS",
+        ] {
+            assert!(!args.iter().any(|a| a == banned), "{banned}");
+        }
+        assert_eq!(
+            Gemini.env(Path::new("/t")),
+            vec![(
+                OsString::from("GEMINI_SYSTEM_MD"),
+                OsString::from("/t/system-prompt.txt")
+            )]
+        );
+    }
+
+    #[test]
+    fn expired_sign_in_text_maps_to_not_signed_in() {
+        use AssistantError::*;
+        for text in [
+            "Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.",
+            "Please set an Auth method in your settings",
+            "Failed to login. Message: Request contains an invalid argument",
+        ] {
+            assert_eq!(map_error_text(text), Some(NotSignedIn), "{text}");
+        }
     }
 
     #[test]

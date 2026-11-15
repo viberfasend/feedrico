@@ -54,6 +54,7 @@ async fn the_article_reaches_a_fake_cli_on_stdin_inside_the_delimiters() {
         path,
         version: None,
         sign_in: SignIn::Plan,
+        models: Vec::new(),
     };
 
     let input = ArticleInput::from_article(&article("<p>SECRET-BODY-77 text</p>"));
@@ -97,6 +98,7 @@ fn fake_claude(body: &str) -> (tempfile::TempDir, std::path::PathBuf, FoundAssis
         path,
         version: None,
         sign_in: SignIn::Plan,
+        models: Vec::new(),
     };
     (dir, rec, found)
 }
@@ -163,6 +165,7 @@ async fn real_claude_code_summarizes_and_explains_a_fixture_article() {
         path,
         version: None,
         sign_in: SignIn::Unknown,
+        models: Vec::new(),
     };
     let html = "<p>Die Stadt Freiburg hat am Dienstag beschlossen, bis 2030 alle städtischen \
         Busse auf Elektroantrieb umzustellen. Der Gemeinderat stimmte mit 28 zu 14 Stimmen \

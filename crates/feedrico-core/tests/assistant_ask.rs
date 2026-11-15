@@ -49,6 +49,7 @@ fn fake(kind: AssistantKind, fixture: &str) -> (tempfile::TempDir, PathBuf, Foun
         path,
         version: None,
         sign_in: SignIn::Plan,
+        models: Vec::new(),
     };
     (dir, rec, found)
 }

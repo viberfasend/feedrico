@@ -1157,6 +1157,7 @@ fn run_target(
         path: setup.path,
         version: None,
         sign_in: assistant::SignIn::Unknown,
+        models: Vec::new(),
     };
     Ok((found, setup.model))
 }

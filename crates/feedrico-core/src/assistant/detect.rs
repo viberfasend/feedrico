@@ -26,6 +26,9 @@ pub struct DetectOptions {
     pub path_env: Option<std::ffi::OsString>,
     /// Extra directories to search after `PATH`. `None` means the built-in list for this OS.
     pub fallback_dirs: Option<Vec<PathBuf>>,
+    /// Don't look for an Ollama server. Tests set this so a real server on the machine can't
+    /// change their results.
+    pub skip_ollama: bool,
 }
 
 /// Every Assistant found, in [`super::AssistantKind::ALL`] order. A binary that is found but
@@ -43,10 +46,35 @@ pub fn detect(options: &DetectOptions) -> Vec<FoundAssistant> {
     AssistantKind::ALL
         .into_iter()
         .filter_map(|kind| {
+            if kind == AssistantKind::Ollama {
+                return detect_ollama(options);
+            }
             let path = locate(kind, options.manual_path.as_deref(), &path_env, &fallback)?;
             Some(probe(kind, path))
         })
         .collect()
+}
+
+/// Ollama has no binary to find: ask the server on this computer, at the manual URL if one was
+/// given, else at the default address. A server that doesn't answer is simply not listed.
+fn detect_ollama(options: &DetectOptions) -> Option<FoundAssistant> {
+    if options.skip_ollama {
+        return None;
+    }
+    let manual = options
+        .manual_path
+        .as_ref()
+        .and_then(|p| p.to_str())
+        .filter(|p| p.starts_with("http"));
+    let base = super::ollama::normalized(manual.unwrap_or(super::ollama::DEFAULT_BASE_URL))?;
+    let probe = super::ollama::probe(&base)?;
+    Some(FoundAssistant {
+        kind: AssistantKind::Ollama,
+        path: PathBuf::from(base),
+        version: probe.version,
+        sign_in: SignIn::NotApplicable,
+        models: probe.models,
+    })
 }
 
 /// A manual path applies to the Assistant its file name starts with (`claude*`, `vibe*`, case-
@@ -144,7 +172,7 @@ fn default_fallback_dirs() -> Vec<PathBuf> {
 }
 
 fn probe(kind: AssistantKind, path: PathBuf) -> FoundAssistant {
-    let version = run_probe(&path, &["--version"]).and_then(|out| parse_version(&out));
+    let version = run_probe(&path, &["--version"], false).and_then(|out| parse_version(&out));
     let sign_in = match kind {
         // No answer to `--version` means a broken or hung binary: don't wait on a second probe.
         _ if version.is_none() => SignIn::Unknown,
@@ -153,12 +181,18 @@ fn probe(kind: AssistantKind, path: PathBuf) -> FoundAssistant {
         // Its only sign-in path is `--setup`, which is interactive and must never run on its
         // own, and the key lives in a credential file we must not read. So: Unknown.
         AssistantKind::MistralVibe => SignIn::Unknown,
+        AssistantKind::Codex => codex_sign_in(&path),
+        // Gemini CLI has no status command. Its sign-in lives in credential files (and the
+        // environment) we must not read. So: Unknown.
+        AssistantKind::Gemini => SignIn::Unknown,
+        AssistantKind::Ollama => SignIn::NotApplicable,
     };
     FoundAssistant {
         kind,
         path,
         version,
         sign_in,
+        models: Vec::new(),
     }
 }
 
@@ -174,7 +208,7 @@ fn parse_version(out: &str) -> Option<String> {
 
 /// `claude auth status --json`: `loggedIn`, and `authMethod` "claude.ai" for a plan.
 fn claude_sign_in(path: &Path) -> SignIn {
-    let Some(out) = run_probe(path, &["auth", "status", "--json"]) else {
+    let Some(out) = run_probe(path, &["auth", "status", "--json"], false) else {
         return SignIn::Unknown;
     };
     let Ok(json) = serde_json::from_str::<serde_json::Value>(out.trim()) else {
@@ -190,31 +224,66 @@ fn claude_sign_in(path: &Path) -> SignIn {
     }
 }
 
-/// Run `path args` with no stdin, and return stdout if it exits successfully within
-/// [`PROBE_TIMEOUT`]. On expiry the process is killed. `claude auth status` exits non-zero when
+/// `codex login status` reads no credentials itself and answers on stderr: "Logged in using
+/// ChatGPT", "Logged in using an API key", or "Not logged in". A signed-in answer can still be
+/// a session that has expired; the run then reports it as not signed in.
+fn codex_sign_in(path: &Path) -> SignIn {
+    let Some(out) = run_probe(path, &["login", "status"], true) else {
+        return SignIn::Unknown;
+    };
+    let out = out.to_lowercase();
+    if out.contains("not logged in") {
+        SignIn::NotSignedIn
+    } else if out.contains("chatgpt") {
+        SignIn::Plan
+    } else if out.contains("api key") {
+        SignIn::ApiKey
+    } else {
+        SignIn::Unknown
+    }
+}
+
+/// Run `path args` with no stdin, and return stdout (plus stderr when `with_stderr`, for CLIs
+/// that answer there) if it exits successfully within [`PROBE_TIMEOUT`]. On expiry the process is killed. `claude auth status` exits non-zero when
 /// signed out but still prints JSON, so non-zero exits keep their output too.
-fn run_probe(path: &Path, args: &[&str]) -> Option<String> {
+fn run_probe(path: &Path, args: &[&str], with_stderr: bool) -> Option<String> {
     let mut command = Command::new(path);
     command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(if with_stderr {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
     let mut child = spawn_with_retry(&mut command)?;
     let mut stdout = child.stdout.take()?;
-    // Read on a thread, and never join it: a killed script's grandchild could keep the pipe
+    // Read on threads, and never join them: a killed script's grandchild could keep the pipe
     // open, and detection must not wait for it.
     let (tx, rx) = mpsc::channel();
+    if let Some(mut stderr) = child.stderr.take() {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = stderr.read_to_string(&mut buf);
+            let _ = tx.send(buf);
+        });
+    }
     std::thread::spawn(move || {
         let mut buf = String::new();
         let _ = stdout.read_to_string(&mut buf);
         let _ = tx.send(buf);
     });
+    let expected = if with_stderr { 2 } else { 1 };
     let deadline = Instant::now() + PROBE_TIMEOUT;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let out = rx.recv_timeout(Duration::from_secs(1)).ok()?;
+                let mut out = String::new();
+                for _ in 0..expected {
+                    out.push_str(&rx.recv_timeout(Duration::from_secs(1)).ok()?);
+                }
                 // A non-zero exit with no output (a broken binary) tells us nothing.
                 return (status.success() || !out.trim().is_empty()).then_some(out);
             }
@@ -279,11 +348,33 @@ mod tests {
         )
     }
 
+    /// `codex login status` answers on stderr ("Logged in using ChatGPT", "... API key",
+    /// "Not logged in"), verified against codex-cli 0.153.4 on 2026-11-14.
+    fn fake_codex(dir: &Path, status: &str) -> PathBuf {
+        fake(
+            dir,
+            "codex",
+            &format!(
+                "case \"$1 $2\" in\n--version*) echo 'codex-cli 0.153.4';;\n\"login status\") echo '{status}' >&2; exit 0;;\nesac"
+            ),
+        )
+    }
+
+    /// Gemini CLI has no status command, so detection must only ever run `--version`.
+    fn fake_gemini(dir: &Path) -> PathBuf {
+        fake(
+            dir,
+            "gemini",
+            "case \"$1\" in\n--version) echo '0.20.0';;\n*) echo 'gemini must not be asked anything else' >&2; exit 9;;\nesac",
+        )
+    }
+
     fn opts(path: &Path) -> DetectOptions {
         DetectOptions {
             manual_path: None,
             path_env: Some(path.as_os_str().to_owned()),
             fallback_dirs: Some(vec![]),
+            skip_ollama: true,
         }
     }
 
@@ -447,6 +538,56 @@ mod tests {
             assert_eq!(found[0].kind, kind, "{name}");
             assert_eq!(found[0].path, named, "{name}");
         }
+    }
+
+    #[test]
+    fn finds_codex_with_login_status_from_stderr() {
+        let dir = tempfile::tempdir().unwrap();
+        fake_codex(dir.path(), "Logged in using ChatGPT");
+        let found = detect(&opts(dir.path()));
+        let c = find(&found, AssistantKind::Codex);
+        assert_eq!(c.version.as_deref(), Some("0.153.4"));
+        assert_eq!(c.sign_in, SignIn::Plan);
+    }
+
+    #[test]
+    fn codex_login_status_variants() {
+        for (status, expected) in [
+            ("Logged in using an API key", SignIn::ApiKey),
+            ("Not logged in", SignIn::NotSignedIn),
+            ("something unreadable", SignIn::Unknown),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            fake_codex(dir.path(), status);
+            assert_eq!(
+                find(&detect(&opts(dir.path())), AssistantKind::Codex).sign_in,
+                expected,
+                "{status}"
+            );
+        }
+    }
+
+    #[test]
+    fn finds_gemini_with_unknown_sign_in_and_only_version_probed() {
+        let dir = tempfile::tempdir().unwrap();
+        fake_gemini(dir.path());
+        let found = detect(&opts(dir.path()));
+        let g = find(&found, AssistantKind::Gemini);
+        assert_eq!(g.version.as_deref(), Some("0.20.0"));
+        assert_eq!(g.sign_in, SignIn::Unknown);
+    }
+
+    #[test]
+    fn ollama_is_skipped_when_tests_ask_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        fake_claude(dir.path(), r#"{"loggedIn":true,"authMethod":"claude.ai"}"#);
+        // Even a manual URL that would be a valid loopback base is ignored with skip_ollama.
+        let o = DetectOptions {
+            manual_path: Some(PathBuf::from("http://127.0.0.1:11434")),
+            ..opts(dir.path())
+        };
+        let found = detect(&o);
+        assert!(found.iter().all(|f| f.kind != AssistantKind::Ollama));
     }
 
     #[test]
