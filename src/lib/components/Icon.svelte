@@ -35,6 +35,7 @@
     video: 'M3.5 5.5h9v9h-9zM12.5 8.5l4-2.5v8l-4-2.5',
     image: 'M3.5 4.5h13v11h-13zM3.5 13l4-4 3 3 2-2 4 4M12.5 7.5h.01',
     file: 'M5.5 3.5h6l3 3v10h-9zM11.5 3.5v3h3',
+    sparkles: 'M10 3l1.7 4.3L16 9l-4.3 1.7L10 15l-1.7-4.3L4 9l4.3-1.7L10 3zM15.5 13l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2z',
   } as const;
   export type IconName = keyof typeof paths;
 </script>

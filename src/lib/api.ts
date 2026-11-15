@@ -78,7 +78,17 @@ export type View =
   | { kind: 'today'; since: number }
   | { kind: 'feed'; id: number }
   | { kind: 'folder'; id: number }
-  | { kind: 'search'; feed?: number; folder?: number };
+  | {
+      kind: 'search';
+      feed?: number;
+      folder?: number;
+      /** Article Date at or after this unix second (#122, Assistant-generated range). */
+      since?: number;
+      /** Article Date at or before this unix second. */
+      until?: number;
+      /** The search text is a raw FTS5 MATCH expression, not plain text (#122). */
+      fts?: boolean;
+    };
 
 export type Sort = 'newestFirst' | 'oldestFirst';
 

@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { LAYOUTS, type Layout } from '../api';
   import { app } from '../state.svelte';
+  import { assist } from '../assistant-state.svelte';
   import Button from '../ui/Button.svelte';
   import Menu, { type MenuItem } from '../ui/Menu.svelte';
   import EmptyState from './EmptyState.svelte';
@@ -59,15 +61,38 @@
   const title = $derived(app.search.trim() ? `Search: ${app.search.trim()}` : viewName);
   let searchFocused = $state(false);
   const showScope = $derived(app.searchScope !== null && (searchFocused || app.search.trim() !== ''));
+  /** The name of the scope the current search runs in (an Assistant-picked one wins, #122). */
+  const scopeName = $derived.by(() => {
+    const s = app.searchScope;
+    if (!s) return viewName;
+    const sidebar = app.sidebar;
+    if (s.kind === 'folder') return sidebar?.folders.find((f) => f.id === s.id)?.name ?? 'Folder';
+    const feeds = [...(sidebar?.feeds ?? []), ...(sidebar?.folders.flatMap((f) => f.feeds) ?? [])];
+    return feeds.find((f) => f.id === s.id)?.title ?? 'Feed';
+  });
 
   const hasFeeds = $derived((app.library?.feedCount ?? 0) > 0);
   const refreshing = $derived(app.refresh !== null && !app.refresh.finished);
+
+  // The Assistant search trigger needs the machine-local setup; reading it is cheap and local.
+  onMount(() => void assist.loadSetup());
 
   let searchTimer: ReturnType<typeof setTimeout>;
   function onSearch(event: Event) {
     const value = (event.currentTarget as HTMLInputElement).value;
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => app.setSearch(value), 150);
+  }
+
+  /** The separate Assistant trigger (#122): the field's text becomes the question. */
+  async function onAskAssistant() {
+    const input = document.getElementById('search') as HTMLInputElement | null;
+    const question = (input?.value ?? app.search).trim();
+    if (!question) {
+      input?.focus();
+      return;
+    }
+    await assist.askSearch(question);
   }
 </script>
 
@@ -84,10 +109,10 @@
           <button
             class="scope"
             title="Search everywhere instead"
-            aria-label={`Searching in ${viewName}. Search everywhere instead`}
+            aria-label={`Searching in ${scopeName}. Search everywhere instead`}
             onmousedown={(e) => e.preventDefault()}
             onclick={() => void app.searchEverywhere()}
-          ><span class="scope-name" title="in {viewName}">in {viewName}</span><Icon name="close" size={12} /></button>
+          ><span class="scope-name" title="in {scopeName}">in {scopeName}</span><Icon name="close" size={12} /></button>
         {/if}
         <input
           id="search"
@@ -108,6 +133,18 @@
           }}
         />
       </label>
+      {#if assist.setup?.disclosureAccepted}
+        <button
+          class="tool"
+          id="assistant-search"
+          class:spinning={assist.searchRun === 'running'}
+          title="Ask the Assistant to search"
+          aria-label="Ask the Assistant to search"
+          aria-busy={assist.searchRun === 'running'}
+          disabled={assist.searchRun === 'running'}
+          onclick={() => void onAskAssistant()}
+        ><Icon name="sparkles" size={16} /></button>
+      {/if}
       <Menu items={viewItems} label={viewLabel} align="end" class="tool">
         <Icon name={layoutMeta[app.layout].icon} size={16} />
       </Menu>
@@ -155,7 +192,7 @@
         <EmptyState title="No images here">This View has no Articles with images. Try Cards or List.</EmptyState>
       {:else if app.search.trim()}
         {#if app.searchScope}
-          <EmptyState title={`No matches in ${viewName}`}>
+          <EmptyState title={`No matches in ${scopeName}`}>
             Try fewer or shorter words.
             {#snippet actions()}
               <Button onclick={() => void app.searchEverywhere()}>Search everywhere</Button>

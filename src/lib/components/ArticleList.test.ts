@@ -72,7 +72,31 @@ vi.mock('../api', async (importOriginal) => ({
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: dialogOpen, save: vi.fn(async () => null) }));
 
+// The Assistant bridge (#122): a controllable setup plus fake runs we resolve by hand.
+import type { AssistantEvent, AssistantResult, AssistantSetup } from '../assistant';
+interface FakeTask {
+  action: unknown;
+  resolve: (r: AssistantResult) => void;
+  reject: (e: unknown) => void;
+}
+const assistantTasks: FakeTask[] = [];
+let assistantSetup: AssistantSetup | null = null;
+vi.mock('../assistant', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../assistant')>()),
+  getAssistantSetup: vi.fn(async () => assistantSetup),
+  runAssistant: vi.fn((action: unknown, _onEvent: (e: AssistantEvent) => void) => {
+    let resolve!: FakeTask['resolve'];
+    let reject!: FakeTask['reject'];
+    const result = new Promise<AssistantResult>((res, rej) => ((resolve = res), (reject = rej)));
+    result.catch(() => {});
+    assistantTasks.push({ action, resolve, reject });
+    return { runId: `r${assistantTasks.length}`, result, cancel: vi.fn(async () => {}) };
+  }),
+}));
+
 const { app } = await import('../state.svelte');
+const { assist } = await import('../assistant-state.svelte');
+const { runAssistant } = await import('../assistant');
 const { default: ArticleList } = await import('./ArticleList.svelte');
 
 let mounted: ReturnType<typeof mount> | null = null;
@@ -88,12 +112,16 @@ async function renderList() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  assistantTasks.length = 0;
+  assistantSetup = null;
+  assist.reset();
   mockApi.count.mockResolvedValue(0);
   app.phase = 'ready';
   app.library = { path: '/lib', name: 'Lib', formatVersion: 3, feedCount: 1, portable: false };
   app.sidebar = sidebar;
   app.selection = { kind: 'allUnread' };
   app.search = '';
+  app.searchAssisted = null;
   app.searchScoped = true;
   app.sort = 'newestFirst';
   app.total = 0;
@@ -110,6 +138,7 @@ beforeEach(() => {
 afterEach(() => {
   if (mounted) void unmount(mounted);
   mounted = null;
+  assist.reset();
   document.body.innerHTML = '';
 });
 
@@ -342,5 +371,103 @@ describe('Refresh progress and new Articles', () => {
     await settle();
     expect(mockApi.count, 'the list reloads').toHaveBeenCalled();
     expect(app.hasNewArticles).toBe(false);
+  });
+});
+
+describe('Assistant search trigger (#122)', () => {
+  const setup: AssistantSetup = { kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: true };
+  const trigger = () => buttonByLabel('Ask the Assistant to search');
+
+  it('is hidden without a setup, and plain typing never calls an Assistant', async () => {
+    await renderList();
+    expect(trigger()).toBeUndefined();
+    const input = document.getElementById('search') as HTMLInputElement;
+    input.value = 'rust';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await vi.waitFor(() => expect(app.search).toBe('rust'), { timeout: 1000 });
+    await settle();
+    expect(runAssistant).not.toHaveBeenCalled();
+    expect(mockApi.count).toHaveBeenCalledWith(expect.objectContaining({ search: 'rust' }));
+    const view = mockApi.count.mock.calls.at(-1)![0].view;
+    expect(view, 'normal search stays plain text, no fts flag').toEqual({ kind: 'search' });
+  });
+
+  it('is hidden while the disclosure is not accepted', async () => {
+    assistantSetup = { ...setup, disclosureAccepted: false };
+    await renderList();
+    await settle();
+    expect(trigger()).toBeUndefined();
+  });
+
+  it('is shown with a setup; clicking sends the field text as the question', async () => {
+    assistantSetup = setup;
+    await renderList();
+    await settle();
+    flushSync();
+    expect(trigger()).not.toBeNull();
+    const input = document.getElementById('search') as HTMLInputElement;
+    input.value = 'that post about WAL mode from last spring';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await vi.waitFor(() => expect(app.search).toBe('that post about WAL mode from last spring'), { timeout: 1000 });
+    trigger()!.click();
+    await settle();
+    expect(runAssistant).toHaveBeenCalledTimes(1);
+    expect(assistantTasks[0]!.action).toEqual({ kind: 'searchQuery', question: 'that post about WAL mode from last spring' });
+    expect(assist.searchRun).toBe('running');
+    expect(trigger()!.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('puts the generated query into the editable field and runs it as a raw FTS search', async () => {
+    assistantSetup = setup;
+    app.search = 'wal mode last spring';
+    await renderList();
+    await settle();
+    trigger()!.click();
+    await settle();
+    assistantTasks[0]!.resolve({
+      text: '{"query":"title:\\"wal\\"* AND sqlite","feed":5,"since":1740787200,"until":1748649599,"dropped":[]}',
+      structured: { query: 'title:"wal"* AND sqlite', feed: 5, folder: null, since: 1_740_787_200, until: 1_748_649_599, dropped: [] },
+    });
+    await settle();
+    flushSync();
+    // Visible and editable: the field shows the generated query.
+    const input = document.getElementById('search') as HTMLInputElement;
+    expect(input.value).toBe('title:"wal"* AND sqlite');
+    expect(app.search).toBe('title:"wal"* AND sqlite');
+    // The search runs locally with the Assistant's scope and date range as a raw FTS query.
+    expect(app.query().view).toEqual({ kind: 'search', feed: 5, since: 1_740_787_200, until: 1_748_649_599, fts: true });
+    expect(mockApi.count).toHaveBeenCalledWith(expect.objectContaining({ search: 'title:"wal"* AND sqlite' }));
+    // Honest label: the toast names the Assistant and says it may be wrong.
+    expect(app.toasts.at(-1)?.message).toBe('Claude Code wrote this search — it may be wrong');
+    expect(assist.searchRun).toBe('idle');
+    // The scope chip names the Assistant-picked Feed.
+    expect(buttonByLabel('Searching in Rust Blog. Search everywhere instead')).not.toBeNull();
+    // Editing the generated query keeps it a raw FTS search.
+    input.value = 'title:"wal"* AND sqlite OR wal2';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await vi.waitFor(() => expect(app.search).toBe('title:"wal"* AND sqlite OR wal2'), { timeout: 1000 });
+    await settle();
+    expect(app.query().view).toEqual({ kind: 'search', feed: 5, since: 1_740_787_200, until: 1_748_649_599, fts: true });
+  });
+
+  it('does nothing on an empty field, and reports Assistant errors as a toast', async () => {
+    assistantSetup = setup;
+    await renderList();
+    await settle();
+    trigger()!.click();
+    await settle();
+    expect(runAssistant).not.toHaveBeenCalled();
+
+    app.search = 'wal';
+    flushSync();
+    trigger()!.click();
+    await settle();
+    assistantTasks[0]!.reject({ kind: 'notSignedIn', message: 'raw' });
+    await settle();
+    flushSync();
+    expect(assist.searchRun).toBe('error');
+    expect(assist.searchError).toBe('notSignedIn');
+    expect(app.toasts.at(-1)?.message).toContain("isn't signed in");
+    expect(app.search, 'the field is untouched on error').toBe('wal');
   });
 });

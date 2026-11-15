@@ -11,6 +11,7 @@ import {
   assistantNames,
   assistantProviders,
   getAssistantSetup,
+  parseSearchQueryResult,
   runAssistant,
   type ArticleNotes,
   type AssistantAction,
@@ -144,6 +145,9 @@ class AssistantState {
   /** The reader's Assistant menu, opened by the toolbar button or the shortcut. */
   menuOpen = $state(false);
   run = $state<AssistantRun | null>(null);
+  /** The Assistant search next to the search field (#122): idle, running or failed. */
+  searchRun = $state<'idle' | 'running' | 'error'>('idle');
+  searchError = $state<AssistantErrorKind | null>(null);
   /** What the polite live region says: completion, never tokens. */
   announcement = $state('');
   /** Ask mode (#119): the question field and the conversation so far, gone on Article change. */
@@ -295,6 +299,50 @@ class AssistantState {
     );
   }
 
+  /**
+   * Ask the Assistant to turn `question` into a local search (#122). The validated query lands
+   * in the search field, editable, and the search then runs locally as any search does. Only the
+   * question goes to the Assistant, never Article content.
+   */
+  async askSearch(question: string): Promise<boolean> {
+    if (!this.setup?.disclosureAccepted) return false;
+    const q = question.trim();
+    if (!q || this.searchRun === 'running') return false;
+    this.searchRun = 'running';
+    this.searchError = null;
+    const task = runAssistant({ kind: 'searchQuery', question: q }, () => {});
+    try {
+      const result = await task.result;
+      let parsed = parseSearchQueryResult(result.structured);
+      if (!parsed) {
+        try {
+          parsed = parseSearchQueryResult(JSON.parse(result.text));
+        } catch {
+          parsed = null;
+        }
+      }
+      if (!parsed) throw { kind: 'malformed', message: 'the answer was not a search' };
+      void app.setSearchQuery(parsed.query, {
+        feed: parsed.feed ?? undefined,
+        folder: parsed.folder ?? undefined,
+        since: parsed.since ?? undefined,
+        until: parsed.until ?? undefined,
+      });
+      this.searchRun = 'idle';
+      // Honest label: the Assistant wrote this query and it may be wrong; it is in the field.
+      app.notify(`${assistantNames[this.setup.kind]} wrote this search — it may be wrong`);
+      return true;
+    } catch (e: unknown) {
+      const kind =
+        isCommandError(e) && KINDS.includes(e.kind as AssistantErrorKind) ? (e.kind as AssistantErrorKind) : 'failed';
+      this.searchRun = 'error';
+      this.searchError = kind;
+      const d = describeError(kind, this.setup?.kind ?? 'claudeCode');
+      app.notify(`${d.what} ${d.next}`);
+      return false;
+    }
+  }
+
   /** Stop: ends the process, keeps what already arrived. */
   stop() {
     const run = this.run;
@@ -348,6 +396,8 @@ class AssistantState {
     this.discard();
     this.setup = null;
     this.menuOpen = false;
+    this.searchRun = 'idle';
+    this.searchError = null;
   }
 
   private cancelTask() {

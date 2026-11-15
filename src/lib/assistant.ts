@@ -54,7 +54,8 @@ export type AssistantAction =
       newFolders: string[];
       /** The Folder whose Feeds are being sorted, or null for the top level. */
       folderId: number | null;
-    };
+    }
+  | { kind: 'searchQuery'; question: string };
 
 /** One proposed move from a 'folderSuggestions' run: the run's structured output. */
 export interface FolderSuggestion {
@@ -84,6 +85,40 @@ export interface AssistantResult {
   article?: ArticleNotes | null;
   /** Set for Translate only: the answer already sanitized in the Rust core, images restored. */
   html?: string | null;
+}
+
+/**
+ * The validated answer to a 'searchQuery' run (#122): the shell already checked it against the
+ * Library, so scope names are ids and unknown ones were dropped.
+ */
+export interface SearchQueryResult {
+  /** The FTS5 MATCH expression to run locally. */
+  query: string;
+  /** Article Date at or after this unix second. */
+  since: number | null;
+  /** Article Date at or before this unix second. */
+  until: number | null;
+  feed: number | null;
+  folder: number | null;
+  /** Scope names that matched nothing in the Library. */
+  dropped: string[];
+}
+
+/** Narrow a run's structured payload to a SearchQueryResult, or null when it isn't one. */
+export function parseSearchQueryResult(v: unknown): SearchQueryResult | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.query !== 'string' || !o.query.trim()) return null;
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+  const strs = (x: unknown) => (Array.isArray(x) && x.every((s) => typeof s === 'string') ? (x as string[]) : []);
+  return {
+    query: o.query,
+    since: num(o.since),
+    until: num(o.until),
+    feed: num(o.feed),
+    folder: num(o.folder),
+    dropped: strs(o.dropped),
+  };
 }
 
 export type AssistantErrorKind =
