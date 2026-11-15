@@ -165,10 +165,17 @@ pub async fn run(
         .header("content-type", "application/json")
         .body(body.to_string())
         .send();
-    let mut response = interruptible(send, &cancel, deadline)
-        .await?
-        // Not running (connection refused) reads like a missing tool.
-        .map_err(|_| AssistantError::NotInstalled)?;
+    let mut response = interruptible(send, &cancel, deadline).await?.map_err(|e| {
+        // Only a refused connection means "not running"; a connection that drops
+        // mid-request must not be reported as a missing tool.
+        if e.is_connect() {
+            AssistantError::NotInstalled
+        } else {
+            AssistantError::Failed {
+                message: format!("the Ollama server dropped the request: {e}"),
+            }
+        }
+    })?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();

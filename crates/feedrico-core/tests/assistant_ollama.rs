@@ -76,7 +76,12 @@ impl Drop for FakeServer {
 }
 
 fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+    // A grace window, not a deadline: under parallel test load the client's thread can be
+    // slow to send, and dropping the connection then reads as NotInstalled on the client
+    // (same class of flake as the detection probe's fixed read window).
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .ok()?;
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
     let mut content_length = 0usize;
@@ -399,6 +404,37 @@ async fn run_connection_refused_is_not_installed() {
     )
     .await;
     assert_eq!(result.unwrap_err(), AssistantError::NotInstalled);
+}
+
+/// A server that accepts one connection and closes it without answering — what the fake
+/// server looked like to the client when its read timed out under load and dropped the
+/// connection mid-request.
+fn start_silent_server() -> (String, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let handle = std::thread::spawn(move || {
+        if let Ok((stream, _)) = listener.accept() {
+            drop(stream); // close without responding
+        }
+    });
+    (format!("http://127.0.0.1:{port}"), handle)
+}
+
+#[tokio::test]
+async fn a_dropped_connection_is_not_reported_as_not_installed() {
+    // Regression for the macOS CI flake (PR #135): under load the fake server dropped slow
+    // connections, send() errored, and the blanket mapping turned that into NotInstalled.
+    // Only a refused connection means "not installed".
+    let (base, server) = start_silent_server();
+    let (result, _) = run_collect(&base, &task("llama3.2:latest"), Cancel::new()).await;
+    match result.unwrap_err() {
+        AssistantError::NotInstalled => {
+            panic!("a dropped connection must not read as NotInstalled")
+        }
+        AssistantError::Failed { .. } | AssistantError::Offline => {}
+        e => panic!("expected Failed or Offline, got {e:?}"),
+    }
+    server.join().unwrap();
 }
 
 #[tokio::test]
