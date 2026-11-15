@@ -857,6 +857,13 @@ enum AssistantAction {
     Explain {
         article_id: i64,
     },
+    /// "Explain a term" (#118): the selected text and its surrounding paragraph.
+    #[serde(rename_all = "camelCase")]
+    ExplainTerm {
+        article_id: i64,
+        term: String,
+        context: String,
+    },
 }
 
 impl AssistantAction {
@@ -864,9 +871,9 @@ impl AssistantAction {
     fn article_id(&self) -> Option<i64> {
         match self {
             AssistantAction::Test => None,
-            AssistantAction::Summarize { article_id } | AssistantAction::Explain { article_id } => {
-                Some(*article_id)
-            }
+            AssistantAction::Summarize { article_id }
+            | AssistantAction::Explain { article_id }
+            | AssistantAction::ExplainTerm { article_id, .. } => Some(*article_id),
         }
     }
 }
@@ -899,12 +906,17 @@ fn build_task(
     kind: assistant::AssistantKind,
     setup_model: Option<String>,
 ) -> CommandResult<(assistant::Task, Option<ArticleNotes>)> {
-    use assistant::article::{ArticleInput, explain_task, fast_model, summarize_task};
+    use assistant::article::{
+        ArticleInput, explain_task, explain_term_task, fast_model, summarize_task,
+    };
     let input = article.map(ArticleInput::from_article);
     let (mut task, input) = match (action, input) {
         (AssistantAction::Test, _) => (assistant::prompts::test_task(), None),
         (AssistantAction::Summarize { .. }, Some(input)) => (summarize_task(&input), Some(input)),
         (AssistantAction::Explain { .. }, Some(input)) => (explain_task(&input), Some(input)),
+        (AssistantAction::ExplainTerm { term, context, .. }, Some(input)) => {
+            (explain_term_task(term, context), Some(input))
+        }
         (_, None) => {
             return Err(CommandError::new(
                 "notFound",
@@ -1380,6 +1392,11 @@ mod tests {
         let a: AssistantAction =
             serde_json::from_str(r#"{"kind":"explain","articleId":8}"#).unwrap();
         assert_eq!(a.article_id(), Some(8));
+        let a: AssistantAction = serde_json::from_str(
+            r#"{"kind":"explainTerm","articleId":9,"term":"quota","context":"The quota resets daily."}"#,
+        )
+        .unwrap();
+        assert_eq!(a.article_id(), Some(9));
         let a: AssistantAction = serde_json::from_str(r#"{"kind":"test"}"#).unwrap();
         assert_eq!(a.article_id(), None);
     }
@@ -1405,6 +1422,62 @@ mod tests {
 
         let (task, _) = build_task(&summarize, Some(&article), MistralVibe, None).unwrap();
         assert_eq!(task.model, None);
+    }
+
+    #[test]
+    fn explain_term_builds_a_task_from_the_selection_and_its_paragraph_only() {
+        use assistant::AssistantKind::ClaudeCode;
+        use assistant::article::{MAX_CONTEXT_CHARS, MAX_TERM_CHARS};
+        let article = detail("<p>The quota is a limit on requests. It resets daily.</p>");
+        let action = AssistantAction::ExplainTerm {
+            article_id: 7,
+            term: "quota".into(),
+            context: "The quota is a limit on requests. It resets daily.".into(),
+        };
+        let (task, notes) = build_task(&action, Some(&article), ClaudeCode, None).unwrap();
+        assert_eq!(task.model.as_deref(), Some("haiku"));
+        assert!(task.system_prompt.contains("plain language"));
+        assert!(
+            task.prompt
+                .contains("<<<FEEDRICO_DATA Selected term>>>\nquota\n<<<END_FEEDRICO_DATA>>>")
+        );
+        assert!(task.prompt.contains(
+            "<<<FEEDRICO_DATA Paragraph around the selection>>>\n\
+                 The quota is a limit on requests. It resets daily.\n<<<END_FEEDRICO_DATA>>>"
+        ));
+        // The Article body itself is not part of the prompt.
+        assert!(!task.prompt.contains("FEEDRICO_DATA Article"));
+        assert!(notes.is_some());
+
+        // Term and context are capped before they reach the CLI.
+        let long = AssistantAction::ExplainTerm {
+            article_id: 7,
+            term: "x".repeat(MAX_TERM_CHARS + 100),
+            context: "y".repeat(MAX_CONTEXT_CHARS + 100),
+        };
+        let (task, _) = build_task(&long, Some(&article), ClaudeCode, None).unwrap();
+        let term = task
+            .prompt
+            .split("<<<FEEDRICO_DATA Selected term>>>\n")
+            .nth(1)
+            .unwrap()
+            .split("\n<<<END_FEEDRICO_DATA>>>")
+            .next()
+            .unwrap();
+        assert_eq!(term.chars().count(), MAX_TERM_CHARS);
+        let context = task
+            .prompt
+            .split("<<<FEEDRICO_DATA Paragraph around the selection>>>\n")
+            .nth(1)
+            .unwrap()
+            .split("\n<<<END_FEEDRICO_DATA>>>")
+            .next()
+            .unwrap();
+        assert_eq!(context.chars().count(), MAX_CONTEXT_CHARS);
+
+        // Without the Article there is nothing to anchor the selection to.
+        let err = build_task(&action, None, ClaudeCode, None).unwrap_err();
+        assert_eq!(err.kind, "notFound");
     }
 
     #[test]
