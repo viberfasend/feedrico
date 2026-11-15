@@ -45,9 +45,12 @@
       { id: 'action:settings', group: 'action', icon: 'settings', label: 'Open settings…', run: () => void app.openSettings() },
       { id: 'action:openLibrary', group: 'action', icon: 'library', label: 'Open another Library…', run: () => app.showWelcome() },
       { id: 'action:updates', group: 'action', icon: 'update', label: 'Check for updates', run: () => void app.checkForUpdates() },
-      // Assistant entries only exist with a setup and an Article in the reader.
+      // Assistant entries only exist with a setup and an Article in the reader; an entry can
+      // also gate itself (a text selection exists, for example).
       ...(assist.available
-        ? assist.entries.map((e) => ({ id: `action:assistant:${e.id}`, group: 'action' as const, icon: 'check' as const, label: e.paletteLabel, run: () => assist.start(e) }))
+        ? assist.entries
+            .filter((e) => !e.when || e.when())
+            .map((e) => ({ id: `action:assistant:${e.id}`, group: 'action' as const, icon: 'check' as const, label: e.paletteLabel, run: () => assist.start(e) }))
         : []),
     ];
   }
@@ -81,9 +84,11 @@
   );
 
   // Fresh query and selection each time the palette opens; no IPC, everything is already loaded.
+  // The reader's text selection is captured now, before the input takes focus and collapses it.
   let wasOpen = false;
   $effect(() => {
     if (open && !wasOpen) {
+      assist.captureSelection();
       query = '';
       selected = 0;
       const t = setTimeout(() => document.getElementById('palette-input')?.focus(), 0);

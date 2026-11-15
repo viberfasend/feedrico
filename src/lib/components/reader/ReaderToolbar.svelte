@@ -11,6 +11,15 @@
   let { article, title, scrolled }: { article: ArticleDetail; title: string; scrolled: boolean } = $props();
 
   const index = $derived(app.selectedIndex ?? 0);
+
+  // The entries that apply right now (an entry can need a text selection, for example), and the
+  // selection captured while the menu opens, before focus moves into it.
+  const items = $derived(
+    assist.entries.filter((e) => !e.when || e.when()).map((e) => ({ label: e.menuLabel, onclick: () => assist.start(e) })),
+  );
+  $effect(() => {
+    if (assist.menuOpen) assist.captureSelection();
+  });
 </script>
 
 <div class="toolbar" class:scrolled role="toolbar" aria-label="Article">
@@ -32,7 +41,7 @@
         class="assistant-trigger"
         align="end"
         bind:open={assist.menuOpen}
-        items={assist.entries.map((e) => ({ label: e.menuLabel, onclick: () => assist.start(e) }))}
+        items={items}
       >
         Assistant
       </Menu>
