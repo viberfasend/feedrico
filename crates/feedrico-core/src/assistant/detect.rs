@@ -280,9 +280,17 @@ fn run_probe(path: &Path, args: &[&str], with_stderr: bool) -> Option<String> {
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
+                // The child has exited, so both pipes are at EOF; the reader threads only need
+                // to be scheduled. Give them a shared grace window, not a fixed second each:
+                // under parallel test load a second is not always enough.
+                let read_deadline = Instant::now() + Duration::from_secs(2);
                 let mut out = String::new();
                 for _ in 0..expected {
-                    out.push_str(&rx.recv_timeout(Duration::from_secs(1)).ok()?);
+                    let remaining = read_deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        return None;
+                    }
+                    out.push_str(&rx.recv_timeout(remaining).ok()?);
                 }
                 // A non-zero exit with no output (a broken binary) tells us nothing.
                 return (status.success() || !out.trim().is_empty()).then_some(out);
@@ -305,7 +313,8 @@ fn spawn_with_retry(command: &mut Command) -> Option<std::process::Child> {
     loop {
         match command.spawn() {
             Ok(child) => return Some(child),
-            Err(e) if e.raw_os_error() == Some(26) && attempts < 10 => {
+            // ETXTBSY (26), and EAGAIN (11) when fork fails once under load.
+            Err(e) if matches!(e.raw_os_error(), Some(26) | Some(11)) && attempts < 10 => {
                 attempts += 1;
                 std::thread::sleep(Duration::from_millis(20));
             }
