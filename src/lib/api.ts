@@ -264,6 +264,20 @@ export type UpdateStatus =
   | { kind: 'available'; current: string; latest: string; url: string }
   | { kind: 'noReleases'; current: string };
 
+/** What the UI sends when saving the open Article to Ferrico (its loopback API, on click). */
+export interface FerricoSaveInput {
+  url: string;
+  title: string;
+  description?: string | null;
+  feedUrl?: string | null;
+}
+
+/** Ferrico's `POST /bookmarks` answer. */
+export interface FerricoSaved {
+  id: string;
+  createdAt: number;
+}
+
 export const api = {
   startup: () => invoke<Startup>('startup'),
   recentLibraries: () => invoke<string[]>('recent_libraries'),
@@ -322,6 +336,8 @@ export const api = {
   autostartEnabled: () => invoke<boolean>('autostart_enabled'),
   setAutostart: (enabled: boolean) => invoke<void>('set_autostart', { enabled }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
+  /** Saves an Article to Ferrico's local bookmark manager via its 127.0.0.1 API. */
+  saveToFerrico: (input: FerricoSaveInput) => invoke<FerricoSaved>('save_to_ferrico', { input }),
   appVersion: () => getVersion(),
   checkForUpdates: () => invoke<UpdateStatus>('check_for_updates'),
   refresh: (force: boolean) => invoke<boolean>('refresh', { force }),

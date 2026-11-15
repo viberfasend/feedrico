@@ -41,6 +41,10 @@
         ? [{ id: 'action:brokenFeeds', group: 'action' as const, icon: 'warning' as const, label: `Broken Feeds (${app.brokenFeeds.length})…`, run: () => (app.brokenFeedsOpen = true) }]
         : []),
       { id: 'action:markAllRead', group: 'action', icon: 'check', label: 'Mark all as read', run: () => void app.markAllRead() },
+      // Saving to Ferrico needs an open Article with a web link.
+      ...(app.article?.url
+        ? [{ id: 'action:saveToFerrico', group: 'action' as const, icon: 'bookmark' as const, label: 'Save Article to Ferrico', run: () => void app.saveToFerrico() }]
+        : []),
       { id: 'action:sidebar', group: 'action', icon: 'library', label: panes.sidebarHidden ? 'Show sidebar' : 'Hide sidebar', run: () => panes.toggleSidebar() },
       { id: 'action:theme', group: 'action', icon: 'sun', label: `Toggle theme (now ${app.theme})`, run: () => app.cycleTheme() },
       { id: 'action:settings', group: 'action', icon: 'settings', label: 'Open settings…', run: () => void app.openSettings() },

@@ -69,6 +69,11 @@ impl Fetcher {
         &self.media_prefix
     }
 
+    /// The shared HTTP client, for calls that are not Feed fetching (e.g. Ferrico's loopback API).
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
     /// Fetches and parses one Feed. Never fails: errors become `FetchResult::Failed` so they can
     /// be recorded on the Feed.
     pub async fn fetch(&self, feed: &FeedToFetch) -> FetchResult {

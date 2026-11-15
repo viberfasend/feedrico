@@ -67,6 +67,13 @@
         icon="external"
         onclick={() => app.openInBrowser()}
       />
+      <IconButton
+        label="Save to Ferrico"
+        title="Save to Ferrico (b)"
+        icon="bookmark"
+        disabled={app.savingToFerrico}
+        onclick={() => void app.saveToFerrico()}
+      />
     {/if}
   </div>
 </div>

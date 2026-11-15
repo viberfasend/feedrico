@@ -8,7 +8,10 @@ import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ArticleDetail, VideoMeta } from '../api';
 
-const mockApi = { openExternal: vi.fn(async (_url: string) => {}) };
+const mockApi = {
+  openExternal: vi.fn(async (_url: string) => {}),
+  saveToFerrico: vi.fn(async () => ({ id: 'abc', createdAt: 1_700_000_000 })),
+};
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -58,6 +61,7 @@ afterEach(() => {
   app.article = null;
   document.body.innerHTML = '';
   mockApi.openExternal.mockClear();
+  mockApi.saveToFerrico.mockClear();
 });
 
 describe('Reader images that are not cached', () => {
@@ -459,5 +463,28 @@ describe('Video card (#75)', () => {
   it('renders no card for a plain Article', () => {
     const pane = renderArticle({ contentHtml: '<p>Just text</p>' });
     expect(pane.querySelector('.video-card')).toBeNull();
+  });
+});
+
+describe('Reader toolbar: Save to Ferrico', () => {
+  // Feature: the toolbar saves the open Article to the local bookmark manager, but only
+  // Articles with a web link can be saved (Ferrico stores a URL).
+  it('shows the button for an Article with a web link and saves on click', () => {
+    const pane = renderArticle({ url: 'https://blog.example/post' });
+    const button = pane.querySelector('button[aria-label="Save to Ferrico"]') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    button.click();
+    flushSync();
+    expect(mockApi.saveToFerrico).toHaveBeenCalledWith({
+      url: 'https://blog.example/post',
+      title: 'Post',
+      description: null,
+      feedUrl: null,
+    });
+  });
+
+  it('hides the button for a title-only Article', () => {
+    const pane = renderArticle({ url: null });
+    expect(pane.querySelector('button[aria-label="Save to Ferrico"]')).toBeNull();
   });
 });

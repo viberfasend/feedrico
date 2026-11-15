@@ -853,6 +853,33 @@ export class AppState {
     if (url) this.openExternal(url);
   }
 
+  /** True while a "Save to Ferrico" request is in flight. */
+  savingToFerrico = $state(false);
+
+  /**
+   * Saves the open Article to Ferrico, the local bookmark manager, through its loopback-only
+   * API. Runs only on an explicit action (toolbar button, `b`, palette); the result or the
+   * failure reason is reported as a toast.
+   */
+  async saveToFerrico() {
+    const a = this.article;
+    if (!a?.url || this.savingToFerrico) return;
+    this.savingToFerrico = true;
+    try {
+      await api.saveToFerrico({
+        url: a.url,
+        title: a.title,
+        description: a.excerpt || null,
+        feedUrl: a.feedSiteUrl,
+      });
+      this.notify('Saved to Ferrico');
+    } catch (e) {
+      this.notify(errorMessage(e));
+    } finally {
+      this.savingToFerrico = false;
+    }
+  }
+
   openExternal(url: string) {
     api.openExternal(url).catch((e) => this.notify(errorMessage(e)));
   }
