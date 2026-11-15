@@ -15,6 +15,7 @@ import {
   getAssistantSetup,
   parseSearchQueryResult,
   isPicksResult,
+  isLocalAssistant,
   runAssistant,
   type ArticleNotes,
   type AssistantAction,
@@ -138,7 +139,7 @@ const KINDS: AssistantErrorKind[] = ['notInstalled', 'notSignedIn', 'usageLimit'
 /** Plain words for an error and what to do next. */
 export function describeError(kind: AssistantErrorKind, assistant: AssistantKind): { what: string; next: string } {
   const name = assistantNames[assistant];
-  const local = assistant === 'ollama';
+  const local = isLocalAssistant(assistant);
   switch (kind) {
     case 'notInstalled':
       return local
