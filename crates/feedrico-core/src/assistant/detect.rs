@@ -194,13 +194,13 @@ fn claude_sign_in(path: &Path) -> SignIn {
 /// [`PROBE_TIMEOUT`]. On expiry the process is killed. `claude auth status` exits non-zero when
 /// signed out but still prints JSON, so non-zero exits keep their output too.
 fn run_probe(path: &Path, args: &[&str]) -> Option<String> {
-    let mut child = Command::new(path)
+    let mut command = Command::new(path);
+    command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+        .stderr(Stdio::null());
+    let mut child = spawn_with_retry(&mut command)?;
     let mut stdout = child.stdout.take()?;
     // Read on a thread, and never join it: a killed script's grandchild could keep the pipe
     // open, and detection must not wait for it.
@@ -224,6 +224,23 @@ fn run_probe(path: &Path, args: &[&str]) -> Option<String> {
                 let _ = child.wait();
                 return None;
             }
+        }
+    }
+}
+
+/// Spawn, retrying briefly on "text file busy" (ETXTBSY), like the runner does. It happens when
+/// the executable was written a moment ago (an update, or a test's fake CLI) while another thread
+/// forked; without the retry the Assistant would look missing or its sign-in unknown.
+fn spawn_with_retry(command: &mut Command) -> Option<std::process::Child> {
+    let mut attempts = 0;
+    loop {
+        match command.spawn() {
+            Ok(child) => return Some(child),
+            Err(e) if e.raw_os_error() == Some(26) && attempts < 10 => {
+                attempts += 1;
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(_) => return None,
         }
     }
 }
