@@ -856,6 +856,12 @@ mod tests {
             .collect()
     }
 
+    /// `Path::new("/t").join(file)` the way the adapters build it: the separator is
+    /// platform-dependent, so expectations must not hardcode `/`.
+    fn joined(file: &str) -> String {
+        Path::new("/t").join(file).to_string_lossy().into_owned()
+    }
+
     #[test]
     fn claude_command_line_is_exact() {
         let args = strings(ClaudeCode.args(&task(), Path::new("/t")));
@@ -894,27 +900,26 @@ mod tests {
     #[test]
     fn vibe_command_line_is_exact() {
         let args = strings(MistralVibe.args(&task(), Path::new("/t")));
-        assert_eq!(
-            args,
-            [
-                "-p",
-                "--output",
-                "streaming",
-                "--max-turns",
-                "1",
-                "--enabled-tools",
-                "none",
-                "--time-limit",
-                "90",
-                "--system-prompt-file",
-                "/t/system-prompt.txt",
-            ]
-        );
+        let head = [
+            "-p",
+            "--output",
+            "streaming",
+            "--max-turns",
+            "1",
+            "--enabled-tools",
+            "none",
+            "--time-limit",
+            "90",
+            "--system-prompt-file",
+        ];
+        assert_eq!(args.len(), head.len() + 1);
+        assert_eq!(&args[..head.len()], head);
+        assert_eq!(args.last().unwrap(), &joined(SYSTEM_PROMPT_FILE));
         let mut t = task();
         t.model = Some("m".into());
         let args = strings(MistralVibe.args(&t, Path::new("/t")));
         assert_eq!(&args[7..9], ["--model", "m"]);
-        assert_eq!(args.last().unwrap(), "/t/system-prompt.txt");
+        assert_eq!(args.last().unwrap(), &joined(SYSTEM_PROMPT_FILE));
     }
 
     fn codex_task() -> Task {
@@ -926,46 +931,48 @@ mod tests {
     #[test]
     fn codex_command_line_is_exact() {
         let args = strings(Codex.args(&codex_task(), Path::new("/t")));
+        let head = [
+            "exec",
+            "--json",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "-s",
+            "read-only",
+            "-c",
+            "approval_policy=\"never\"",
+            "-c",
+            "web_search=\"disabled\"",
+            "--disable",
+            "shell_tool",
+            "--disable",
+            "unified_exec",
+            "--disable",
+            "multi_agent",
+            "--disable",
+            "multi_agent_v2",
+            "--disable",
+            "plugins",
+            "--disable",
+            "view_image",
+            "--disable",
+            "web_search_request",
+            "--disable",
+            "web_search_cached",
+            "--disable",
+            "standalone_web_search",
+            "-m",
+            "gpt-5",
+            "-c",
+        ];
+        assert_eq!(args.len(), head.len() + 2);
+        assert_eq!(&args[..head.len()], head);
         assert_eq!(
-            args,
-            [
-                "exec",
-                "--json",
-                "--ephemeral",
-                "--skip-git-repo-check",
-                "--ignore-user-config",
-                "--ignore-rules",
-                "-s",
-                "read-only",
-                "-c",
-                "approval_policy=\"never\"",
-                "-c",
-                "web_search=\"disabled\"",
-                "--disable",
-                "shell_tool",
-                "--disable",
-                "unified_exec",
-                "--disable",
-                "multi_agent",
-                "--disable",
-                "multi_agent_v2",
-                "--disable",
-                "plugins",
-                "--disable",
-                "view_image",
-                "--disable",
-                "web_search_request",
-                "--disable",
-                "web_search_cached",
-                "--disable",
-                "standalone_web_search",
-                "-m",
-                "gpt-5",
-                "-c",
-                "model_instructions_file=\"/t/system-prompt.txt\"",
-                "-",
-            ]
+            args[head.len()],
+            format!("model_instructions_file=\"{}\"", joined(SYSTEM_PROMPT_FILE))
         );
+        assert_eq!(args[head.len() + 1], "-");
         let args = strings(Codex.args(&task(), Path::new("/t")));
         assert!(!args.iter().any(|a| a == "-m"));
         assert!(!args.iter().any(|a| a == "--output-schema"));
@@ -986,7 +993,7 @@ mod tests {
         t.json_schema = Some(json!({"type": "object"}));
         let args = strings(Codex.args(&t, Path::new("/t")));
         let at = |flag: &str| args.iter().position(|a| a == flag).unwrap();
-        assert_eq!(args[at("--output-schema") + 1], "/t/output-schema.json");
+        assert_eq!(args[at("--output-schema") + 1], joined(SCHEMA_FILE));
     }
 
     #[test]
@@ -1156,7 +1163,7 @@ mod tests {
             Gemini.env(Path::new("/t")),
             vec![(
                 OsString::from("GEMINI_SYSTEM_MD"),
-                OsString::from("/t/system-prompt.txt")
+                OsString::from(joined(SYSTEM_PROMPT_FILE))
             )]
         );
     }
