@@ -849,6 +849,37 @@ fn perf_finish(
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum AssistantAction {
     Test,
+    #[serde(rename_all = "camelCase")]
+    Summarize {
+        article_id: i64,
+    },
+    #[serde(rename_all = "camelCase")]
+    Explain {
+        article_id: i64,
+    },
+}
+
+impl AssistantAction {
+    /// The Article this action works on, if any. It is loaded from the open Library.
+    fn article_id(&self) -> Option<i64> {
+        match self {
+            AssistantAction::Test => None,
+            AssistantAction::Summarize { article_id } | AssistantAction::Explain { article_id } => {
+                Some(*article_id)
+            }
+        }
+    }
+}
+
+/// What the panel should say about the input an Article result is based on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArticleNotes {
+    /// The Feed gave only a short excerpt, so the answer covers that excerpt.
+    excerpt_only: bool,
+    /// The Article was cut; the answer is based on the first `words_used` words.
+    truncated: bool,
+    words_used: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -856,6 +887,43 @@ enum AssistantAction {
 struct AssistantResult {
     text: String,
     structured: Option<serde_json::Value>,
+    /// Set for Article actions only.
+    article: Option<ArticleNotes>,
+}
+
+/// Builds the Task for an action. `article` is the loaded Article for Article actions. The
+/// model is the user's choice from the setup, else the fast default for that Assistant.
+fn build_task(
+    action: &AssistantAction,
+    article: Option<&ArticleDetail>,
+    kind: assistant::AssistantKind,
+    setup_model: Option<String>,
+) -> CommandResult<(assistant::Task, Option<ArticleNotes>)> {
+    use assistant::article::{ArticleInput, explain_task, fast_model, summarize_task};
+    let input = article.map(ArticleInput::from_article);
+    let (mut task, input) = match (action, input) {
+        (AssistantAction::Test, _) => (assistant::prompts::test_task(), None),
+        (AssistantAction::Summarize { .. }, Some(input)) => (summarize_task(&input), Some(input)),
+        (AssistantAction::Explain { .. }, Some(input)) => (explain_task(&input), Some(input)),
+        (_, None) => {
+            return Err(CommandError::new(
+                "notFound",
+                "That Article isn't available.",
+            ));
+        }
+    };
+    task.model = setup_model.or_else(|| {
+        input
+            .as_ref()
+            .and_then(|_| fast_model(kind))
+            .map(String::from)
+    });
+    let notes = input.map(|i| ArticleNotes {
+        excerpt_only: i.excerpt_only,
+        truncated: i.truncated,
+        words_used: i.words_used,
+    });
+    Ok((task, notes))
 }
 
 impl From<AssistantError> for CommandError {
@@ -907,13 +975,12 @@ async fn assistant_run(
     run_id: String,
     action: AssistantAction,
 ) -> CommandResult<AssistantResult> {
-    let mut task = match action {
-        AssistantAction::Test => assistant::prompts::test_task(),
-    };
     let (assistant, model) = run_target(machine::assistant_setup(&app))?;
-    if model.is_some() {
-        task.model = model;
-    }
+    let article = match action.article_id() {
+        Some(id) => Some(with_library(&state, |l| l.article(id))?),
+        None => None,
+    };
+    let (task, article_notes) = build_task(&action, article.as_ref(), assistant.kind, model)?;
 
     let cancel = assistant::run::Cancel::new();
     state
@@ -936,7 +1003,11 @@ async fn assistant_run(
         .unwrap_or_else(PoisonError::into_inner)
         .remove(&run_id);
     let (text, structured) = result?;
-    Ok(AssistantResult { text, structured })
+    Ok(AssistantResult {
+        text,
+        structured,
+        article: article_notes,
+    })
 }
 
 /// Stop a running Assistant task. Unknown run ids are ignored (it may have just finished).
@@ -1280,6 +1351,81 @@ mod tests {
             message: "x".into(),
         });
         assert_eq!(e.kind, "malformed");
+    }
+
+    fn detail(html: &str) -> ArticleDetail {
+        ArticleDetail {
+            id: 7,
+            feed_id: 1,
+            feed_title: "Blog".into(),
+            feed_site_url: None,
+            title: "Title".into(),
+            url: None,
+            author: None,
+            content_html: html.into(),
+            article_date: 0,
+            is_read: false,
+            is_starred: false,
+            favicon: None,
+            enclosures: vec![],
+            video: None,
+        }
+    }
+
+    #[test]
+    fn article_actions_deserialize_from_the_ui_shape() {
+        let a: AssistantAction =
+            serde_json::from_str(r#"{"kind":"summarize","articleId":7}"#).unwrap();
+        assert_eq!(a.article_id(), Some(7));
+        let a: AssistantAction =
+            serde_json::from_str(r#"{"kind":"explain","articleId":8}"#).unwrap();
+        assert_eq!(a.article_id(), Some(8));
+        let a: AssistantAction = serde_json::from_str(r#"{"kind":"test"}"#).unwrap();
+        assert_eq!(a.article_id(), None);
+    }
+
+    #[test]
+    fn actions_build_their_task_with_the_fast_model_unless_the_setup_names_one() {
+        use assistant::AssistantKind::{ClaudeCode, MistralVibe};
+        let article = detail("<p>Hello body</p>");
+        let summarize = AssistantAction::Summarize { article_id: 7 };
+        let (task, notes) = build_task(&summarize, Some(&article), ClaudeCode, None).unwrap();
+        assert_eq!(task.model.as_deref(), Some("haiku"));
+        assert!(task.system_prompt.contains("3 to 5"));
+        assert!(task.prompt.contains("<<<FEEDRICO_DATA Article>>>"));
+        assert!(task.prompt.contains("Hello body"));
+        let notes = notes.unwrap();
+        assert!(notes.excerpt_only && !notes.truncated);
+
+        let explain = AssistantAction::Explain { article_id: 7 };
+        let (task, _) =
+            build_task(&explain, Some(&article), ClaudeCode, Some("sonnet".into())).unwrap();
+        assert_eq!(task.model.as_deref(), Some("sonnet"));
+        assert!(task.system_prompt.contains("plain language"));
+
+        let (task, _) = build_task(&summarize, Some(&article), MistralVibe, None).unwrap();
+        assert_eq!(task.model, None);
+    }
+
+    #[test]
+    fn the_test_action_has_no_article_and_an_article_action_needs_one() {
+        let (task, notes) = build_task(
+            &AssistantAction::Test,
+            None,
+            assistant::AssistantKind::ClaudeCode,
+            None,
+        )
+        .unwrap();
+        assert!(notes.is_none());
+        assert_eq!(task.model, None);
+        let err = build_task(
+            &AssistantAction::Summarize { article_id: 1 },
+            None,
+            assistant::AssistantKind::ClaudeCode,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind, "notFound");
     }
 
     #[test]
