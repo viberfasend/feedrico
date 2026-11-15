@@ -11,8 +11,18 @@ const claude = (signIn: FoundAssistant['signIn']): FoundAssistant => ({
   path: '/usr/bin/claude',
   version: '2.1.0',
   signIn,
+  models: [],
 });
-const vibe: FoundAssistant = { kind: 'mistralVibe', path: '/usr/bin/vibe', version: '1.0', signIn: 'notSignedIn' };
+const vibe: FoundAssistant = { kind: 'mistralVibe', path: '/usr/bin/vibe', version: '1.0', signIn: 'notSignedIn', models: [] };
+const codex: FoundAssistant = { kind: 'codex', path: '/usr/bin/codex', version: '0.153.4', signIn: 'plan', models: [] };
+const gemini: FoundAssistant = { kind: 'gemini', path: '/usr/bin/gemini', version: '0.20.0', signIn: 'unknown', models: [] };
+const ollama: FoundAssistant = {
+  kind: 'ollama',
+  path: 'http://127.0.0.1:11434',
+  version: '0.12.6',
+  signIn: 'notApplicable',
+  models: ['llama3.2:latest', 'qwen3:8b'],
+};
 
 let stored: AssistantSetup | null = null;
 let events: AssistantEvent[] = [];
@@ -108,6 +118,48 @@ describe('Assistant settings', () => {
     mockAssistant.detectAssistants.mockImplementation(async () => [claude('notSignedIn')]);
     await click(button('Look again'));
     expect(text()).toContain('not signed in: open a terminal and run claude to sign in');
+  });
+
+  it('lists Codex, Gemini and Ollama like the others, in plain words', async () => {
+    mockAssistant.detectAssistants.mockImplementation(async () => [codex, gemini, ollama]);
+    await open();
+    await click(button('Set up'));
+    expect(text()).toContain('Codex 0.153.4');
+    expect(text()).toContain('signed in with your ChatGPT plan');
+    expect(text()).toContain('Gemini CLI 0.20.0');
+    expect(text()).toContain('sign-in state unknown');
+    expect(text()).toContain('Ollama 0.12.6');
+    expect(text()).toContain('runs on this computer; no sign-in needed');
+    expect(text()).toContain('http://127.0.0.1:11434');
+  });
+
+  it('picking Ollama saves its first installed model and the disclosure says nothing leaves the computer', async () => {
+    mockAssistant.detectAssistants.mockImplementation(async () => [ollama]);
+    await open();
+    await click(button('Set up'));
+    await click(document.querySelector('input[type="radio"]')!);
+    expect(stored).toEqual({
+      kind: 'ollama',
+      path: 'http://127.0.0.1:11434',
+      model: 'llama3.2:latest',
+      disclosureAccepted: false,
+      targetLanguage: navigator.language,
+      interests: '',
+    });
+    expect(text()).toContain('It stays on this computer; nothing is sent anywhere');
+    const select = document.querySelector<HTMLSelectElement>('select[aria-label="Model"]')!;
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'llama3.2:latest', 'qwen3:8b']);
+    expect(select.value).toBe('llama3.2:latest');
+    select.value = 'qwen3:8b';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(stored?.model).toBe('qwen3:8b');
+  });
+
+  it('names OpenAI for Codex in the disclosure', async () => {
+    stored = { kind: 'codex', path: '/usr/bin/codex', model: null, disclosureAccepted: false };
+    await open();
+    expect(text()).toContain("sends it to OpenAI under your ChatGPT plan. Nothing is sent unless you ask.");
   });
 
   it('looks again with a manual path', async () => {

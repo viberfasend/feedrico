@@ -81,7 +81,7 @@
     void save({
       kind: item.kind,
       path: item.path,
-      model: item.kind === 'claudeCode' ? 'haiku' : null,
+      model: item.kind === 'claudeCode' ? 'haiku' : item.kind === 'ollama' ? (item.models[0] ?? null) : null,
       disclosureAccepted: setup?.disclosureAccepted ?? false,
       // Translate's target language defaults to the system language.
       targetLanguage: setup?.targetLanguage ?? navigator.language,
@@ -109,6 +109,9 @@
   const loginHint: Record<AssistantKind, { before: string; command: string; after: string }> = {
     claudeCode: { before: 'not signed in: open a terminal and run ', command: 'claude', after: ' to sign in' },
     mistralVibe: { before: 'not signed in: run ', command: 'vibe --setup', after: '' },
+    codex: { before: 'not signed in: run ', command: 'codex login', after: '' },
+    gemini: { before: 'not signed in: run ', command: 'gemini', after: ' and choose Login with Google' },
+    ollama: { before: 'the server is not running: start ', command: 'ollama serve', after: '' },
   };
 
   function errorText(e: unknown): string {
@@ -158,7 +161,7 @@
     const items = found.map((item) => ({ item, missing: false }));
     if (setup && !found.some((f) => f.kind === setup!.kind && f.path === setup!.path)) {
       items.unshift({
-        item: { kind: setup.kind, path: setup.path, version: null, signIn: 'unknown' },
+        item: { kind: setup.kind, path: setup.path, version: null, signIn: 'unknown', models: [] },
         missing: true,
       });
     }
@@ -169,21 +172,41 @@
   const modelValue = $derived(setup?.model ?? '');
   const languageValue = $derived(setup?.targetLanguage ?? '');
   const systemLanguage = navigator.language;
-  const providerLine = $derived(
-    setup
-      ? `When you ask, Feedrico gives the Article's text to ${assistantNames[setup.kind]} on this computer, which sends it to ${assistantProviders[setup.kind]}${setup.kind === 'claudeCode' ? ' under your Claude plan' : ''}. Nothing is sent unless you ask.`
-      : '',
+  const providerLine = $derived.by(() => {
+    if (!setup) return '';
+    if (setup.kind === 'ollama') {
+      return `When you ask, Feedrico gives the Article's text to Ollama running on this computer. It stays on this computer; nothing is sent anywhere. Nothing is sent unless you ask.`;
+    }
+    const plan = setup.kind === 'claudeCode' ? ' under your Claude plan' : setup.kind === 'codex' ? ' under your ChatGPT plan' : '';
+    return `When you ask, Feedrico gives the Article's text to ${assistantNames[setup.kind]} on this computer, which sends it to ${assistantProviders[setup.kind]}${plan}. Nothing is sent unless you ask.`;
+  });
+  /** The models the detected Ollama server has installed, for the model picker. */
+  const ollamaModels = $derived(
+    (found.find((f) => f.kind === 'ollama' && setup !== null && f.path === setup.path)?.models ?? [])
+      .concat(modelValue && !found.some((f) => f.models.includes(modelValue)) ? [modelValue] : []),
   );
+  const ollamaOptions = $derived([
+    { value: '', label: 'Default' },
+    ...ollamaModels.map((m) => ({ value: m, label: m })),
+  ]);
 </script>
 
 {#snippet signIn(item: FoundAssistant)}
   {#if item.signIn === 'plan'}
-    {item.kind === 'claudeCode' ? 'signed in with your Claude plan' : 'signed in'}
+    {#if item.kind === 'claudeCode'}
+      signed in with your Claude plan
+    {:else if item.kind === 'codex'}
+      signed in with your ChatGPT plan
+    {:else}
+      signed in
+    {/if}
   {:else if item.signIn === 'apiKey'}
     signed in with an API key: runs are billed per use
   {:else if item.signIn === 'notSignedIn'}
     {@const hint = loginHint[item.kind]}
     {hint.before}<code>{hint.command}</code>{hint.after}
+  {:else if item.signIn === 'notApplicable'}
+    runs on this computer; no sign-in needed
   {:else}
     sign-in state unknown
   {/if}
@@ -199,8 +222,8 @@
             {#if setup}
               {assistantNames[setup.kind]} on this computer. It only works when you ask.
             {:else}
-              An Assistant is an AI tool you already have on this computer, like Claude Code, that
-              Feedrico can ask to help with Articles. It is off until you set it up.
+              An Assistant is an AI tool you already have on this computer, like Claude Code or
+              Ollama, that Feedrico can ask to help with Articles. It is off until you set it up.
             {/if}
           </span>
         </div>
@@ -221,7 +244,8 @@
               <span class="desc">Looking for Assistants…</span>
             {:else if listed.length === 0}
               <span class="desc">
-                No Assistant found. Install Claude Code or Mistral Vibe, or enter where it is below.
+                No Assistant found. Install Claude Code, Mistral Vibe, Codex, Gemini CLI or
+                Ollama, or enter where it is below.
               </span>
             {/if}
           </div>
@@ -253,7 +277,11 @@
           <div class="manual">
             <label class="label" for="{ids}-path">Path to the Assistant, if it was not found</label>
             <div class="manual-row">
-              <Input id="{ids}-path" bind:value={manualPath} placeholder="/home/you/.local/bin/claude" />
+              <Input
+                id="{ids}-path"
+                bind:value={manualPath}
+                placeholder="/home/you/.local/bin/claude, or http://127.0.0.1:11434 for Ollama"
+              />
               <Button onclick={look} disabled={phase === 'detecting'}>Look again</Button>
             </div>
           </div>
@@ -269,14 +297,20 @@
           <div class="row-text">
             <label class="label" for="{ids}-model">Model</label>
             <span class="desc">
-              {setup.kind === 'claudeCode'
-                ? 'Haiku is fast and enough for most things.'
-                : 'Leave empty to use the model Vibe is set up with.'}
+              {#if setup.kind === 'claudeCode'}
+                Haiku is fast and enough for most things.
+              {:else if setup.kind === 'ollama'}
+                One of the models installed on this computer.
+              {:else}
+                Leave empty to use the model it is set up with.
+              {/if}
             </span>
           </div>
           <div class="control">
             {#if setup.kind === 'claudeCode'}
               <Select label="Model" value={modelValue} options={CLAUDE_MODELS} onchange={setModel} />
+            {:else if setup.kind === 'ollama' && ollamaOptions.length > 1}
+              <Select label="Model" value={modelValue} options={ollamaOptions} onchange={setModel} />
             {:else}
               <Input
                 id="{ids}-model"

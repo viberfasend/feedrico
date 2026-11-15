@@ -126,21 +126,34 @@ export interface AskTurn {
   html: string;
 }
 
-const BINARY: Record<AssistantKind, string> = { claudeCode: 'claude', mistralVibe: 'vibe' };
+const BINARY: Record<AssistantKind, string> = {
+  claudeCode: 'claude',
+  mistralVibe: 'vibe',
+  codex: 'codex',
+  gemini: 'gemini',
+  ollama: 'ollama',
+};
 const KINDS: AssistantErrorKind[] = ['notInstalled', 'notSignedIn', 'usageLimit', 'offline', 'timedOut', 'cancelled', 'malformed', 'failed', 'notSetUp', 'noInterests', 'invalid'];
 
 /** Plain words for an error and what to do next. */
 export function describeError(kind: AssistantErrorKind, assistant: AssistantKind): { what: string; next: string } {
   const name = assistantNames[assistant];
+  const local = assistant === 'ollama';
   switch (kind) {
     case 'notInstalled':
-      return { what: `${name} can't be found on this computer.`, next: 'Install it again, or choose where it is in Settings.' };
+      return local
+        ? { what: 'The Ollama server is not running on this computer.', next: 'Start Ollama, then try again.' }
+        : { what: `${name} can't be found on this computer.`, next: 'Install it again, or choose where it is in Settings.' };
     case 'notSignedIn':
-      return { what: `${name} isn't signed in.`, next: `Open a terminal and run \`${BINARY[assistant]}\` to sign in, then try again.` };
+      return local
+        ? { what: 'The Ollama server is not running on this computer.', next: 'Start Ollama, then try again.' }
+        : { what: `${name} isn't signed in.`, next: `Open a terminal and run \`${BINARY[assistant]}\` to sign in, then try again.` };
     case 'usageLimit':
       return { what: `${name} says you've reached its usage limit.`, next: 'Wait until the limit resets, then try again.' };
     case 'offline':
-      return { what: `Couldn't reach ${assistantProviders[assistant]}.`, next: 'Check your internet connection, then try again.' };
+      return local
+        ? { what: "Couldn't reach the Ollama server on this computer.", next: 'Check that Ollama is running, then try again.' }
+        : { what: `Couldn't reach ${assistantProviders[assistant]}.`, next: 'Check your internet connection, then try again.' };
     case 'timedOut':
       return { what: `${name} took too long to answer.`, next: 'Try again. A shorter Article may help.' };
     case 'cancelled':
