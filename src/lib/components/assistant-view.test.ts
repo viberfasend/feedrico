@@ -165,22 +165,33 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-describe('the Assistant menu in the Article list header', () => {
-  it('is absent without a setup, and nothing runs', async () => {
+describe('the View actions in the View menu', () => {
+  async function viewMenuLabels() {
+    const trigger = q('#pane-list button[aria-label^="View options"]') as HTMLButtonElement;
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    flushSync();
+    await settle();
+    return [...document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')].map((el) => el.textContent?.trim());
+  }
+
+  it('are absent without a setup, and nothing runs', async () => {
     await renderList(null);
-    expect(q('#pane-list button[aria-label="Assistant"]')).toBeNull();
+    expect(await viewMenuLabels()).not.toContain('Brief this View');
     assist.start(briefingEntry());
     flushSync();
     expect(tasks).toHaveLength(0);
   });
 
-  it('offers the View actions when a setup exists, and starts a briefing with the current query', async () => {
+  it('add no button of their own to the list header (the search field keeps its room)', async () => {
     await renderList();
-    const trigger = q('#pane-list button[aria-label="Assistant"]') as HTMLButtonElement;
-    expect(trigger).not.toBeNull();
-    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    flushSync();
-    await settle();
+    expect(q('#pane-list button[aria-label="Assistant"]')).toBeNull();
+  });
+
+  it('start a briefing with the current query from the View menu', async () => {
+    await renderList();
+    const labels = await viewMenuLabels();
+    expect(labels).toContain('Brief this View');
+    expect(labels).toContain('Picks for this View');
     const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (el) => el.textContent?.trim() === 'Brief this View',
     )!;
