@@ -18,11 +18,15 @@
 //! - [`detect`]: find installed Assistants, their version and sign-in state (#112).
 //! - [`article`]: Article input and the reading-aid prompts (#116, #118).
 //! - [`run`]: run one [`Task`], stream [`Event`]s, cancel, map errors (#113).
+//! - [`ask`]: ask a question about the Article, resending the capped conversation (#119).
+//! - [`translate`]: translate the Article, structure and image placeholders kept (#117).
 
 pub mod article;
+pub mod ask;
 pub mod detect;
 pub mod prompts;
 pub mod run;
+pub mod translate;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -39,6 +43,10 @@ pub struct AssistantSetup {
     pub model: Option<String>,
     /// The user has seen the disclosure that Article text goes to the provider.
     pub disclosure_accepted: bool,
+    /// The language Translate renders Articles into (a BCP 47 tag or name), machine-local.
+    /// `None` means the UI's default, the system language. Never stored in the Library.
+    #[serde(default)]
+    pub target_language: Option<String>,
 }
 
 /// The Assistants Feedrico knows how to drive. New CLIs (Codex, Gemini, Ollama: #125) add a

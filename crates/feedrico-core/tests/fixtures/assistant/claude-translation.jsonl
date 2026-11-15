@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"result":"<p>Bonjour le monde</p><script>alert(1)</script><p><img src=x onerror=alert(2)></p><p><a href=\"javascript:alert(3)\">evil</a> <a href=\"https://example.com/ok\">good</a></p><p>[[IMAGE_1]]</p><h3>Un titre</h3>"}
