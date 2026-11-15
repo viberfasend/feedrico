@@ -117,6 +117,7 @@ vi.mock('svelte/transition', () => ({
 }));
 
 const { app } = await import('../state.svelte');
+const { folderSuggestions } = await import('../folder-suggestions.svelte');
 const { default: App } = await import('../../App.svelte');
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -265,5 +266,43 @@ describe('axe over every screen state', () => {
     flushSync();
     expect(document.querySelector('[role="combobox"]')).not.toBeNull();
     await expectNoViolations('command palette');
+  });
+
+  it('has no violations with the Folder suggestions dialog open, and the Assistant palette entry (#123)', async () => {
+    assistantSetup = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true };
+    await mountReady('list');
+    await settle();
+    flushSync();
+    // While a batch runs: progress line, Stop, live region.
+    folderSuggestions.open = true;
+    folderSuggestions.phase = 'running';
+    folderSuggestions.scope = { kind: 'topLevel' };
+    folderSuggestions.totalFeeds = 1035;
+    folderSuggestions.doneFeeds = 100;
+    folderSuggestions.batch = 2;
+    folderSuggestions.batches = 11;
+    folderSuggestions.announcement = 'Group 1 of 11 done';
+    flushSync();
+    expect(document.querySelector('.folder-suggestions-dialog')).not.toBeNull();
+    await expectNoViolations('folder suggestions, running');
+    // With proposals: checkboxes, accept/reject all, Apply.
+    folderSuggestions.phase = 'done';
+    folderSuggestions.proposals = [
+      { feedId: 7, feedTitle: 'Hacker News', folder: 'Tech', isNewFolder: false, accepted: true },
+      { feedId: 8, feedTitle: 'A rather long Feed title that must ellipsize', folder: 'Cooking', isNewFolder: true, accepted: false },
+    ];
+    folderSuggestions.announcement = 'Suggestions ready';
+    flushSync();
+    await expectNoViolations('folder suggestions, proposals');
+    folderSuggestions.reset();
+    // The palette lists the Assistant entry only with the setup accepted.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
+    await settle();
+    flushSync();
+    const labels = [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? '');
+    expect(labels.some((l) => l.includes('Suggest Folders'))).toBe(true);
+    await expectNoViolations('command palette with Assistant entry');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
+    folderSuggestions.reset();
   });
 });

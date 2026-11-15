@@ -358,3 +358,6 @@ class AssistantState {
 }
 
 export const assist = new AssistantState();
+
+/** Every kind a run can fail with, so other Assistant surfaces can map a rejected invoke. */
+export const assistantErrorKinds: readonly AssistantErrorKind[] = KINDS;

@@ -10,6 +10,8 @@
 //     rejects with a CommandError whose kind is an AssistantError kind, or 'notSetUp'
 //     when there is no setup or its disclosure isn't accepted (then nothing runs)
 //   assistant_cancel { runId }               -> void                      (#113)
+//   apply_folder_moves { moves, scopeFolderId } -> AppliedMoves           (#123, in api.ts)
+//   undo_folder_moves { applied }            -> void                      (#123, in api.ts)
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -42,7 +44,23 @@ export type AssistantAction =
   | { kind: 'explain'; articleId: number }
   | { kind: 'explainTerm'; articleId: number; term: string; context: string }
   | { kind: 'translate'; articleId: number }
-  | { kind: 'ask'; articleId: number; question: string; history: { question: string; answer: string }[] };
+  | { kind: 'ask'; articleId: number; question: string; history: { question: string; answer: string }[] }
+  | {
+      /** One batch of Folder suggestions (#123). */
+      kind: 'folderSuggestions';
+      /** The Feed ids of one batch; the shell refuses more than its BATCH_SIZE at once. */
+      feedIds: number[];
+      /** Folder names earlier batches of the same run proposed, so the model reuses them. */
+      newFolders: string[];
+      /** The Folder whose Feeds are being sorted, or null for the top level. */
+      folderId: number | null;
+    };
+
+/** One proposed move from a 'folderSuggestions' run: the run's structured output. */
+export interface FolderSuggestion {
+  feedId: number;
+  folder: string;
+}
 
 export type AssistantEvent =
   | { kind: 'text'; delta: string }

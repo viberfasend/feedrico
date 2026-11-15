@@ -205,6 +205,25 @@ export interface ImportSummary {
   foldersCreated: number;
 }
 
+/** One accepted Folder move from the Assistant's suggestions (#123). */
+export interface FolderMove {
+  feedId: number;
+  folder: string;
+}
+
+/** A Feed that was moved, with what undo needs to put it back. */
+export interface MovedFeed {
+  feedId: number;
+  previousFolderId: number | null;
+  folderId: number;
+}
+
+/** What applyFolderMoves did, so undoFolderMoves can reverse exactly that. */
+export interface AppliedMoves {
+  createdFolderIds: number[];
+  moved: MovedFeed[];
+}
+
 export interface FeedCandidate {
   url: string;
   title: string | null;
@@ -256,6 +275,14 @@ export const api = {
   unsubscribe: (id: number) => invoke<void>('unsubscribe', { id }),
   /** Unsubscribes from several Feeds at once; resolves to how many were removed. */
   unsubscribeFeeds: (ids: number[]) => invoke<number>('unsubscribe_feeds', { ids }),
+  /**
+   * Applies accepted Folder suggestions as one undoable step (#123). Only Feeds still in
+   * `scopeFolderId` (or at the top level when null) move; resolves to what it did.
+   */
+  applyFolderMoves: (moves: FolderMove[], scopeFolderId: number | null) =>
+    invoke<AppliedMoves>('apply_folder_moves', { moves, scopeFolderId }),
+  /** Undo for applyFolderMoves: puts each Feed back and removes Folders left empty. */
+  undoFolderMoves: (applied: AppliedMoves) => invoke<void>('undo_folder_moves', { applied }),
   /** Fetches one Feed now, ignoring its backoff. */
   retryFeed: (id: number) => invoke<RetryOutcome>('retry_feed', { id }),
   exportOpml: (path: string) => invoke<void>('export_opml', { path }),

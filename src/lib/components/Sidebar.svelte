@@ -1,6 +1,9 @@
 <script lang="ts">
   import { open } from '@tauri-apps/plugin-dialog';
+  import { onMount } from 'svelte';
   import type { FeedNode, FolderNode } from '../api';
+  import { assist } from '../assistant-state.svelte';
+  import { folderSuggestions } from '../folder-suggestions.svelte';
   import { app, type Selection } from '../state.svelte';
   import Button from '../ui/Button.svelte';
   import ContextMenu, { type MenuItem } from '../ui/ContextMenu.svelte';
@@ -8,7 +11,12 @@
   import IconButton from '../ui/IconButton.svelte';
   import Menu from '../ui/Menu.svelte';
   import FeedIcon from './FeedIcon.svelte';
+  import FolderSuggestions from './FolderSuggestions.svelte';
   import Icon, { type IconName } from './Icon.svelte';
+
+  // The reader panel loads the Assistant setup too, but it is only mounted with the reader, so
+  // the sidebar reads it as well: the menus below stay hidden until an Assistant is set up.
+  onMount(() => void assist.loadSetup());
 
   // Collapsed Folders are a per-machine view preference, not Library data.
   const COLLAPSED_KEY = 'feedrico.collapsedFolders';
@@ -51,6 +59,13 @@
       }
       items.push({ label: 'Unsubscribe…', danger: true, separatorBefore: true, onclick: () => (confirm = target) });
     } else {
+      // Sort this Folder's Feeds with the Assistant, when one is set up.
+      if (assist.setup?.disclosureAccepted) {
+        items.push({
+          label: 'Suggest Folders…',
+          onclick: () => folderSuggestions.start({ kind: 'folder', id: target.folder.id, name: target.folder.name }),
+        });
+      }
       items.push({ label: 'Delete Folder…', danger: true, separatorBefore: true, onclick: () => (confirm = target) });
     }
     return items;
@@ -104,6 +119,15 @@
     { label: 'Settings…', onclick: () => void app.openSettings(), separatorBefore: true },
     { label: 'Open another Library…', onclick: () => app.showWelcome() },
     { label: 'Check for updates', onclick: () => void app.checkForUpdates() },
+    // Assistant entry points exist only with a set-up Assistant (off by default, ADR 0005).
+    ...(assist.setup?.disclosureAccepted
+      ? [
+          {
+            label: 'Suggest Folders for unsorted Feeds…',
+            onclick: () => folderSuggestions.start({ kind: 'topLevel' }),
+          },
+        ]
+      : []),
   ]);
   const feedsLabel = (n: number) => (n === 1 ? '1 Feed' : `${n} Feeds`);
   async function drop(event: DragEvent, folderId: number | null) {
@@ -306,6 +330,8 @@
     </div>
   </Dialog>
 {/if}
+
+<FolderSuggestions />
 
 <style>
   .rename {
