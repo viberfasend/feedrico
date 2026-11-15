@@ -87,6 +87,22 @@ pub enum FetchResult {
 /// The longest Folder name an Assistant may propose, in characters.
 pub const MAX_FOLDER_NAME_CHARS: usize = 60;
 
+/// The rules for a Folder name that comes from an Assistant: trimmed, single-spaced, not empty,
+/// at most [`MAX_FOLDER_NAME_CHARS`], no control characters and no path separators, because
+/// Folders are one level deep. `None` when the name breaks a rule.
+pub fn clean_folder_name(name: &str) -> Option<String> {
+    let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.is_empty()
+        || name.chars().count() > MAX_FOLDER_NAME_CHARS
+        || name
+            .chars()
+            .any(|c| c.is_control() || c == '/' || c == '\\')
+    {
+        return None;
+    }
+    Some(name)
+}
+
 /// One accepted move from the Assistant's Folder suggestions: a Feed into the Folder with this
 /// name. The Folder is created when no Folder has that name yet.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -113,12 +129,16 @@ pub struct AppliedMoves {
     pub moved: Vec<MovedFeed>,
 }
 
-/// A Feed at the top level, as far as an Assistant needs to know it.
+/// A Feed an Assistant may be asked about, as far as it needs to know it: it sits at the top
+/// level or in exactly one Folder (`folder`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsortedFeed {
     pub id: i64,
     pub title: String,
     pub site_url: Option<String>,
+    /// The Folder the Feed is in right now, or `None` at the top level. A proposal for this
+    /// Folder is a no-op and is dropped.
+    pub folder: Option<String>,
 }
 
 fn non_empty<'a>(text: &'a str, message: &str) -> Result<&'a str> {
@@ -289,6 +309,7 @@ impl Library {
                         id: r.get(0)?,
                         title: r.get(1)?,
                         site_url: r.get(2)?,
+                        folder: None,
                     })
                 })
                 .optional()?
@@ -297,6 +318,43 @@ impl Library {
             }
         }
         Ok(feeds)
+    }
+
+    /// The Feeds among `ids` that are in the Folder `folder_id`, in the order of `ids`. Unknown
+    /// ids and Feeds elsewhere are left out. Empty when the Folder does not exist.
+    pub fn folder_feeds(&self, folder_id: i64, ids: &[i64]) -> Result<Vec<UnsortedFeed>> {
+        let name = self.folder_name(folder_id)?;
+        let mut feeds = Vec::new();
+        let Some(name) = name else { return Ok(feeds) };
+        let mut stmt = self
+            .conn()
+            .prepare("SELECT id, title, site_url FROM feed WHERE id = ?1 AND folder_id = ?2")?;
+        for id in ids {
+            if let Some(feed) = stmt
+                .query_row(params![id, folder_id], |r| {
+                    Ok(UnsortedFeed {
+                        id: r.get(0)?,
+                        title: r.get(1)?,
+                        site_url: r.get(2)?,
+                        folder: Some(name.clone()),
+                    })
+                })
+                .optional()?
+            {
+                feeds.push(feed);
+            }
+        }
+        Ok(feeds)
+    }
+
+    /// The name of one Folder, if it exists.
+    pub fn folder_name(&self, folder_id: i64) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row("SELECT name FROM folder WHERE id = ?1", [folder_id], |r| {
+                r.get(0)
+            })
+            .optional()?)
     }
 
     /// The names of all Folders, in sidebar order.
@@ -310,9 +368,13 @@ impl Library {
 
     /// Applies accepted Folder suggestions as one step: creates the Folders that don't exist yet
     /// (matched by name, ignoring case), then moves each Feed into its Folder. All or nothing.
-    /// Only Feeds still at the top level move; it never renames, unsubscribes or touches Articles.
-    /// Returns what it did, for `undo_folder_moves`.
-    pub fn apply_folder_moves(&self, moves: &[FolderMove]) -> Result<AppliedMoves> {
+    /// Only Feeds still in `scope` move (`None` = the top level); it never renames, unsubscribes
+    /// or touches Articles. Returns what it did, for `undo_folder_moves`.
+    pub fn apply_folder_moves(
+        &self,
+        moves: &[FolderMove],
+        scope: Option<i64>,
+    ) -> Result<AppliedMoves> {
         let tx = self.conn().unchecked_transaction()?;
         let mut folders: Vec<(i64, String)> = tx
             .prepare("SELECT id, name FROM folder")?
@@ -320,12 +382,11 @@ impl Library {
             .collect::<rusqlite::Result<_>>()?;
         let mut applied = AppliedMoves::default();
         for m in moves {
-            let name = non_empty(&m.folder, "a Folder needs a name")?;
-            if name.chars().count() > MAX_FOLDER_NAME_CHARS {
+            let Some(name) = clean_folder_name(&m.folder) else {
                 return Err(Error::Invalid(format!(
-                    "a Folder name can have at most {MAX_FOLDER_NAME_CHARS} characters"
+                    "a Folder name is 1-{MAX_FOLDER_NAME_CHARS} characters, without a slash"
                 )));
-            }
+            };
             let current: Option<Option<i64>> = tx
                 .query_row(
                     "SELECT folder_id FROM feed WHERE id = ?1",
@@ -333,8 +394,11 @@ impl Library {
                     |r| r.get(0),
                 )
                 .optional()?;
-            // Unknown Feeds and Feeds the user has sorted meanwhile stay where they are.
-            let Some(None) = current else { continue };
+            // Unknown Feeds and Feeds outside the scope (the user sorted them meanwhile) stay.
+            if current != Some(scope) {
+                continue;
+            }
+            let current = current.flatten();
             let wanted = name.to_lowercase();
             let folder_id = match folders.iter().find(|(_, n)| n.to_lowercase() == wanted) {
                 Some((id, _)) => *id,
@@ -342,10 +406,10 @@ impl Library {
                     tx.execute(
                         "INSERT INTO folder (name, position)
                          VALUES (?1, (SELECT coalesce(max(position), -1) + 1 FROM folder))",
-                        [name],
+                        [name.as_str()],
                     )?;
                     let id = tx.last_insert_rowid();
-                    folders.push((id, name.to_string()));
+                    folders.push((id, name.clone()));
                     applied.created_folder_ids.push(id);
                     id
                 }
@@ -356,7 +420,7 @@ impl Library {
             )?;
             applied.moved.push(MovedFeed {
                 feed_id: m.feed_id,
-                previous_folder_id: None,
+                previous_folder_id: current,
                 folder_id,
             });
         }
@@ -708,11 +772,14 @@ mod tests {
             .collect();
 
         let applied = library
-            .apply_folder_moves(&[
-                mv(top[0], "tech"),      // existing Folder, matched ignoring case
-                mv(top[1], " Cooking "), // new Folder
-                mv(top[2], "Cooking"),   // same new Folder
-            ])
+            .apply_folder_moves(
+                &[
+                    mv(top[0], "tech"),      // existing Folder, matched ignoring case
+                    mv(top[1], " Cooking "), // new Folder
+                    mv(top[2], "Cooking"),   // same new Folder
+                ],
+                None,
+            )
             .unwrap();
         assert_eq!(applied.created_folder_ids.len(), 1);
         assert_eq!(applied.moved.len(), 3);
@@ -742,17 +809,20 @@ mod tests {
         let (sorted, free) = (sidebar.folders[0].feeds[0].id, sidebar.feeds[0].id);
 
         let applied = library
-            .apply_folder_moves(&[mv(sorted, "News"), mv(9999, "News"), mv(free, "Tech")])
+            .apply_folder_moves(
+                &[mv(sorted, "News"), mv(9999, "News"), mv(free, "Tech")],
+                None,
+            )
             .unwrap();
         assert!(applied.created_folder_ids.is_empty());
         assert_eq!(applied.moved.len(), 1);
         assert_eq!(library.folder_names().unwrap(), ["Tech"]);
 
         let before = tree(&library);
-        assert!(library.apply_folder_moves(&[mv(free, "  ")]).is_err());
+        assert!(library.apply_folder_moves(&[mv(free, "  ")], None).is_err());
         assert!(
             library
-                .apply_folder_moves(&[mv(free, &"x".repeat(61))])
+                .apply_folder_moves(&[mv(free, &"x".repeat(61))], None)
                 .is_err()
         );
         assert_eq!(tree(&library), before);
@@ -776,7 +846,7 @@ mod tests {
             .map(|f| f.id)
             .collect();
         let applied = library
-            .apply_folder_moves(&[mv(top[0], "New"), mv(top[1], "New")])
+            .apply_folder_moves(&[mv(top[0], "New"), mv(top[1], "New")], None)
             .unwrap();
         let new = applied.created_folder_ids[0];
         // The user takes one Feed to another Folder and renames nothing else.
@@ -811,6 +881,121 @@ mod tests {
         let feeds = library.top_level_feeds(&[sorted, 9999, free]).unwrap();
         assert_eq!(feeds.len(), 1);
         assert_eq!(feeds[0].id, free);
+        assert_eq!(feeds[0].folder, None);
+    }
+
+    #[test]
+    fn folder_feeds_select_only_that_folders_feeds_and_folder_name_resolves() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", Some("Tech")),
+                opml_feed("https://b.example", Some("Tech")),
+                opml_feed("https://c.example", Some("News")),
+                opml_feed("https://d.example", None),
+            ])
+            .unwrap();
+        let sidebar = library.sidebar(0).unwrap();
+        let tech = sidebar.folders[0].id;
+        let (a, b) = (
+            sidebar.folders[0].feeds[0].id,
+            sidebar.folders[0].feeds[1].id,
+        );
+        let (c, d) = (sidebar.folders[1].feeds[0].id, sidebar.feeds[0].id);
+
+        assert_eq!(library.folder_name(tech).unwrap().as_deref(), Some("Tech"));
+        assert_eq!(library.folder_name(9999).unwrap(), None);
+
+        let feeds = library.folder_feeds(tech, &[a, b, c, d, 9999]).unwrap();
+        assert_eq!(
+            feeds.iter().map(|f| f.id).collect::<Vec<_>>(),
+            [a, b],
+            "only the Folder's own Feeds, in the order of the ids"
+        );
+        assert_eq!(feeds[0].folder.as_deref(), Some("Tech"));
+        assert!(library.folder_feeds(9999, &[a]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn apply_with_a_folder_scope_moves_only_that_folders_feeds_and_undo_restores_them() {
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[
+                opml_feed("https://a.example", Some("Messy")),
+                opml_feed("https://b.example", Some("Messy")),
+                opml_feed("https://c.example", None),
+                opml_feed("https://d.example", Some("Tech")),
+            ])
+            .unwrap();
+        let before = tree(&library);
+        let sidebar = library.sidebar(0).unwrap();
+        let messy = sidebar.folders.iter().find(|f| f.name == "Messy").unwrap();
+        let messy_id = messy.id;
+        let (a, b) = (messy.feeds[0].id, messy.feeds[1].id);
+        let (top, tech) = (sidebar.feeds[0].id, sidebar.folders[1].feeds[0].id);
+
+        let applied = library
+            .apply_folder_moves(
+                &[
+                    mv(a, "Tech"),
+                    mv(b, "Cooking"),
+                    mv(top, "News"),
+                    mv(tech, "News"),
+                ],
+                Some(messy_id),
+            )
+            .unwrap();
+        assert_eq!(
+            applied.moved.len(),
+            2,
+            "only the scoped Folder's Feeds move"
+        );
+        assert_eq!(
+            applied.moved[0].previous_folder_id,
+            Some(messy_id),
+            "undo needs to know where the Feed came from"
+        );
+        let sidebar = library.sidebar(0).unwrap();
+        assert_eq!(sidebar.feeds.len(), 1, "the top-level Feed stayed");
+        assert_eq!(
+            sidebar
+                .folders
+                .iter()
+                .find(|f| f.name == "Tech")
+                .unwrap()
+                .feeds
+                .len(),
+            2
+        );
+
+        library.undo_folder_moves(&applied).unwrap();
+        assert_eq!(tree(&library), before, "one undo restores the exact state");
+        assert_eq!(library.folder_names().unwrap(), ["Messy", "Tech"]);
+    }
+
+    #[test]
+    fn apply_rejects_names_that_would_nest_or_control() {
+        assert_eq!(clean_folder_name("Tech"), Some("Tech".into()));
+        assert_eq!(clean_folder_name("  a  b "), Some("a b".into()));
+        for bad in ["", "   ", "Dev/Rust", "a\\b", "a\u{0}b", &"x".repeat(61)] {
+            assert_eq!(clean_folder_name(bad), None, "{bad:?}");
+        }
+        let root = tempfile::tempdir().unwrap();
+        let library = Library::create(&root.path().join(DIR_NAME)).unwrap();
+        library
+            .import_opml(&[opml_feed("https://a.example", None)])
+            .unwrap();
+        let free = library.sidebar(0).unwrap().feeds[0].id;
+        let before = tree(&library);
+        for bad in ["Dev/Rust", "a\\b", "a\u{0}b", &"x".repeat(61)] {
+            assert!(
+                library.apply_folder_moves(&[mv(free, bad)], None).is_err(),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(tree(&library), before, "nothing was applied");
     }
 
     #[test]
