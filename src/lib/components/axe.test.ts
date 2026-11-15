@@ -184,6 +184,29 @@ describe('axe over every screen state', () => {
     await expectNoViolations('slide-over reader');
   });
 
+  it('has no violations with the Assistant ask panel open in the reader (#119)', async () => {
+    assistantSetup = {
+      kind: 'claudeCode',
+      path: '/usr/bin/claude',
+      model: null,
+      disclosureAccepted: true,
+      targetLanguage: 'en',
+    };
+    const { assist } = await import('../assistant-state.svelte');
+    await mountReady('cards');
+    await app.selectIndex(0);
+    await settle();
+    flushSync();
+    assist.start(assist.entries.find((e) => e.id === 'ask')!);
+    flushSync();
+    await settle();
+    flushSync();
+    expect(document.querySelector('#ask-question')).not.toBeNull();
+    await expectNoViolations('assistant ask panel');
+    assist.reset();
+    assistantSetup = null;
+  });
+
   it('has no violations with the Settings dialog open', async () => {
     await mountReady('list');
     await app.openSettings();

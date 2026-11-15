@@ -121,7 +121,7 @@ describe('Assistant settings', () => {
     expect(mockAssistant.detectAssistants).toHaveBeenLastCalledWith('/opt/claude');
   });
 
-  it('picking an Assistant saves it with haiku and no accepted disclosure', async () => {
+  it('picking an Assistant saves it with haiku, no accepted disclosure and the system language', async () => {
     mockAssistant.detectAssistants.mockImplementation(async () => [claude('plan')]);
     await open();
     await click(button('Set up'));
@@ -131,9 +131,29 @@ describe('Assistant settings', () => {
       path: '/usr/bin/claude',
       model: 'haiku',
       disclosureAccepted: false,
+      targetLanguage: navigator.language,
     });
     expect(text()).toContain('gives the Article\'s text to Claude Code on this computer, which sends it to Anthropic under your Claude plan');
     expect(button('Test').disabled, 'Test waits for the disclosure').toBe(true);
+  });
+
+  it('has a translation language field that defaults to the system language and saves a change', async () => {
+    stored = { kind: 'claudeCode', path: '/usr/bin/claude', model: 'haiku', disclosureAccepted: true };
+    await open();
+    const language = document.querySelector<HTMLInputElement>('input[id$="-language"]')!;
+    expect(language).not.toBeNull();
+    expect(language.value).toBe('');
+    expect(language.placeholder).toBe(navigator.language);
+    expect(text()).toContain('Translation language');
+    language.value = 'de';
+    language.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(stored?.targetLanguage).toBe('de');
+    // Empty means the system language again.
+    language.value = '';
+    language.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(stored?.targetLanguage).toBeNull();
   });
 
   it('names Mistral for Vibe and has a free-text model, empty by default', async () => {

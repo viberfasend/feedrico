@@ -83,10 +83,13 @@
       path: item.path,
       model: item.kind === 'claudeCode' ? 'haiku' : null,
       disclosureAccepted: setup?.disclosureAccepted ?? false,
+      // Translate's target language defaults to the system language.
+      targetLanguage: setup?.targetLanguage ?? navigator.language,
     });
   }
 
   const setModel = (model: string) => setup && save({ ...setup, model: model.trim() || null });
+  const setLanguage = (language: string) => setup && save({ ...setup, targetLanguage: language.trim() || null });
   const accept = (accepted: boolean) => setup && save({ ...setup, disclosureAccepted: accepted });
 
   async function turnOff() {
@@ -162,6 +165,8 @@
 
   const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
   const modelValue = $derived(setup?.model ?? '');
+  const languageValue = $derived(setup?.targetLanguage ?? '');
+  const systemLanguage = navigator.language;
   const providerLine = $derived(
     setup
       ? `When you ask, Feedrico gives the Article's text to ${assistantNames[setup.kind]} on this computer, which sends it to ${assistantProviders[setup.kind]}${setup.kind === 'claudeCode' ? ' under your Claude plan' : ''}. Nothing is sent unless you ask.`
@@ -278,6 +283,24 @@
                 onchange={(e: Event) => setModel((e.currentTarget as HTMLInputElement).value)}
               />
             {/if}
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="row-text">
+            <label class="label" for="{ids}-language">Translation language</label>
+            <span class="desc">
+              Translate renders Articles into this language, for example de or pt-BR. Empty means your
+              system language ({systemLanguage}).
+            </span>
+          </div>
+          <div class="control">
+            <Input
+              id="{ids}-language"
+              value={languageValue}
+              placeholder={systemLanguage}
+              onchange={(e: Event) => setLanguage((e.currentTarget as HTMLInputElement).value)}
+            />
           </div>
         </div>
 

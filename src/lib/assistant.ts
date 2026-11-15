@@ -31,6 +31,8 @@ export interface AssistantSetup {
   model: string | null;
   /** The user has seen the disclosure that Article text goes to the provider. */
   disclosureAccepted: boolean;
+  /** The language Translate renders Articles into; null/absent means the system language. */
+  targetLanguage?: string | null;
 }
 
 /** What to run. Wave 1 has only 'test'; each feature issue adds its action. */
@@ -38,7 +40,9 @@ export type AssistantAction =
   | { kind: 'test' }
   | { kind: 'summarize'; articleId: number }
   | { kind: 'explain'; articleId: number }
-  | { kind: 'explainTerm'; articleId: number; term: string; context: string };
+  | { kind: 'explainTerm'; articleId: number; term: string; context: string }
+  | { kind: 'translate'; articleId: number }
+  | { kind: 'ask'; articleId: number; question: string; history: { question: string; answer: string }[] };
 
 export type AssistantEvent =
   | { kind: 'text'; delta: string }
@@ -51,6 +55,8 @@ export interface ArticleNotes {
   /** The Article was cut; the answer is based on the first `wordsUsed` words. */
   truncated: boolean;
   wordsUsed: number;
+  /** Ask only: how many of the oldest turns were left out to stay inside the caps. */
+  droppedTurns: number | null;
 }
 
 export interface AssistantResult {
@@ -58,6 +64,8 @@ export interface AssistantResult {
   structured: unknown | null;
   /** Set for Article actions only. */
   article?: ArticleNotes | null;
+  /** Set for Translate only: the answer already sanitized in the Rust core, images restored. */
+  html?: string | null;
 }
 
 export type AssistantErrorKind =
