@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-0oIViIhCcAbc7Dfb3E8qfgQmRtP2mzlaSCrXsQ1Lnrk=' font-src 'self'; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-gDc0exv/M5ML0AEFV5cM9eZvgzcs60TEDf+3szx8l84='; font-src 'self'; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
-<title>Feedrico: a calm RSS reader for the Feeds you follow</title>
-<meta name="description" content="A free, local-first RSS reader for Linux, Windows and macOS. No algorithm, no account, no tracking — read offline; everything stays in one folder on your machine.">
+<title>Feedrico: all your favourite sites in one calm place</title>
+<meta name="description" content="Feedrico gathers new articles from the websites, blogs and newsletters you love into one calm app. Free for Windows, Mac and Linux. No account, no ads, no tracking.">
 <meta name="keywords" content="RSS reader, feed reader, desktop RSS reader, best RSS reader, offline RSS reader, private RSS reader, local-first RSS reader, RSS reader no account, free open source RSS reader, RSS reader Linux Windows macOS, feed reader no algorithm">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <link rel="canonical" href="https://viberfasend.github.io/feedrico/">
@@ -20,13 +20,13 @@
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Feedrico">
-<meta property="og:title" content="Feedrico: a calm RSS reader for the Feeds you follow">
-<meta property="og:description" content="A free, local-first RSS reader for desktop. No algorithm, no account, nothing phones home.">
+<meta property="og:title" content="Feedrico: all your favourite sites in one calm place">
+<meta property="og:description" content="New articles from the sites you love, in one calm app. Free, no account, no ads, no tracking.">
 <meta property="og:url" content="https://viberfasend.github.io/feedrico/">
 <meta property="og:image" content="https://viberfasend.github.io/feedrico/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Feedrico: a calm RSS reader for the Feeds you follow.">
+<meta property="og:image:alt" content="Feedrico: all your favourite sites in one calm place.">
 <meta name="twitter:card" content="summary_large_image">
 
 <!-- Structured data for search engines. The CSP allows exactly this block via its sha256 hash;
@@ -40,7 +40,7 @@
       "@id": "https://viberfasend.github.io/feedrico/#website",
       "url": "https://viberfasend.github.io/feedrico/",
       "name": "Feedrico",
-      "description": "A calm RSS reader for the Feeds you follow. Free, local-first and private.",
+      "description": "All your favourite sites in one calm place. A free, private RSS reader for your computer.",
       "inLanguage": "en",
       "publisher": { "@type": "Organization", "name": "Feedrico", "url": "https://github.com/viberfasend/feedrico" }
     },
@@ -48,17 +48,18 @@
       "@type": "SoftwareApplication",
       "@id": "https://viberfasend.github.io/feedrico/#app",
       "name": "Feedrico",
-      "description": "A calm, local-first RSS reader for Linux, Windows and macOS. No algorithm, no account, no telemetry: reads offline and keeps everything in one portable Library folder on your machine.",
+      "description": "A calm RSS reader for Windows, Mac and Linux. It gathers new articles from the sites you choose, works offline, and needs no account. Everything stays on your computer.",
+      "downloadUrl": "https://github.com/viberfasend/feedrico/releases/latest",
       "operatingSystem": "Linux, Windows, macOS",
       "license": "https://www.gnu.org/licenses/gpl-3.0.html",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "featureList": [
-        "Chronological feed, no algorithm",
-        "No account, no sync, no telemetry",
-        "Offline reading with cached images",
-        "Portable Library folder on a USB stick",
+        "Newest articles first, no algorithm",
+        "No account, no ads, no tracking",
+        "Works offline, pictures included",
+        "Take your Library with you on a USB stick",
         "Four layouts: List, Cards, Magazine, Gallery",
-        "Full keyboard control"
+        "Keyboard shortcuts for everything"
       ]
     },
     {
@@ -67,33 +68,38 @@
       "mainEntity": [
         {
           "@type": "Question",
-          "name": "What is an RSS reader?",
-          "acceptedAnswer": { "@type": "Answer", "text": "An RSS reader — also called a feed reader — follows the websites, blogs and newsletters you choose and shows their new articles in one list. You pick the sources; no algorithm decides what you see." }
+          "name": "What does Feedrico do?",
+          "acceptedAnswer": { "@type": "Answer", "text": "It collects new articles from the websites, blogs and newsletters you choose and shows them in one tidy list, newest first. Apps like this are called RSS readers or feed readers. You pick the sites; nothing else gets in." }
         },
         {
           "@type": "Question",
-          "name": "Does Feedrico work offline?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Images are saved when Feeds refresh, and opening an Article makes no network request, so everything you have fetched is readable on a train or a plane." }
+          "name": "Is it really free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Feedrico is free to download and use on Windows, Mac and Linux. There are no ads, no subscription and no paid version." }
         },
         {
           "@type": "Question",
-          "name": "Does Feedrico have an account or sync?",
-          "acceptedAnswer": { "@type": "Answer", "text": "No. There is no account, no sign-up and no sync service. Everything lives in one Library folder on your machine; copy it to a USB stick to take your reading to another computer." }
+          "name": "Do I need an account?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. There is nothing to sign up for. Download Feedrico, add a site you like, and start reading." }
         },
         {
           "@type": "Question",
-          "name": "Can I import my Feeds from another reader?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Import the OPML file your current reader exports, or paste the address of a website you like — Feedrico finds its Feed." }
+          "name": "How do I add a site?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Paste the address of a website you like, and Feedrico finds its articles. Coming from another reader? Import the file it exports (an OPML file) and all your sites move over at once." }
         },
         {
           "@type": "Question",
-          "name": "Is Feedrico free? Is it open source?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Yes and yes. When version 1 is released it will be a free download for Linux, Windows and macOS — no subscription, no paid tier — and the source is public under the GPL-3.0." }
+          "name": "Does it work without internet?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Feedrico saves articles and their pictures whenever it is online, so you can keep reading on a train or a plane." }
         },
         {
           "@type": "Question",
-          "name": "Does Feedrico track me?",
-          "acceptedAnswer": { "@type": "Answer", "text": "No telemetry, no analytics, no crash reporting. Feedrico talks only to the Feeds you follow when they refresh, and to GitHub if you click Check for updates." }
+          "name": "Can I use it on more than one computer?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Everything is kept in one folder called your Library. Copy that folder to a USB stick or another computer and your reading comes with you. Feedrico does not sync by itself, because it has no servers." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Feedrico track what I read?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Feedrico connects only to the sites you follow to fetch new articles, and to GitHub when you ask it to check for updates. Nobody, including us, can see what you read." }
         }
       ]
     }
@@ -122,11 +128,10 @@
     <nav class="masthead__nav" aria-label="On this page">
       <ul>
         <li><a href="#why">Why Feedrico</a></li>
-        <li><a href="#window">The window</a></li>
-        <li><a href="#library">The Library</a></li>
+        <li><a href="#window">How it looks</a></li>
         <li><a href="#privacy">Privacy</a></li>
-        <li><a href="#faq">FAQ</a></li>
-        <li><a class="masthead__get" href="#get">Get Feedrico</a></li>
+        <li><a href="#faq">Questions</a></li>
+        <li><a class="masthead__get" href="#get">Download</a></li>
       </ul>
     </nav>
   </div>
@@ -137,13 +142,13 @@
 <section class="hero" id="top" data-section aria-labelledby="hero-title">
   <div class="wrap hero__inner">
     <div class="hero__text">
-      <h1 id="hero-title" tabindex="-1">A calm reader for the Feeds you follow.</h1>
-      <p class="hero__lede">Feedrico is a desktop RSS reader for Linux, Windows and macOS. It shows the new Articles from the sites you choose in one chronological list — no algorithm in the way, no account, nothing phoning home. Everything stays in one Library folder on your machine.</p>
+      <h1 id="hero-title" tabindex="-1">All your favourite sites, in one calm place.</h1>
+      <p class="hero__lede">Feedrico gathers the new articles from the websites, blogs and newsletters you love, and shows them in one tidy list. No ads, no endless scrolling, nobody deciding what you see. Just your reading.</p>
       <p class="hero__actions">
-        <a class="button button--primary" href="#window">See what reading looks like</a>
-        <a class="button" href="https://github.com/viberfasend/feedrico">Follow on GitHub</a>
+        <a class="button button--primary" href="#get">Download for free</a>
+        <a class="button" href="#window">See how it looks</a>
       </p>
-      <p class="hero__status">Version 1 isn’t released yet. When it is, it will be a free download from GitHub — <a href="#get">more below</a>.</p>
+      <p class="hero__status">For Windows, Mac and Linux. No account needed.</p>
     </div>
 
     <figure class="sky" aria-describedby="clock-note">
@@ -173,7 +178,7 @@
 
   <div class="wrap">
     <div class="clock">
-      <p class="clock__note" id="clock-note" data-clock-note>The light on this page follows your clock when JavaScript is on. It reads the time in your browser and sends nothing anywhere.</p>
+      <p class="clock__note" id="clock-note" data-clock-note>The light on this page follows the time of day where you are.</p>
       <fieldset class="light" data-light hidden>
         <legend>Light</legend>
         <span class="light__options">
@@ -190,37 +195,62 @@
   <div class="wrap">
     <div class="prose-grid">
       <div class="prose">
-        <h2 id="why-title" tabindex="-1">What Feedrico promises.</h2>
-        <p>Four things, said plainly.</p>
+        <h2 id="why-title" tabindex="-1">Reading, without the noise.</h2>
+        <p>You choose the sites. Feedrico brings you what’s new, and then gets out of the way.</p>
       </div>
     </div>
 
     <ul class="claims">
       <li>
-        <h3>Your order, not an algorithm’s</h3>
-        <p>Articles arrive in one chronological list, in the order the Feeds publish them. Nothing is ranked, recommended or hidden, and there are no streaks or badges pulling at your attention.</p>
+        <h3>Everything in one place</h3>
+        <p>News, blogs, newsletters, comics, photo sites: follow them all in one app instead of twenty browser tabs.</p>
       </li>
       <li>
-        <h3>Reads offline</h3>
-        <p>Images are saved when Feeds refresh, so on a train or a plane everything is already there. Opening an Article never makes a network request.</p>
+        <h3>You decide what you see</h3>
+        <p>Articles appear newest first, exactly as they were published. Nothing is ranked, recommended or hidden, and there are no ads in between.</p>
       </li>
       <li>
-        <h3>Fast at any size</h3>
-        <p>Twenty Feeds or two thousand: the list scrolls at full speed, and search covers every Article in your Library.</p>
+        <h3>Works without internet</h3>
+        <p>Articles and their pictures are saved while you’re online. On a train or a plane, everything is already there.</p>
       </li>
       <li>
-        <h3>No account, because there’s no server</h3>
-        <p>There is nothing to sign up for and nothing to log into. Your reading is not a profile on somebody else’s machine.</p>
+        <h3>No account, no sign-up</h3>
+        <p>Download it, add a site, start reading. There is no password to remember and no profile to fill in.</p>
       </li>
       <li>
-        <h3>Private by design</h3>
-        <p>Reading makes no network request, so no one learns what you read. Here is <a href="#privacy">everyone Feedrico talks to</a>.</p>
+        <h3>Private</h3>
+        <p>What you read stays on your computer. Nobody can see it, <a href="#privacy">not even us</a>.</p>
       </li>
       <li>
-        <h3>Free, no subscription</h3>
-        <p>When version 1 ships it will be a free download — no paid tier, no ads. The source is public under the <span class="nowrap">GPL-3.0</span>, so the promise is checkable.</p>
+        <h3>Free, for good</h3>
+        <p>No subscription, no paid version, no ads. Feedrico is free software, made in the open.</p>
       </li>
     </ul>
+  </div>
+</section>
+
+<section class="chapter chapter--steps" id="start" data-section aria-labelledby="start-title">
+  <div class="wrap">
+    <div class="prose-grid">
+      <div class="prose">
+        <h2 id="start-title" tabindex="-1">Reading in two minutes.</h2>
+      </div>
+    </div>
+
+    <ol class="steps">
+      <li>
+        <h3>Download Feedrico</h3>
+        <p>It’s free, and there is nothing to sign up for. <a href="#get">Get it for your computer</a>.</p>
+      </li>
+      <li>
+        <h3>Add the sites you like</h3>
+        <p>Paste the address of a website and Feedrico finds its articles. Already use another reader? Bring all your sites over in one go.</p>
+      </li>
+      <li>
+        <h3>Read</h3>
+        <p>New articles show up by themselves. Star the ones you want to keep, and enjoy the rest at your own pace.</p>
+      </li>
+    </ol>
   </div>
 </section>
 
@@ -228,13 +258,11 @@
   <div class="wrap">
     <div class="prose-grid">
       <div class="prose">
-        <h2 id="window-title" tabindex="-1">One window, four Layouts.</h2>
-        <p>Feeds and Folders on the left, Articles in the middle, the reader on the right. Each Layout suits a different kind of reading: a quick List for news, Cards or Magazine for a slow morning, Gallery for photo Feeds. Every View remembers the Layout you chose for it; Feedrico never guesses for you.</p>
-        <p>The reader sets the Feed’s own text at a comfortable measure, with its images already on your disk — so reading works with the Wi-Fi off.</p>
+        <h2 id="window-title" tabindex="-1">One window, four ways to read.</h2>
+        <p>Your sites on the left, new articles in the middle, the one you’re reading on the right. Pick the look that suits the moment: a quick List for the news, Cards or Magazine for a slow morning, Gallery for photos. Try them below.</p>
       </div>
       <aside class="margin" aria-label="Note">
-        <p class="note note--keys" data-js-only hidden>Press <kbd>v</kbd> to change the Layout of the window below, the way you would in Feedrico.</p>
-        <p class="note">This window is drawn in HTML and filled with placeholder text. We don’t show real Feeds.</p>
+        <p class="note">This is a preview with made-up sites and articles. Yours will show the sites you follow.</p>
       </aside>
     </div>
   </div>
@@ -253,20 +281,20 @@
             <li class="side__row"><span class="side__icon side__icon--inbox"></span>All Unread<b>128</b></li>
             <li class="side__row"><span class="side__icon side__icon--star"></span>Starred<b>9</b></li>
           </ul>
-          <p class="side__label">Reading</p>
+          <p class="side__label">Home</p>
           <ul class="side">
-            <li class="side__row"><span class="tile tile--a">L</span>Lorem Ipsum Weekly<b>12</b></li>
-            <li class="side__row"><span class="tile tile--b">D</span>The Dolor Review<b>4</b></li>
-            <li class="side__row"><span class="tile tile--c">C</span>Consectetur Notes<b>7</b></li>
+            <li class="side__row"><span class="tile tile--a">G</span>The Garden Letter<b>12</b></li>
+            <li class="side__row"><span class="tile tile--b">S</span>Slow Kitchen<b>4</b></li>
+            <li class="side__row"><span class="tile tile--c">N</span>Night Sky Notes<b>7</b></li>
           </ul>
-          <p class="side__label">Field notes</p>
+          <p class="side__label">Outdoors</p>
           <ul class="side">
-            <li class="side__row"><span class="tile tile--d">A</span>Amet Field Journal<b>3</b></li>
-            <li class="side__row side__row--broken"><span class="tile tile--e">S</span>Sed Tempor Quarterly<span class="side__warn" title="Couldn’t reach this Feed"></span></li>
+            <li class="side__row"><span class="tile tile--d">T</span>Trail Journal<b>3</b></li>
+            <li class="side__row side__row--broken"><span class="tile tile--e">O</span>Old Maps Quarterly<span class="side__warn" title="Couldn’t reach this site"></span></li>
           </ul>
           <ul class="side">
-            <li class="side__row"><span class="tile tile--f">M</span>Magna Aliqua Post<b>2</b></li>
-            <li class="side__row side__row--read"><span class="tile tile--g">V</span>Veniam Letters</li>
+            <li class="side__row"><span class="tile tile--f">B</span>The Bike Shed<b>2</b></li>
+            <li class="side__row side__row--read"><span class="tile tile--g">L</span>Letters from Lisbon</li>
           </ul>
         </div>
 
@@ -282,18 +310,18 @@
             </fieldset>
           </div>
           <ol class="articles" aria-hidden="true">
-            <li class="a a--unread a--current"><span class="plate plate--dusk"></span><span class="a__feed">Lorem Ipsum Weekly</span><time class="a__date">09:14</time><span class="a__title">Sed do eiusmod tempor incididunt</span><span class="a__excerpt">Ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.</span></li>
-            <li class="a a--unread"><span class="plate plate--honey"></span><span class="a__feed">The Dolor Review</span><time class="a__date">08:52</time><span class="a__title">Ut enim ad minim veniam, quis nostrud</span><span class="a__excerpt">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</span></li>
-            <li class="a a--unread a--noimg"><span class="a__feed">Consectetur Notes</span><time class="a__date">08:30</time><span class="a__title">Duis aute irure dolor in reprehenderit</span><span class="a__excerpt">Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error.</span><span class="a__motif"><!-- include:brand/motif/gossamer-dew.svg --></span></li>
-            <li class="a a--starred"><span class="plate plate--field"></span><span class="a__feed">Amet Field Journal</span><time class="a__date">07:45</time><span class="a__title">Excepteur sint occaecat cupidatat</span><span class="a__excerpt">Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium.</span></li>
-            <li class="a a--unread"><span class="plate plate--paper"></span><span class="a__feed">Magna Aliqua Post</span><time class="a__date">07:02</time><span class="a__title">Nemo enim ipsam voluptatem quia voluptas</span><span class="a__excerpt">Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit.</span></li>
-            <li class="a a--noimg"><span class="a__feed">Veniam Letters</span><time class="a__date">Yesterday</time><span class="a__title">Quis autem vel eum iure reprehenderit</span><span class="a__excerpt">Qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur.</span><span class="a__motif"><!-- include:brand/motif/gossamer-dew.svg --></span></li>
-            <li class="a"><span class="plate plate--violet"></span><span class="a__feed">The Dolor Review</span><time class="a__date">Yesterday</time><span class="a__title">At vero eos et accusamus et iusto odio</span><span class="a__excerpt">Dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores.</span></li>
-            <li class="a"><span class="plate plate--moss"></span><span class="a__feed">Lorem Ipsum Weekly</span><time class="a__date">Yesterday</time><span class="a__title">Nam libero tempore, cum soluta nobis</span><span class="a__excerpt">Est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus.</span></li>
-            <li class="a"><span class="plate plate--ember"></span><span class="a__feed">Amet Field Journal</span><time class="a__date">Yesterday</time><span class="a__title">Temporibus autem quibusdam et aut officiis</span><span class="a__excerpt">Debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae.</span></li>
-            <li class="a"><span class="plate plate--linen"></span><span class="a__feed">Magna Aliqua Post</span><time class="a__date">Yesterday</time><span class="a__title">Itaque earum rerum hic tenetur a sapiente</span><span class="a__excerpt">Ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.</span></li>
+            <li class="a a--unread a--current"><span class="plate plate--dusk"></span><span class="a__feed">The Garden Letter</span><time class="a__date">09:14</time><span class="a__title">What to plant before the first frost</span><span class="a__excerpt">Garlic, broad beans and a handful of bulbs: a short list for a slow autumn weekend in the garden.</span></li>
+            <li class="a a--unread"><span class="plate plate--honey"></span><span class="a__feed">Slow Kitchen</span><time class="a__date">08:52</time><span class="a__title">A plum cake that forgives everything</span><span class="a__excerpt">Too ripe, too tart, a little bruised. This one-bowl cake takes whatever the tree gives you.</span></li>
+            <li class="a a--unread a--noimg"><span class="a__feed">Night Sky Notes</span><time class="a__date">08:30</time><span class="a__title">Five things to spot in the sky this week</span><span class="a__excerpt">Saturn is back in the evening, the Pleiades are rising, and there is a thin crescent moon on Thursday. No telescope needed, just a dark corner and ten patient minutes.</span><span class="a__motif"><!-- include:brand/motif/gossamer-dew.svg --></span></li>
+            <li class="a a--starred"><span class="plate plate--field"></span><span class="a__feed">Trail Journal</span><time class="a__date">07:45</time><span class="a__title">The ridge walk, one season later</span><span class="a__excerpt">Same path, different light. The bracken has turned copper and the huts are quiet again.</span></li>
+            <li class="a a--unread"><span class="plate plate--paper"></span><span class="a__feed">The Bike Shed</span><time class="a__date">07:02</time><span class="a__title">How to true a wheel with a zip tie</span><span class="a__excerpt">No stand, no gauge: a cheap trick that gets a wobbly wheel straight enough for the ride home.</span></li>
+            <li class="a a--noimg"><span class="a__feed">Letters from Lisbon</span><time class="a__date">Yesterday</time><span class="a__title">The tram that goes nowhere in particular</span><span class="a__excerpt">Line 28 on a weekday morning, before the queues: a letter about taking the long way round on purpose.</span><span class="a__motif"><!-- include:brand/motif/gossamer-dew.svg --></span></li>
+            <li class="a"><span class="plate plate--violet"></span><span class="a__feed">Slow Kitchen</span><time class="a__date">Yesterday</time><span class="a__title">Stock from scraps, step by step</span><span class="a__excerpt">Onion skins, carrot tops and a parmesan rind. An hour on the stove, and the freezer does the rest.</span></li>
+            <li class="a"><span class="plate plate--moss"></span><span class="a__feed">The Garden Letter</span><time class="a__date">Yesterday</time><span class="a__title">Saving seeds from this year’s tomatoes</span><span class="a__excerpt">Pick the best fruit, find a jar of water, and give it three days of patience.</span></li>
+            <li class="a"><span class="plate plate--ember"></span><span class="a__feed">Trail Journal</span><time class="a__date">Yesterday</time><span class="a__title">A weekend pack that weighs almost nothing</span><span class="a__excerpt">What stays home matters more than what comes along. A list, with the weights.</span></li>
+            <li class="a"><span class="plate plate--linen"></span><span class="a__feed">The Bike Shed</span><time class="a__date">Yesterday</time><span class="a__title">Winter tyres: are they worth it?</span><span class="a__excerpt">A season of commuting on both kinds, and an honest answer at the end of it.</span></li>
           </ol>
-          <p class="app__hidden-note" aria-hidden="true">2 Articles without images not shown</p>
+          <p class="app__hidden-note" aria-hidden="true">2 articles without pictures not shown</p>
         </div>
 
         <article class="app__reader" aria-hidden="true">
@@ -302,17 +330,17 @@
             <span class="reader__btn">Open in browser</span>
           </div>
           <div class="reader__body">
-            <p class="reader__meta">Lorem Ipsum Weekly, today at 09:14</p>
-            <h3 class="reader__title">Sed do eiusmod tempor incididunt</h3>
-            <p class="reader__byline">By Aurelia Vestibulum</p>
+            <p class="reader__meta">The Garden Letter, today at 09:14</p>
+            <h3 class="reader__title">What to plant before the first frost</h3>
+            <p class="reader__byline">By Marta Lindqvist</p>
             <span class="plate plate--dusk reader__image"></span>
-            <p>Ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore.</p>
-            <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam.</p>
-            <p>Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.</p>
+            <p>The beds look finished by now, but the soil is still warm, and a few things would much rather go in today than wait for spring. Garlic first: split a bulb, push the cloves in a thumb deep, and forget about them until June.</p>
+            <p>Broad beans are next. Sown now, they sit small and stubborn through the winter and are a month ahead of everything else when the light comes back. Cover them if the pigeons are watching.</p>
+            <p>And then the bulbs. A handful of crocuses under the apple tree costs ten minutes, and in February you will be glad you spent them.</p>
           </div>
         </article>
       </div>
-      <figcaption class="app-figure__caption">The Feedrico window with placeholder Feeds and Articles, in the <span data-layout-name>List</span> Layout.</figcaption>
+      <figcaption class="app-figure__caption">A preview of Feedrico with example sites, in the <span data-layout-name>List</span> layout.</figcaption>
     </figure>
   </div>
 </section>
@@ -322,10 +350,10 @@
     <div class="prose-grid">
       <div class="prose">
         <h2 id="story-title" tabindex="-1">Your reading goes where you go.</h2>
-        <p>Everything you read lives in one folder, the Library: your Feeds and Folders, every Article, what you’ve Read and Starred, the images, your settings. Copy the folder to a USB stick and open it on another computer — your reading travels with you.</p>
+        <p>Everything lives in one folder on your computer, called your Library: the sites you follow, every article, what you’ve read and starred. Copy it to a USB stick and your reading travels with you.</p>
       </div>
       <aside class="margin" aria-label="Note">
-        <p class="note">Portable Mode runs Feedrico from the stick itself, so nothing is installed on the other machine. It works with the Linux AppImage and the portable Windows app; macOS doesn’t allow apps to run from removable drives.</p>
+        <p class="note">On Windows and Linux, Feedrico can even run straight from the stick, so nothing has to be installed on the other computer.</p>
       </aside>
     </div>
 
@@ -345,7 +373,7 @@
           <text class="tag-text" x="156" y="145" transform="rotate(8 150 132)">Library</text>
         </svg>
         <h3>At home</h3>
-        <p>150 Feeds in 8 Folders, a few thousand Articles and one Starred essay, all inside a folder called <i>Feedrico Library</i>.</p>
+        <p>All the sites you follow, a few thousand articles and that one essay you starred, in a single folder.</p>
       </li>
       <li class="story__step">
         <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
@@ -359,7 +387,7 @@
           <text class="tag-text" x="147" y="57" transform="rotate(-6 140 44)">Library</text>
         </svg>
         <h3>In a pocket</h3>
-        <p>The Library is ordinary files. Copy the folder to a USB stick with any file manager; there is no export step and no account to sign out of.</p>
+        <p>Copy the folder to a USB stick, like you would copy holiday photos. That’s all there is to it.</p>
       </li>
       <li class="story__step">
         <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
@@ -373,7 +401,7 @@
           <path class="ink faint" d="M88 114h30M88 120h22"/>
         </svg>
         <h3>On the train</h3>
-        <p>No signal, and nothing missing. Images were saved when the Feeds last refreshed, and opening an Article makes no network request at all.</p>
+        <p>No signal, and nothing missing. Articles and pictures were saved the last time you were online.</p>
       </li>
       <li class="story__step">
         <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
@@ -388,7 +416,7 @@
           <path class="ink faint" d="M80 76h52M80 84h40M80 92h46"/>
         </svg>
         <h3>At a friend’s</h3>
-        <p>Plug the stick in and run Feedrico from it. Nothing gets installed, and your friend’s own Library stays exactly as it was.</p>
+        <p>Plug the stick in and open Feedrico. Your friend’s computer stays exactly as it was.</p>
       </li>
       <li class="story__step">
         <svg class="story__art" viewBox="0 0 240 160" aria-hidden="true" focusable="false">
@@ -401,23 +429,9 @@
           <path class="honey" d="M190 48l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/>
         </svg>
         <h3>As you left it</h3>
-        <p>The same Article, still Starred, still Read, in the Layout you chose for it. Your settings travel too. Back home, the folder goes back where it came from.</p>
+        <p>The same article, still starred, right where you stopped. Your settings come along too.</p>
       </li>
     </ol>
-  </div>
-</section>
-
-<section class="chapter chapter--local" id="local" data-section aria-labelledby="local-title">
-  <div class="wrap">
-    <div class="prose-grid">
-      <div class="prose">
-        <h2 id="local-title" tabindex="-1">Your data stays on your machine.</h2>
-        <p>Everything Feedrico saves — your Feeds, Articles, what you’ve Read and Starred, the images, your settings — lives in one folder on your computer. Nothing is uploaded anywhere, and there is no account to sign into. It’s your reading, on your disk: copy it, back it up, take it with you.</p>
-      </div>
-      <aside class="margin" aria-label="Note">
-        <p class="note">Any backup tool or USB stick works — there is no export step and nothing hidden in a system directory.</p>
-      </aside>
-    </div>
   </div>
 </section>
 
@@ -425,71 +439,33 @@
   <div class="wrap">
     <div class="prose-grid">
       <div class="prose">
-        <h2 id="privacy-title" tabindex="-1">Who Feedrico talks to.</h2>
-        <p>Here is the complete list.</p>
+        <h2 id="privacy-title" tabindex="-1">What you read is your business.</h2>
+        <p>Feedrico has no account, no ads and no tracking. It connects to the internet for two things only.</p>
       </div>
     </div>
 
     <div class="ledger">
       <dl class="ledger__list">
         <div class="ledger__row">
-          <dt>The Feeds you follow, and the websites they point to</dt>
-          <dd>Only when Feeds refresh: when Feedrico starts, every 30 minutes while it’s open (you can change that), or when you press <kbd>r</kbd>. It saves the Articles’ images while it’s there — that’s what makes offline reading work.</dd>
+          <dt>The sites you follow</dt>
+          <dd>To fetch their new articles and pictures, every half hour while Feedrico is open or whenever you ask.</dd>
         </div>
         <div class="ledger__row">
-          <dt>GitHub</dt>
-          <dd>Only when you click <i>Check for updates</i>. Feedrico never updates itself and never checks on its own.</dd>
+          <dt>Updates</dt>
+          <dd>Only when you click <i>Check for updates</i>. Feedrico never updates itself behind your back.</dd>
         </div>
       </dl>
-      <p class="ledger__end">That’s everyone.</p>
+      <p class="ledger__end">That’s all.</p>
     </div>
 
     <div class="prose-grid">
       <div class="prose">
-        <p>Reading makes no requests. When you open an Article, its images come from your Library, so a tracking pixel never learns that you read it. Scripts, forms and embedded frames are stripped from Feed content before it reaches the reader; a video becomes a plain link you can open in your browser. Links open only when you click them.</p>
-        <p>There is no account, no telemetry, no crash reporting and no font or script fetched from anywhere else. This page plays by the same rule, and <a href="#requests">counts its own requests</a> at the bottom.</p>
+        <p>Reading an article sends nothing anywhere, so no website learns what you opened or how long you stayed. We don’t collect statistics either: we couldn’t tell you how many people use Feedrico if we wanted to.</p>
       </div>
       <aside class="margin" aria-label="Note">
-        <p class="note">If you watch your network traffic while you read, you’ll see nothing. We’d like you to check.</p>
+        <p class="note">Feedrico’s code is public, so anyone can check that this is true.</p>
       </aside>
     </div>
-  </div>
-</section>
-
-<section class="chapter chapter--who" id="who" data-section aria-labelledby="who-title">
-  <div class="wrap">
-    <div class="prose-grid">
-      <div class="prose">
-        <h2 id="who-title" tabindex="-1">Where to start, depending on who you are.</h2>
-      </div>
-    </div>
-
-    <dl class="who">
-      <div class="who__entry">
-        <dt>“I’ve never used a feed reader.”</dt>
-        <dd>Import the export file from your old reader, or paste the address of a website you like — Feedrico finds its Feed. You can be reading in two minutes, and every empty screen says what to do next.</dd>
-      </div>
-      <div class="who__entry">
-        <dt>“I follow over a thousand Feeds, and half of them are dead.”</dt>
-        <dd>The list stays smooth, search covers every Article, and Starred Articles are kept forever. Broken Feeds get a quiet badge and are retried later, at longer and longer intervals.</dd>
-      </div>
-      <div class="who__entry">
-        <dt>“I have fifteen minutes and a coffee.”</dt>
-        <dd>Open Today in the Magazine Layout. There are no streaks and no badges asking for attention. When you’re through, it says so and lets you go.</dd>
-      </div>
-      <div class="who__entry">
-        <dt>“My reading goes where I go.”</dt>
-        <dd>Carry the Library on a stick and run Feedrico from it. See <a href="#library">your reading goes where you go</a>.</dd>
-      </div>
-      <div class="who__entry">
-        <dt>“A friend wants to plug in their stick.”</dt>
-        <dd>Your own Library isn’t touched; switch back from <i>Recent Libraries</i>. If your Feedrico is older than their Library, it says so and writes nothing to the stick.</dd>
-      </div>
-      <div class="who__entry">
-        <dt>“If it makes a request I didn’t ask for, I’ll notice.”</dt>
-        <dd>Good. Here is <a href="#privacy">everyone Feedrico talks to</a>.</dd>
-      </div>
-    </dl>
   </div>
 </section>
 
@@ -497,62 +473,43 @@
   <div class="wrap">
     <div class="prose-grid">
       <div class="prose">
-        <h2 id="faq-title" tabindex="-1">Questions people ask.</h2>
-        <p>Short answers, no fine print.</p>
+        <h2 id="faq-title" tabindex="-1">Good questions.</h2>
       </div>
     </div>
 
     <dl class="faq">
       <div>
-        <dt>What is an RSS reader?</dt>
-        <dd>An RSS reader — also called a feed reader — follows the websites, blogs and newsletters you choose and shows their new articles in one list. You pick the sources; no algorithm decides what you see.</dd>
+        <dt>What does Feedrico do?</dt>
+        <dd>It collects new articles from the websites, blogs and newsletters you choose and shows them in one tidy list, newest first. Apps like this are called RSS readers or feed readers. You pick the sites; nothing else gets in.</dd>
       </div>
       <div>
-        <dt>Does Feedrico work offline?</dt>
-        <dd>Yes. Images are saved when Feeds refresh, and opening an Article makes no network request, so everything you’ve fetched is readable on a train or a plane.</dd>
+        <dt>Is it really free?</dt>
+        <dd>Yes. Feedrico is free to download and use on Windows, Mac and Linux. There are no ads, no subscription and no paid version.</dd>
       </div>
       <div>
-        <dt>Does Feedrico have an account or sync?</dt>
-        <dd>No. There is no account, no sign-up and no sync service. Everything lives in one Library folder on your machine; copy it to a USB stick to take your reading to another computer.</dd>
+        <dt>Do I need an account?</dt>
+        <dd>No. There is nothing to sign up for. Download Feedrico, add a site you like, and start reading.</dd>
       </div>
       <div>
-        <dt>Can I import my Feeds from another reader?</dt>
-        <dd>Yes. Import the OPML file your current reader exports, or paste the address of a website you like — Feedrico finds its Feed.</dd>
+        <dt>How do I add a site?</dt>
+        <dd>Paste the address of a website you like, and Feedrico finds its articles. Coming from another reader? Import the file it exports (an OPML file) and all your sites move over at once.</dd>
       </div>
       <div>
-        <dt>Is Feedrico free? Is it open source?</dt>
-        <dd>Yes and yes. When version 1 is released it will be a free download for Linux, Windows and macOS — no subscription, no paid tier — and the source is public under the <span class="nowrap">GPL-3.0</span>.</dd>
+        <dt>Does it work without internet?</dt>
+        <dd>Yes. Feedrico saves articles and their pictures whenever it is online, so you can keep reading on a train or a plane.</dd>
       </div>
       <div>
-        <dt>Does Feedrico track me?</dt>
-        <dd>No telemetry, no analytics, no crash reporting. Feedrico talks only to the Feeds you follow when they refresh, and to GitHub if you click <i>Check for updates</i>. This page counts its own requests at the bottom, and you can check.</dd>
+        <dt>Can I use it on more than one computer?</dt>
+        <dd>Yes. Everything is kept in one folder called your Library. Copy that folder to a USB stick or another computer and your reading comes with you. Feedrico does not sync by itself, because it has no servers.</dd>
       </div>
-    </dl>
-  </div>
-</section>
-
-<section class="chapter chapter--keys" id="keys" data-section aria-labelledby="keys-title">
-  <div class="wrap">
-    <div class="prose-grid">
-      <div class="prose">
-        <h2 id="keys-title" tabindex="-1">Your hands stay on the keyboard.</h2>
-        <p>If you read a lot, these keys become the whole app: the next Article in a single frame, even in a Library of a thousand Feeds. Everything also works with the mouse — the keys are there when you want them.</p>
+      <div>
+        <dt>Does Feedrico track what I read?</dt>
+        <dd>No. Feedrico connects only to the sites you follow to fetch new articles, and to GitHub when you ask it to check for updates. Nobody, including us, can see what you read.</dd>
       </div>
-      <aside class="margin" aria-label="Note">
-        <p class="note note--keys" data-js-only hidden>This page answers to <kbd>j</kbd>, <kbd>k</kbd>, <kbd>v</kbd> and <kbd>s</kbd> too. Try them; the box in the corner turns them off.</p>
-      </aside>
-    </div>
-
-    <dl class="keys">
-      <div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next and previous Article</dd></div>
-      <div><dt><kbd>s</kbd></dt><dd>Star or unstar</dd></div>
-      <div><dt><kbd>m</kbd></dt><dd>Mark as Read or unread</dd></div>
-      <div><dt><kbd>v</kbd></dt><dd>Next Layout</dd></div>
-      <div><dt><kbd>o</kbd></dt><dd>Open in your browser</dd></div>
-      <div><dt><kbd>r</kbd></dt><dd>Refresh Feeds</dd></div>
-      <div><dt><kbd>/</kbd></dt><dd>Search every Article</dd></div>
-      <div><dt><kbd>Enter</kbd> <kbd>Esc</kbd></dt><dd>Open and close the reader in Cards, Magazine and Gallery</dd></div>
-      <div><dt><kbd>Ctrl</kbd> <kbd>K</kbd></dt><dd>Command palette: jump to any Feed or Folder, import OPML, switch theme</dd></div>
+      <div>
+        <dt>I read a lot. Is it fast?</dt>
+        <dd>Yes. Twenty sites or two thousand, the list stays smooth and search covers every article. There are keyboard shortcuts for everything, if you like those.</dd>
+      </div>
     </dl>
   </div>
 </section>
@@ -561,13 +518,14 @@
   <div class="wrap">
     <div class="get">
       <div class="prose">
-        <h2 id="get-title" tabindex="-1">Get Feedrico.</h2>
-        <p><strong>Feedrico isn’t released yet.</strong> Version 1 is still being built, so there is nothing to download today — and no waiting list to join. We’d rather say so plainly.</p>
-        <p>When version 1 is ready, it will be a free download on GitHub: an AppImage and a <code>.deb</code> for Linux, an installer and a portable app for Windows, a <code>.dmg</code> for macOS. Watch the repository and it will appear here first; there is no newsletter.</p>
-        <p class="get__actions">
-          <a class="button button--primary" href="https://github.com/viberfasend/feedrico">Watch the repository on GitHub</a>
-        </p>
-        <p class="get__note">Curious what’s under the hood? The source is public under the <span class="nowrap">GPL-3.0</span>, and the <a href="https://github.com/viberfasend/feedrico#development">README on GitHub</a> explains how to build it.</p>
+        <h2 id="get-title" tabindex="-1">Download Feedrico.</h2>
+        <p>Free, with no account and no ads. Pick your computer:</p>
+        <ul class="downloads">
+          <li><a class="download" href="https://github.com/viberfasend/feedrico/releases/latest"><strong>Windows</strong><span>Windows 10 and 11</span></a></li>
+          <li><a class="download" href="https://github.com/viberfasend/feedrico/releases/latest"><strong>Mac</strong><span>Apple and Intel Macs</span></a></li>
+          <li><a class="download" href="https://github.com/viberfasend/feedrico/releases/latest"><strong>Linux</strong><span>AppImage or .deb</span></a></li>
+        </ul>
+        <p class="get__note">The downloads are on GitHub, where Feedrico is made. On that page, choose the file for your computer: <b>setup.exe</b> for Windows, <b>.dmg</b> for Mac, <b>.AppImage</b> or <b>.deb</b> for Linux.</p>
       </div>
     </div>
   </div>
@@ -583,8 +541,8 @@
     </div>
     <div class="footer__text">
       <p>Feedrico is named after a friend: Feed, plus Federico. Its colours come from the <i lang="de">Altweibersommer</i>, the warm weeks at the end of summer when the light turns golden and fine threads of silk drift through the air.</p>
-      <p>Free software under the <span class="nowrap">GPL-3.0</span>. The source, the design tokens and this page are <a href="https://github.com/viberfasend/feedrico">on GitHub</a>.</p>
-      <p class="footer__requests" id="requests" data-requests>This page loads only from this site: no analytics, no fonts or scripts from elsewhere. Your browser’s network panel can confirm it.</p>
+      <p>Feedrico is free software, made in the open <a href="https://github.com/viberfasend/feedrico">on GitHub</a>. Found a problem or have an idea? Tell us there.</p>
+      <p class="footer__requests">This page has no ads, no cookies and no trackers either.</p>
     </div>
    </div>
   </div>
@@ -594,9 +552,5 @@
   </div>
 </footer>
 
-<aside class="keyhint" data-keyhint hidden aria-label="Keyboard shortcuts on this page">
-  <p class="keyhint__text" data-keyhint-text aria-live="polite"><kbd>j</kbd> next section</p>
-  <button class="keyhint__toggle" type="button" data-keyhint-toggle aria-pressed="true">Shortcuts on</button>
-</aside>
 </body>
 </html>

@@ -133,7 +133,8 @@
   var hint = document.querySelector('[data-keyhint]');
   var hintText = document.querySelector('[data-keyhint-text]');
   var toggle = document.querySelector('[data-keyhint-toggle]');
-  var enabled = true;
+  // Page shortcuts run only where the page offers the switch that turns them off (WCAG 2.1.4).
+  var enabled = !!hint;
   var used = {};
   var starred = 0;
 
