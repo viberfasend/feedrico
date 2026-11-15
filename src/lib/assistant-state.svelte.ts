@@ -5,11 +5,13 @@
 // palette and the panel pick it up from there.
 import { isCommandError } from './api';
 import { renderMarkdown } from './assistant-markdown';
+import { readerSelection, type ReaderSelection } from './reader-selection';
 import {
   assistantNames,
   assistantProviders,
   getAssistantSetup,
   runAssistant,
+  type ArticleNotes,
   type AssistantAction,
   type AssistantErrorKind,
   type AssistantKind,
@@ -26,17 +28,37 @@ export interface AssistantEntry {
   paletteLabel: string;
   /** Names the run in the panel. */
   title: string;
-  action: AssistantAction;
+  /** Article actions build their action from the open Article's id when the run starts. */
+  action: AssistantAction | ((articleId: number) => AssistantAction);
+  /** Optional gate, re-checked whenever the menu or palette renders (a selection exists, …). */
+  when?: () => boolean;
 }
 
 export const assistantEntries: AssistantEntry[] = [
-  // Proves the pipeline end to end. Easy to replace once real reading aids exist.
   {
-    id: 'test',
-    menuLabel: 'Check it works',
-    paletteLabel: 'Assistant: Check it works',
-    title: 'Check it works',
-    action: { kind: 'test' },
+    id: 'summarize',
+    menuLabel: 'Summarize (u)',
+    paletteLabel: 'Assistant: Summarize this Article',
+    title: 'Summary',
+    action: (articleId) => ({ kind: 'summarize', articleId }),
+  },
+  {
+    id: 'explain',
+    menuLabel: 'Explain simply',
+    paletteLabel: 'Assistant: Explain this Article in plain language',
+    title: 'Plain-language explanation',
+    action: (articleId) => ({ kind: 'explain', articleId }),
+  },
+  {
+    id: 'explainTerm',
+    menuLabel: 'Explain selection',
+    paletteLabel: 'Assistant: Explain the selected term',
+    title: 'Term explained',
+    when: () => assist.currentSelection() !== null,
+    action: (articleId) => {
+      const s = assist.currentSelection() ?? { term: '', context: '' };
+      return { kind: 'explainTerm', articleId, term: s.term, context: s.context };
+    },
   },
 ];
 
@@ -51,6 +73,8 @@ export interface AssistantRun {
   /** Sanitized HTML of the final text. */
   html: string;
   error: AssistantErrorKind | null;
+  /** What the panel says about the input an Article result is based on. */
+  article: ArticleNotes | null;
 }
 
 const BINARY: Record<AssistantKind, string> = { claudeCode: 'claude', mistralVibe: 'vibe' };
@@ -90,9 +114,12 @@ class AssistantState {
   run = $state<AssistantRun | null>(null);
   /** What the polite live region says: completion, never tokens. */
   announcement = $state('');
+  /** The reader's last text selection, input for "Explain a term" (#118). */
+  selection = $state<ReaderSelection | null>(null);
 
   private seq = 0;
   private task: RunningTask | null = null;
+  private listening = false;
 
   /** Reads the setup; cheap and local. Call again after the user changes it in Settings. */
   async loadSetup() {
@@ -102,6 +129,15 @@ class AssistantState {
       this.setup = null;
     }
     if (!this.setup) this.discard();
+    // Keep the selection current while the user selects; a collapsed selection never clears it,
+    // because opening the palette moves focus and collapses the live selection.
+    if (!this.listening && typeof document !== 'undefined') {
+      this.listening = true;
+      document.addEventListener('selectionchange', () => {
+        const s = readerSelection();
+        if (s) this.selection = s;
+      });
+    }
   }
 
   /** Whether Assistant entry points apply right now: set up, with an Article in the reader. */
@@ -109,14 +145,40 @@ class AssistantState {
     return this.setup?.disclosureAccepted === true && app.article !== null && (!app.isGrid || app.readerOpen);
   }
 
+  /** The selection to use now: the last one seen, else the live one. */
+  currentSelection(): ReaderSelection | null {
+    return this.selection ?? readerSelection();
+  }
+
+  /** Remember the reader's current selection, if any (called when a menu or palette opens). */
+  captureSelection() {
+    const s = readerSelection();
+    if (s) this.selection = s;
+  }
+
+  /** Start an entry by id (the Summarize shortcut). */
+  startEntry(id: string) {
+    const entry = this.entries.find((e) => e.id === id);
+    if (entry) this.start(entry);
+  }
+
   start(entry: AssistantEntry) {
     if (!this.setup?.disclosureAccepted) return;
+    if (entry.when && !entry.when()) return;
+    // Article actions need the open Article; resolve the action before discard() clears state.
+    const action =
+      typeof entry.action === 'function'
+        ? app.article
+          ? entry.action(app.article.id)
+          : null
+        : entry.action;
+    if (!action) return;
     this.discard();
     const id = ++this.seq;
-    this.run = { id, entry, phase: 'running', text: '', html: '', error: null };
+    this.run = { id, entry, phase: 'running', text: '', html: '', error: null, article: null };
     this.announcement = '';
     const live = () => (this.seq === id && this.run?.phase === 'running' ? this.run : null);
-    const task = runAssistant(entry.action, (event) => {
+    const task = runAssistant(action, (event) => {
       const run = live();
       if (run && event.kind === 'text') run.text += event.delta;
     });
@@ -127,6 +189,7 @@ class AssistantState {
         if (!run) return;
         run.text = result.text;
         run.html = renderMarkdown(result.text);
+        run.article = result.article ?? null;
         run.phase = 'done';
         this.announcement = 'Answer ready';
       },
@@ -166,6 +229,7 @@ class AssistantState {
     this.task = null;
     this.run = null;
     this.announcement = '';
+    this.selection = null;
   }
 
   async copy() {

@@ -36,14 +36,18 @@
     return () => window.removeEventListener('keydown', onEscape, true);
   });
 
-  /** One shortcut opens the Assistant menu. Never while typing or with modifiers. */
+  /** The reader's shortcuts: `i` toggles the Assistant menu, `u` summarizes the Article (#116).
+   *  Never while typing, with modifiers, or with a menu open. */
   function onKeydown(event: KeyboardEvent) {
-    if (event.key !== 'i' || event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
+    if (event.key !== 'i' && event.key !== 'u') return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
     if (app.phase !== 'ready' || !assist.available) return;
     const target = event.target;
     if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    if (event.key === 'u' && target instanceof HTMLElement && target.closest('[role="menu"]')) return;
     event.preventDefault();
-    assist.menuOpen = !assist.menuOpen;
+    if (event.key === 'i') assist.menuOpen = !assist.menuOpen;
+    else assist.startEntry('summarize');
   }
 
   function close() {
@@ -66,6 +70,14 @@
         <p class="label">Written by {name} · may be wrong</p>
         <p class="title">{run.entry.title}</p>
       </header>
+
+      <!-- What the input was, so the answer is read honestly: excerpt-only Feeds and cut Articles. -->
+      {#if run.article?.excerptOnly}
+        <p class="note">This Feed only gives an excerpt; the summary covers that excerpt.</p>
+      {/if}
+      {#if run.article?.truncated}
+        <p class="note">This Article is long; the answer covers the first {run.article.wordsUsed} words.</p>
+      {/if}
 
       {#if error}
         <div class="error">

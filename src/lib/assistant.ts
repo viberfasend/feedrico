@@ -34,15 +34,30 @@ export interface AssistantSetup {
 }
 
 /** What to run. Wave 1 has only 'test'; each feature issue adds its action. */
-export type AssistantAction = { kind: 'test' };
+export type AssistantAction =
+  | { kind: 'test' }
+  | { kind: 'summarize'; articleId: number }
+  | { kind: 'explain'; articleId: number }
+  | { kind: 'explainTerm'; articleId: number; term: string; context: string };
 
 export type AssistantEvent =
   | { kind: 'text'; delta: string }
   | { kind: 'done'; text: string; structured: unknown | null };
 
+/** What the panel says about the input an Article result is based on. */
+export interface ArticleNotes {
+  /** The Feed gave only a short excerpt, so the answer covers that excerpt. */
+  excerptOnly: boolean;
+  /** The Article was cut; the answer is based on the first `wordsUsed` words. */
+  truncated: boolean;
+  wordsUsed: number;
+}
+
 export interface AssistantResult {
   text: string;
   structured: unknown | null;
+  /** Set for Article actions only. */
+  article?: ArticleNotes | null;
 }
 
 export type AssistantErrorKind =

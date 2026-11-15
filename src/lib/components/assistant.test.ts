@@ -16,6 +16,8 @@ interface FakeTask {
   cancel: ReturnType<typeof vi.fn>;
 }
 const tasks: FakeTask[] = [];
+/** The action each started run was given, in order. */
+const actions: unknown[] = [];
 let setup: AssistantSetup | null = null;
 
 vi.mock('../api', async (importOriginal) => ({
@@ -26,7 +28,8 @@ vi.mock('../api', async (importOriginal) => ({
 vi.mock('../assistant', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../assistant')>()),
   getAssistantSetup: vi.fn(async () => setup),
-  runAssistant: vi.fn((_action: unknown, onEvent: (e: AssistantEvent) => void) => {
+  runAssistant: vi.fn((action: unknown, onEvent: (e: AssistantEvent) => void) => {
+    actions.push(action);
     let resolve!: FakeTask['resolve'];
     let reject!: FakeTask['reject'];
     const result = new Promise<AssistantResult>((res, rej) => ((resolve = res), (reject = rej)));
@@ -73,6 +76,7 @@ async function start() {
 
 beforeEach(() => {
   tasks.length = 0;
+  actions.length = 0;
   mockApi.openExternal.mockClear();
   Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => {}) }, configurable: true });
 });
@@ -338,14 +342,184 @@ describe('command palette', () => {
     return labels.join('|');
   }
 
-  it('lists the Assistant entry only with a setup and an Article', async () => {
+  it('lists the Summarize and Explain entries only with a setup and an Article', async () => {
     await render();
-    expect(await paletteLabels()).toContain('Assistant: Check it works');
+    const labels = await paletteLabels();
+    expect(labels).toContain('Assistant: Summarize this Article');
+    expect(labels).toContain('Assistant: Explain this Article in plain language');
+    expect(labels).not.toContain('Check it works');
   });
 
   it('lists no Assistant entry without a setup', async () => {
     await render(null);
     expect(await paletteLabels()).not.toContain('Assistant');
+  });
+});
+
+describe('entries and the Summarize shortcut (#116)', () => {
+  it('the reader menu lists Summarize and Explain simply', async () => {
+    await render();
+    press('i');
+    expect(assist.menuOpen).toBe(true);
+    const labels = [...document.querySelectorAll('.menu-item')].map((el) => el.textContent?.trim());
+    expect(labels).toContain('Summarize (u)');
+    expect(labels).toContain('Explain simply');
+  });
+
+  it('u starts Summarize on the open Article', async () => {
+    await render();
+    press('u');
+    flushSync();
+    expect(tasks).toHaveLength(1);
+    expect(actions[0]).toEqual({ kind: 'summarize', articleId: 1 });
+    expect(q('.panel')!.getAttribute('aria-label')).toBe('Assistant: Summary');
+  });
+
+  it('u does nothing without a setup or while typing', async () => {
+    await render(null);
+    press('u');
+    expect(tasks).toHaveLength(0);
+    await render();
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'u', bubbles: true }));
+    flushSync();
+    expect(tasks).toHaveLength(0);
+  });
+
+  it('the menu and palette start Explain simply with the open Article', async () => {
+    await render();
+    assist.startEntry('explain');
+    flushSync();
+    expect(actions[0]).toEqual({ kind: 'explain', articleId: 1 });
+  });
+});
+
+describe('panel notes about the input (#116)', () => {
+  it('shows the excerpt-only and truncation notes from the result', async () => {
+    await render();
+    const task = await start();
+    task.resolve({
+      text: 'A short answer.',
+      structured: null,
+      article: { excerptOnly: true, truncated: true, wordsUsed: 1234 },
+    });
+    await settle();
+    flushSync();
+    const notes = [...document.querySelectorAll('.panel .note')].map((n) => n.textContent?.trim());
+    expect(notes).toContain('This Feed only gives an excerpt; the summary covers that excerpt.');
+    expect(notes).toContain('This Article is long; the answer covers the first 1234 words.');
+  });
+
+  it('shows no notes when the whole Article was sent', async () => {
+    await render();
+    const task = await start();
+    task.resolve({ text: 'A short answer.', structured: null, article: { excerptOnly: false, truncated: false, wordsUsed: 80 } });
+    await settle();
+    flushSync();
+    expect(document.querySelectorAll('.panel .note')).toHaveLength(0);
+  });
+
+  it('shows no notes while the run has not finished', async () => {
+    await render();
+    await start();
+    flushSync();
+    expect(document.querySelectorAll('.panel .note')).toHaveLength(0);
+  });
+});
+
+describe('explain the selected term (#118)', () => {
+  const richArticle = (): ArticleDetail => ({
+    ...article(),
+    contentHtml: '<p>First para.</p><p>The <b>quota</b> is a limit on requests. It resets daily.</p>',
+  });
+
+  function selectTerm() {
+    const b = document.querySelector('#pane-reader .content b');
+    expect(b).not.toBeNull();
+    const range = document.createRange();
+    range.selectNodeContents(b!);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+    flushSync();
+  }
+
+  async function paletteOptions() {
+    const { default: CommandPalette } = await import('./CommandPalette.svelte');
+    const palette = mount(CommandPalette, { target: document.body, props: { open: true } });
+    await settle();
+    flushSync();
+    const options = [...document.querySelectorAll('[role="option"]')].map((o) => ({
+      label: o.textContent ?? '',
+      el: o as HTMLElement,
+    }));
+    return { palette, options };
+  }
+
+  it('the palette lists "Explain the selected term" only with a selection, and runs it with term and paragraph', async () => {
+    app.phase = 'ready';
+    app.article = richArticle();
+    setup = { kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: true };
+    mounted = mount(Reader, { target: document.body });
+    await settle();
+    flushSync();
+
+    // No selection: the entry is not offered.
+    let { palette, options } = await paletteOptions();
+    expect(options.map((o) => o.label).join('|')).not.toContain('Explain the selected term');
+    unmount(palette);
+
+    // Select the term, open the palette again (it captures the selection), pick the entry.
+    selectTerm();
+    ({ palette, options } = await paletteOptions());
+    const entry = options.find((o) => o.label.includes('Explain the selected term'));
+    expect(entry).toBeDefined();
+    entry!.el.click();
+    await settle();
+    flushSync();
+    unmount(palette);
+    expect(actions.at(-1)).toEqual({
+      kind: 'explainTerm',
+      articleId: 1,
+      term: 'quota',
+      context: 'The quota is a limit on requests. It resets daily.',
+    });
+  });
+
+  it('the reader menu hides the entry without a selection and shows it with one', async () => {
+    await render();
+    press('i');
+    let labels = [...document.querySelectorAll('.menu-item')].map((el) => el.textContent?.trim());
+    expect(labels).not.toContain('Explain selection');
+    assist.menuOpen = false;
+    flushSync();
+
+    app.article = richArticle();
+    await settle();
+    flushSync();
+    selectTerm();
+    press('i');
+    labels = [...document.querySelectorAll('.menu-item')].map((el) => el.textContent?.trim());
+    expect(labels).toContain('Explain selection');
+  });
+
+  it('a selection outside the reader does not offer the entry', async () => {
+    await render();
+    const outside = document.createElement('p');
+    outside.textContent = 'somewhere else';
+    document.body.append(outside);
+    const range = document.createRange();
+    range.selectNodeContents(outside);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+    flushSync();
+    press('i');
+    const labels = [...document.querySelectorAll('.menu-item')].map((el) => el.textContent?.trim());
+    expect(labels).not.toContain('Explain selection');
   });
 });
 
@@ -361,15 +535,20 @@ describe('accessibility', () => {
     expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' '))}`)).toEqual([]);
   }
 
-  it('has no violations while running, done, and failed', async () => {
+  it('has no violations while running, done with input notes, and failed', async () => {
     await render();
     const task = await start();
     task.emit({ kind: 'text', delta: 'Streaming' });
     flushSync();
     await expectNoViolations();
-    task.resolve({ text: 'Done with [a link](https://example.com).\n\n- one\n- two', structured: null });
+    task.resolve({
+      text: 'Done with [a link](https://example.com).\n\n- one\n- two',
+      structured: null,
+      article: { excerptOnly: true, truncated: true, wordsUsed: 4321 },
+    });
     await settle();
     flushSync();
+    expect(q('.panel')!.textContent).toContain('excerpt');
     await expectNoViolations();
     q('[data-action="retry"]')!.click();
     flushSync();
