@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use super::Task;
+use super::{AssistantError, Task};
 
 const OPEN: &str = "<<<FEEDRICO_DATA";
 const CLOSE: &str = "<<<END_FEEDRICO_DATA>>>";
@@ -49,5 +49,91 @@ pub fn test_task() -> Task {
         json_schema: None,
         model: None,
         timeout: Duration::from_secs(60),
+    }
+}
+
+/// The JSON answer of a run: Claude Code hands it over as `structured_output`, Vibe only in the
+/// text. For text, the first balanced `{...}` block is parsed; anything around it is ignored.
+pub fn answer_json(
+    text: &str,
+    structured: Option<&serde_json::Value>,
+) -> Result<serde_json::Value, AssistantError> {
+    if let Some(v) = structured.filter(|v| !v.is_null()) {
+        return Ok(v.clone());
+    }
+    let start = text
+        .find('{')
+        .ok_or_else(|| malformed("the answer held no JSON object"))?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, c) in text[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    let end = start + i + 1;
+                    return serde_json::from_str(&text[start..end])
+                        .map_err(|e| malformed(&format!("the answer wasn't JSON: {e}")));
+                }
+            }
+            _ => {}
+        }
+    }
+    Err(malformed("the answer's JSON object was cut off"))
+}
+
+fn malformed(message: &str) -> AssistantError {
+    AssistantError::Malformed {
+        message: message.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn answer_json_prefers_structured_output() {
+        let v = answer_json("ignored", Some(&json!({"topics": []}))).unwrap();
+        assert_eq!(v, json!({"topics": []}));
+        // A null structured output (Vibe) falls back to the text.
+        let v = answer_json("… {\"a\": 1} …", None).unwrap();
+        assert_eq!(v, json!({"a": 1}));
+    }
+
+    #[test]
+    fn answer_json_extracts_the_first_balanced_object_from_text() {
+        let v = answer_json(
+            "Here you go:\n{\"picks\": [{\"id\": 2, \"note\": \"a } brace\"}]}\nDone.",
+            None,
+        )
+        .unwrap();
+        assert_eq!(v["picks"][0]["id"], json!(2));
+        assert_eq!(v["picks"][0]["note"], json!("a } brace"));
+    }
+
+    #[test]
+    fn answer_json_rejects_non_json() {
+        for text in ["no json at all", "{cut off", "{\"a\": }"] {
+            let err = answer_json(text, None).unwrap_err();
+            assert!(
+                matches!(err, AssistantError::Malformed { .. }),
+                "{text}: {err:?}"
+            );
+        }
     }
 }

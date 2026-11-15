@@ -21,15 +21,21 @@
 //! - [`ask`]: ask a question about the Article, resending the capped conversation (#119).
 //! - [`translate`]: translate the Article, structure and image placeholders kept (#117).
 //! - [`search`]: turn a question into a local search query (#122).
+//! - [`view_input`]: the newest N Articles of a View as prompt input (#120, #121).
+//! - [`briefing`]: a briefing of a View, grouped topics with Article ids (#120).
+//! - [`picks`]: rank a View's unread Articles against the user's interests (#121).
 
 pub mod article;
 pub mod ask;
+pub mod briefing;
 pub mod detect;
 pub mod folder_suggestions;
+pub mod picks;
 pub mod prompts;
 pub mod run;
 pub mod search;
 pub mod translate;
+pub mod view_input;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -50,6 +56,10 @@ pub struct AssistantSetup {
     /// `None` means the UI's default, the system language. Never stored in the Library.
     #[serde(default)]
     pub target_language: Option<String>,
+    /// Free text: what the user likes to read, used only by the picks run (#121). Machine-local,
+    /// so it never travels with a Library. Empty means not set.
+    #[serde(default)]
+    pub interests: String,
 }
 
 /// The Assistants Feedrico knows how to drive. New CLIs (Codex, Gemini, Ollama: #125) add a

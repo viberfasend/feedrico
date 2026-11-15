@@ -326,20 +326,109 @@ impl Library {
     }
 
     pub fn list_articles(&self, q: &ListQuery, offset: i64, limit: i64) -> Result<Vec<ArticleRow>> {
-        let (clause, mut args) = filter(q, &self.search_match(q));
+        self.list_rows(q, false, limit, Some(offset))
+    }
+
+    /// The first `limit` Articles of a View for Assistant input (#120/#121): the same rows the
+    /// list shows, optionally unread-only, never touching Read or Starred.
+    pub fn list_view_input(
+        &self,
+        q: &ListQuery,
+        unread_only: bool,
+        limit: i64,
+    ) -> Result<Vec<ArticleRow>> {
+        self.list_rows(q, unread_only, limit, None)
+    }
+
+    /// The 0-based position of Article `id` in the View's sorted list, so a link in an Assistant
+    /// result can open it exactly like a click in the list (#120/#121). `None` when the Article
+    /// is not in the View.
+    pub fn article_index(&self, q: &ListQuery, id: i64) -> Result<Option<i64>> {
+        use rusqlite::types::Value;
+        let date: Option<i64> = self
+            .conn()
+            .query_row(
+                "SELECT article_date FROM article WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(date) = date else { return Ok(None) };
+        let (clause, args) = filter(q, &self.search_match(q));
+        // The clause's `?` placeholders take the parameter indices 1..=base, so the two extra
+        // parameters are addressed explicitly.
+        let base = args.len();
+        let id_p = base + 1;
+        let date_p = base + 2;
+        let mut all = args.clone();
+        all.push(Value::Integer(id));
+        all.push(Value::Integer(date));
+        // The Article must be in the View at all (an unread View has no index for a read one).
+        let mut with_id = args;
+        with_id.push(Value::Integer(id));
+        let in_view: i64 = self.conn().query_row(
+            &format!("SELECT count(*) FROM article a WHERE {clause} AND a.id = ?{id_p}"),
+            rusqlite::params_from_iter(with_id),
+            |r| r.get(0),
+        )?;
+        if in_view == 0 {
+            return Ok(None);
+        }
+        let ahead = match q.sort {
+            Sort::NewestFirst => format!(
+                "(a.article_date > ?{date_p} OR (a.article_date = ?{date_p} AND a.id > ?{id_p}))"
+            ),
+            Sort::OldestFirst => format!(
+                "(a.article_date < ?{date_p} OR (a.article_date = ?{date_p} AND a.id < ?{id_p}))"
+            ),
+        };
+        let count: i64 = self.conn().query_row(
+            &format!("SELECT count(*) FROM article a WHERE {clause} AND {ahead}"),
+            rusqlite::params_from_iter(all),
+            |r| r.get(0),
+        )?;
+        Ok(Some(count))
+    }
+
+    fn list_rows(
+        &self,
+        q: &ListQuery,
+        unread_only: bool,
+        limit: i64,
+        offset: Option<i64>,
+    ) -> Result<Vec<ArticleRow>> {
+        let (mut clause, mut args) = filter(q, &self.search_match(q));
+        if unread_only {
+            clause = format!("({clause}) AND a.is_read = 0");
+        }
         let order = match q.sort {
             Sort::NewestFirst => "a.article_date DESC, a.id DESC",
             Sort::OldestFirst => "a.article_date ASC, a.id ASC",
         };
-        args.push(limit.into());
-        args.push(offset.into());
-        let mut stmt = self.conn().prepare_cached(&format!(
-            "SELECT a.id, a.feed_id, f.title, a.title, a.excerpt, a.article_date, a.is_read, a.is_starred,
-                    a.lead_image, m.hash
-             FROM article a JOIN feed f ON f.id = a.feed_id
-             LEFT JOIN media m ON m.hash = f.favicon_hash
-             WHERE {clause} ORDER BY {order} LIMIT ? OFFSET ?"
-        ))?;
+        let sql = match offset {
+            Some(o) => {
+                args.push(limit.into());
+                args.push(o.into());
+                format!(
+                    "SELECT a.id, a.feed_id, f.title, a.title, a.excerpt, a.article_date, a.is_read, a.is_starred,
+                            a.lead_image, m.hash
+                     FROM article a JOIN feed f ON f.id = a.feed_id
+                     LEFT JOIN media m ON m.hash = f.favicon_hash
+                     WHERE {clause} ORDER BY {order} LIMIT ? OFFSET ?"
+                )
+            }
+            None => {
+                args.push(limit.into());
+                format!(
+                    "SELECT a.id, a.feed_id, f.title, a.title, a.excerpt, a.article_date, a.is_read, a.is_starred,
+                            a.lead_image, m.hash
+                     FROM article a JOIN feed f ON f.id = a.feed_id
+                     LEFT JOIN media m ON m.hash = f.favicon_hash
+                     WHERE {clause} ORDER BY {order} LIMIT ?"
+                )
+            }
+        };
+        let mut stmt = self.conn().prepare_cached(&sql)?;
         let rows = stmt
             .query_map(rusqlite::params_from_iter(args), |r| {
                 Ok(ArticleRow {
@@ -650,6 +739,71 @@ mod tests {
         let sidebar = library.sidebar(0).unwrap();
         assert_eq!((sidebar.all_unread, sidebar.starred), (1, 1));
         assert_eq!(sidebar.folders[0].unread, 1);
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn view_input_rows_and_article_index_follow_the_views_sort() {
+        let (_root, library) = library_with_feed();
+        library
+            .apply_fetch(
+                1,
+                fetched(vec![
+                    entry("a", "Alpha", Some(1_700_000_000)),
+                    entry("b", "Beta", Some(1_700_000_100)),
+                    entry("c", "Gamma", Some(1_700_000_200)),
+                ]),
+            )
+            .unwrap();
+        let feed = ListQuery {
+            view: View::Feed { id: 1 },
+            sort: Sort::NewestFirst,
+            search: None,
+            with_lead_image: false,
+        };
+        let rows = library.list_view_input(&feed, false, 2).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(),
+            ["Gamma", "Beta"]
+        );
+        // Read-only input, no offset: unread_only adds the All Unread filter.
+        let all = ListQuery {
+            view: View::AllUnread,
+            ..feed.clone()
+        };
+        library.set_read(rows[1].id, true).unwrap();
+        assert_eq!(library.list_view_input(&all, true, 10).unwrap().len(), 2);
+        assert_eq!(library.list_view_input(&all, false, 10).unwrap().len(), 2);
+        let starred = ListQuery {
+            view: View::Starred,
+            ..feed.clone()
+        };
+        assert_eq!(
+            library.list_view_input(&starred, true, 10).unwrap().len(),
+            0
+        );
+
+        // The index is the position in the sorted list, like a list click.
+        let gamma = rows[0].id;
+        let beta = rows[1].id;
+        let alpha = library
+            .list_articles(&feed, 2, 1)
+            .unwrap()
+            .pop()
+            .unwrap()
+            .id;
+        assert_eq!(library.article_index(&feed, gamma).unwrap(), Some(0));
+        assert_eq!(library.article_index(&feed, beta).unwrap(), Some(1));
+        assert_eq!(library.article_index(&feed, alpha).unwrap(), Some(2));
+        let oldest = ListQuery {
+            sort: Sort::OldestFirst,
+            ..feed.clone()
+        };
+        assert_eq!(library.article_index(&oldest, alpha).unwrap(), Some(0));
+        assert_eq!(library.article_index(&oldest, gamma).unwrap(), Some(2));
+        // Unknown id, or an Article outside the View (read in All Unread): no position.
+        assert_eq!(library.article_index(&feed, 999_999).unwrap(), None);
+        assert_eq!(library.article_index(&all, beta).unwrap(), None);
         library.close().unwrap();
     }
 
