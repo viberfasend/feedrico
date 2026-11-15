@@ -1,10 +1,13 @@
 // @vitest-environment happy-dom
 // The Assistant panel in the reader (#115): hidden without a setup, streams, renders the done
 // text from sanitized Markdown, shows every error with a next step, Esc stops, j/k discards.
+// Plus Translate (#117) and Ask (#119): the question field, the resent conversation and the
+// core-sanitized translation HTML.
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axeModule from 'axe-core';
 import type { ArticleDetail } from '../api';
+import { runAssistant } from '../assistant';
 import type { AssistantErrorKind, AssistantEvent, AssistantResult, AssistantSetup } from '../assistant';
 
 const mockApi = { openExternal: vi.fn(async (_url: string) => {}), article: vi.fn(), list: vi.fn(async () => []) };
@@ -402,7 +405,7 @@ describe('panel notes about the input (#116)', () => {
     task.resolve({
       text: 'A short answer.',
       structured: null,
-      article: { excerptOnly: true, truncated: true, wordsUsed: 1234 },
+      article: { excerptOnly: true, truncated: true, wordsUsed: 1234, droppedTurns: null },
     });
     await settle();
     flushSync();
@@ -414,7 +417,7 @@ describe('panel notes about the input (#116)', () => {
   it('shows no notes when the whole Article was sent', async () => {
     await render();
     const task = await start();
-    task.resolve({ text: 'A short answer.', structured: null, article: { excerptOnly: false, truncated: false, wordsUsed: 80 } });
+    task.resolve({ text: 'A short answer.', structured: null, article: { excerptOnly: false, truncated: false, wordsUsed: 80, droppedTurns: null } });
     await settle();
     flushSync();
     expect(document.querySelectorAll('.panel .note')).toHaveLength(0);
@@ -523,6 +526,160 @@ describe('explain the selected term (#118)', () => {
   });
 });
 
+describe('ask about the Article (#119)', () => {
+  const askEntry = () => assist.entries.find((e) => e.id === 'ask')!;
+  const lastAction = () => vi.mocked(runAssistant).mock.calls.at(-1)![0];
+
+  async function typeAndSend(question: string) {
+    const input = q('#ask-question') as HTMLInputElement;
+    input.value = question;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    flushSync();
+    await settle();
+  }
+
+  it('opens a labelled question field without running anything', async () => {
+    await render();
+    assist.start(askEntry());
+    flushSync();
+    expect(tasks).toHaveLength(0);
+    expect(assist.askOpen).toBe(true);
+    const input = q('#ask-question');
+    expect(input).not.toBeNull();
+    expect(document.querySelector('label[for="ask-question"]')!.textContent).toBe('Ask about this Article');
+    expect(q('.panel')!.getAttribute('aria-label')).toBe('Assistant: Ask about this Article');
+  });
+
+  it('Enter sends the question on the open Article; the next question resends the conversation', async () => {
+    await render();
+    assist.start(askEntry());
+    flushSync();
+    await typeAndSend('What about buses?');
+    expect(tasks).toHaveLength(1);
+    expect(lastAction()).toEqual({ kind: 'ask', articleId: 1, question: 'What about buses?', history: [] });
+    tasks.at(-1)!.resolve({
+      text: 'Electric by 2030.',
+      structured: null,
+      article: { excerptOnly: false, truncated: false, wordsUsed: 9, droppedTurns: 0 },
+    });
+    await settle();
+    flushSync();
+    expect(q('.turn .q')!.textContent).toBe('What about buses?');
+    expect(q('.turn .rendered')!.textContent).toContain('Electric by 2030.');
+    expect(assist.turns).toHaveLength(1);
+
+    await typeAndSend('And the cost?');
+    expect(lastAction()).toEqual({
+      kind: 'ask',
+      articleId: 1,
+      question: 'And the cost?',
+      history: [{ question: 'What about buses?', answer: 'Electric by 2030.' }],
+    });
+    tasks.at(-1)!.resolve({
+      text: 'About 120 million.',
+      structured: null,
+      article: { excerptOnly: false, truncated: false, wordsUsed: 9, droppedTurns: 2 },
+    });
+    await settle();
+    flushSync();
+    expect(assist.turns).toHaveLength(2);
+    // The panel says that oldest turns were left out.
+    expect(q('.panel')!.textContent!.replace(/\s+/g, ' ')).toContain(
+      'The 2 oldest questions were left out to keep the request small.',
+    );
+  });
+
+  it('Esc stops a running ask and keeps what arrived', async () => {
+    await render();
+    assist.start(askEntry());
+    flushSync();
+    await typeAndSend('Why?');
+    const task = tasks.at(-1)!;
+    task.emit({ kind: 'text', delta: 'half an ans' });
+    press('Escape');
+    await settle();
+    flushSync();
+    expect(task.cancel).toHaveBeenCalledTimes(1);
+    expect(assist.run!.phase).toBe('stopped');
+    expect(q('.panel')!.textContent).toContain('half an ans');
+  });
+
+  it('closing the Article discards the conversation', async () => {
+    await render();
+    assist.start(askEntry());
+    flushSync();
+    await typeAndSend('Why?');
+    tasks.at(-1)!.resolve({ text: 'Because.', structured: null });
+    await settle();
+    flushSync();
+    expect(assist.turns).toHaveLength(1);
+    app.article = article(2);
+    await settle();
+    flushSync();
+    expect(assist.turns).toHaveLength(0);
+    expect(assist.askOpen).toBe(false);
+    expect(q('.panel')).toBeNull();
+  });
+
+  it('a failed ask puts the question back into the field', async () => {
+    await render();
+    assist.start(askEntry());
+    flushSync();
+    await typeAndSend('Why?');
+    tasks.at(-1)!.reject({ kind: 'failed', message: 'x' });
+    await settle();
+    flushSync();
+    expect((q('#ask-question') as HTMLInputElement).value).toBe('Why?');
+  });
+});
+
+describe('translate the Article (#117)', () => {
+  const german =
+    '<p>Der Hund ist nicht im Haus und das ist gut so, denn der Mann ist mit dem Auto auf der Straße.</p>';
+  const english =
+    '<p>The dog is not in the house and that is good, because the man is with the car on the street.</p>';
+
+  it('is offered only when the Article language differs from the target language', async () => {
+    await render({ kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: true, targetLanguage: 'en' });
+    // The default fixture Article is too short to guess a language from.
+    expect(assist.entries.map((e) => e.id)).not.toContain('translate');
+    app.article = { ...article(), contentHtml: german };
+    flushSync();
+    expect(assist.entries.map((e) => e.id)).toContain('translate');
+    app.article = { ...article(), contentHtml: english };
+    flushSync();
+    expect(assist.entries.map((e) => e.id)).not.toContain('translate');
+    // A target of de offers it for the English Article.
+    setup = { kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: true, targetLanguage: 'de-DE' };
+    await assist.loadSetup();
+    flushSync();
+    expect(assist.entries.map((e) => e.id)).toContain('translate');
+  });
+
+  it('runs on the open Article and renders the core-sanitized HTML with the cached image', async () => {
+    await render({ kind: 'claudeCode', path: '/bin/claude', model: null, disclosureAccepted: true, targetLanguage: 'en' });
+    app.article = { ...article(), contentHtml: german };
+    flushSync();
+    assist.start(assist.entries.find((e) => e.id === 'translate')!);
+    flushSync();
+    expect(vi.mocked(runAssistant).mock.calls.at(-1)![0]).toEqual({ kind: 'translate', articleId: 1 });
+    tasks.at(-1)!.resolve({
+      text: '<p>raw answer</p>',
+      structured: null,
+      html: '<p>The dog <strong>is</strong> in the house.</p><img src="media://localhost/abc123" alt="Dog">',
+      article: { excerptOnly: false, truncated: true, wordsUsed: 1234, droppedTurns: null },
+    });
+    await settle();
+    flushSync();
+    // The core's sanitized HTML is used as-is, not re-parsed as Markdown.
+    expect(q('.rendered strong')!.textContent).toBe('is');
+    expect(q('.rendered img')!.getAttribute('src')).toBe('media://localhost/abc123');
+    // Long Articles are labelled as truncated.
+    expect(q('.panel')!.textContent).toContain('first 1234 words');
+  });
+});
+
 describe('accessibility', () => {
   const axe = axeModule as unknown as {
     run: (ctx: unknown, opts: unknown) => Promise<{ violations: { id: string; nodes: { target: string[] }[] }[] }>;
@@ -544,7 +701,7 @@ describe('accessibility', () => {
     task.resolve({
       text: 'Done with [a link](https://example.com).\n\n- one\n- two',
       structured: null,
-      article: { excerptOnly: true, truncated: true, wordsUsed: 4321 },
+      article: { excerptOnly: true, truncated: true, wordsUsed: 4321, droppedTurns: null },
     });
     await settle();
     flushSync();
@@ -556,6 +713,23 @@ describe('accessibility', () => {
     await settle();
     flushSync();
     expect(q('.error')).not.toBeNull();
+    await expectNoViolations();
+  });
+
+  it('has no violations with the ask field open and a answered turn shown', async () => {
+    await render();
+    assist.start(assist.entries.find((e) => e.id === 'ask')!);
+    flushSync();
+    await expectNoViolations();
+    const input = q('#ask-question') as HTMLInputElement;
+    input.value = 'What about buses?';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    flushSync();
+    tasks.at(-1)!.resolve({ text: 'Electric by 2030.', structured: null });
+    await settle();
+    flushSync();
+    expect(q('.turn')).not.toBeNull();
     await expectNoViolations();
   });
 });

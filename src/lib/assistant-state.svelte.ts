@@ -4,6 +4,7 @@
 // Feature issues (#116 and later) add an action to `assistantEntries`; the menu, the command
 // palette and the panel pick it up from there.
 import { isCommandError } from './api';
+import { guessLanguage, primarySubtag } from './assistant-language';
 import { renderMarkdown } from './assistant-markdown';
 import { readerSelection, type ReaderSelection } from './reader-selection';
 import {
@@ -15,6 +16,7 @@ import {
   type AssistantAction,
   type AssistantErrorKind,
   type AssistantKind,
+  type AssistantResult,
   type AssistantSetup,
   type RunningTask,
 } from './assistant';
@@ -60,6 +62,20 @@ export const assistantEntries: AssistantEntry[] = [
       return { kind: 'explainTerm', articleId, term: s.term, context: s.context };
     },
   },
+  {
+    id: 'translate',
+    menuLabel: 'Translate',
+    paletteLabel: 'Assistant: Translate the Article',
+    title: 'Translate',
+    action: (articleId) => ({ kind: 'translate', articleId }),
+  },
+  {
+    id: 'ask',
+    menuLabel: 'Ask about this Article',
+    paletteLabel: 'Assistant: Ask about this Article',
+    title: 'Ask about this Article',
+    action: (articleId) => ({ kind: 'ask', articleId, question: '', history: [] }),
+  },
 ];
 
 export type RunPhase = 'running' | 'done' | 'stopped' | 'error';
@@ -70,11 +86,18 @@ export interface AssistantRun {
   phase: RunPhase;
   /** Streamed text while running; the final text once done. */
   text: string;
-  /** Sanitized HTML of the final text. */
+  /** Sanitized HTML of the final text (the core's HTML for Translate, Markdown-rendered otherwise). */
   html: string;
   error: AssistantErrorKind | null;
-  /** What the panel says about the input an Article result is based on. */
-  article: ArticleNotes | null;
+  /** What the input was: excerpt, truncation, dropped turns. */
+  notes: ArticleNotes | null;
+}
+
+/** One earlier question and its answer in the Ask conversation (ephemeral, in memory only). */
+export interface AskTurn {
+  question: string;
+  answer: string;
+  html: string;
 }
 
 const BINARY: Record<AssistantKind, string> = { claudeCode: 'claude', mistralVibe: 'vibe' };
@@ -106,7 +129,16 @@ export function describeError(kind: AssistantErrorKind, assistant: AssistantKind
 }
 
 class AssistantState {
-  readonly entries = assistantEntries;
+  /** The entries that apply right now (Translate only when the language differs). */
+  get entries(): AssistantEntry[] {
+    const target = primarySubtag(this.setup?.targetLanguage ?? navigator.language);
+    const guessed = this.articleLanguage;
+    return assistantEntries.filter(
+      (e) =>
+        e.id !== 'translate' ||
+        (guessed !== null && target !== null && primarySubtag(guessed) !== target),
+    );
+  }
   /** The machine-local setup; null means Assistants are off and nothing of them is shown. */
   setup = $state<AssistantSetup | null>(null);
   /** The reader's Assistant menu, opened by the toolbar button or the shortcut. */
@@ -114,12 +146,23 @@ class AssistantState {
   run = $state<AssistantRun | null>(null);
   /** What the polite live region says: completion, never tokens. */
   announcement = $state('');
+  /** Ask mode (#119): the question field and the conversation so far, gone on Article change. */
+  askOpen = $state(false);
+  question = $state('');
+  turns = $state<AskTurn[]>([]);
+  /** How many oldest turns the last Ask run left out, so the panel can say so. */
+  droppedTurns = $state(0);
   /** The reader's last text selection, input for "Explain a term" (#118). */
   selection = $state<ReaderSelection | null>(null);
 
+  private listening = false;
   private seq = 0;
   private task: RunningTask | null = null;
-  private listening = false;
+  private lastQuestion = '';
+  /** A cheap guess of the open Article's language (the Library stores no Feed language). */
+  private articleLanguage = $derived(
+    app.article ? guessLanguage(`${app.article.title}\n${app.article.contentHtml}`) : null,
+  );
 
   /** Reads the setup; cheap and local. Call again after the user changes it in Settings. */
   async loadSetup() {
@@ -167,15 +210,56 @@ class AssistantState {
     if (entry.when && !entry.when()) return;
     // Article actions need the open Article; resolve the action before discard() clears state.
     const action =
-      typeof entry.action === 'function'
-        ? app.article
-          ? entry.action(app.article.id)
-          : null
-        : entry.action;
+      typeof entry.action === 'function' ? (app.article ? entry.action(app.article.id) : null) : entry.action;
     if (!action) return;
     this.discard();
+    if (action.kind === 'ask') {
+      // Ask opens the question field; each question is its own run.
+      this.askOpen = true;
+      return;
+    }
+    this.beginRun(entry, action);
+  }
+
+  /** Ask one question about the open Article; the conversation so far is resent with it (#119). */
+  ask() {
+    const question = this.question.trim();
+    const article = app.article;
+    if (!question || !this.setup?.disclosureAccepted || !article || this.run?.phase === 'running') return;
+    const entry = assistantEntries.find((e) => e.id === 'ask')!;
+    this.question = '';
+    this.lastQuestion = question;
+    this.beginRun(
+      entry,
+      {
+        kind: 'ask',
+        articleId: article.id,
+        question,
+        history: this.turns.map((t) => ({ question: t.question, answer: t.answer })),
+      },
+      {
+        onDone: (result) => {
+          this.turns = [
+            ...this.turns,
+            { question, answer: result.text, html: result.html ?? renderMarkdown(result.text) },
+          ];
+          this.droppedTurns = result.article?.droppedTurns ?? 0;
+        },
+        onError: () => {
+          // The question goes back into the field, so a failed run can be sent again.
+          this.question = question;
+        },
+      },
+    );
+  }
+
+  private beginRun(
+    entry: AssistantEntry,
+    action: AssistantAction,
+    hooks?: { onDone?: (result: AssistantResult) => void; onError?: () => void },
+  ) {
     const id = ++this.seq;
-    this.run = { id, entry, phase: 'running', text: '', html: '', error: null, article: null };
+    this.run = { id, entry, phase: 'running', text: '', html: '', error: null, notes: null };
     this.announcement = '';
     const live = () => (this.seq === id && this.run?.phase === 'running' ? this.run : null);
     const task = runAssistant(action, (event) => {
@@ -188,10 +272,12 @@ class AssistantState {
         const run = live();
         if (!run) return;
         run.text = result.text;
-        run.html = renderMarkdown(result.text);
-        run.article = result.article ?? null;
+        // Translate's answer is HTML sanitized in the core; everything else is Markdown.
+        run.html = result.html ?? renderMarkdown(result.text);
+        run.notes = result.article ?? null;
         run.phase = 'done';
         this.announcement = 'Answer ready';
+        hooks?.onDone?.(result);
       },
       (e: unknown) => {
         const run = live();
@@ -204,6 +290,7 @@ class AssistantState {
         run.phase = 'error';
         run.error = kind;
         this.announcement = describeError(kind, this.setup?.kind ?? 'claudeCode').what;
+        hooks?.onError?.();
       },
     );
   }
@@ -218,17 +305,30 @@ class AssistantState {
   }
 
   retry() {
-    const entry = this.run?.entry;
-    if (entry) this.start(entry);
+    const run = this.run;
+    if (!run) return;
+    if (run.entry.id === 'ask') {
+      // Re-ask the question of this run.
+      this.question = this.lastQuestion;
+      this.ask();
+      return;
+    }
+    this.start(run.entry);
   }
 
-  /** Close, or the Article changed: cancel a running task and throw the result away. */
+  /** Close, or the Article changed: cancel a running task and throw the result and the
+   *  conversation away. */
   discard() {
     this.seq++;
     if (this.run?.phase === 'running') this.cancelTask();
     this.task = null;
     this.run = null;
     this.announcement = '';
+    this.askOpen = false;
+    this.question = '';
+    this.turns = [];
+    this.droppedTurns = 0;
+    this.lastQuestion = '';
     this.selection = null;
   }
 
