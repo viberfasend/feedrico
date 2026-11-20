@@ -222,12 +222,25 @@ pub struct Enclosure {
 /// SQL `WHERE` clause and parameters for a query. Columns refer to `article a`.
 /// `match_expr` is the resolved FTS5 MATCH expression for a search (see `Library::search_match`).
 fn filter(q: &ListQuery, match_expr: &str) -> (String, Vec<rusqlite::types::Value>) {
-    let (clause, args) = view_filter(q, match_expr);
+    filter_bounded(q, match_expr, None)
+}
+
+/// `filter` plus an optional `first_seen_at > t` bound, so a View can be asked for only the
+/// Articles that arrived after a moment (the "New Articles · show" offer).
+fn filter_bounded(
+    q: &ListQuery,
+    match_expr: &str,
+    first_seen_after: Option<i64>,
+) -> (String, Vec<rusqlite::types::Value>) {
+    let (mut clause, mut args) = view_filter(q, match_expr);
     if q.with_lead_image {
-        (format!("({clause}) AND a.lead_image IS NOT NULL"), args)
-    } else {
-        (clause, args)
+        clause = format!("({clause}) AND a.lead_image IS NOT NULL");
     }
+    if let Some(t) = first_seen_after {
+        clause = format!("({clause}) AND a.first_seen_at > ?");
+        args.push(rusqlite::types::Value::Integer(t));
+    }
+    (clause, args)
 }
 
 fn view_filter(q: &ListQuery, match_expr: &str) -> (String, Vec<rusqlite::types::Value>) {
@@ -318,6 +331,18 @@ impl Library {
 
     pub fn count_articles(&self, q: &ListQuery) -> Result<i64> {
         let (clause, args) = filter(q, &self.search_match(q));
+        Ok(self.conn().query_row(
+            &format!("SELECT count(*) FROM article a WHERE {clause}"),
+            rusqlite::params_from_iter(args),
+            |r| r.get(0),
+        )?)
+    }
+
+    /// How many Articles of the View were first seen after `first_seen_after` (unix seconds).
+    /// The UI offers "New Articles · show" only when this is > 0 for the View being read, so
+    /// the offer never appears when the new Articles are all outside that View.
+    pub fn count_new_articles(&self, q: &ListQuery, first_seen_after: i64) -> Result<i64> {
+        let (clause, args) = filter_bounded(q, &self.search_match(q), Some(first_seen_after));
         Ok(self.conn().query_row(
             &format!("SELECT count(*) FROM article a WHERE {clause}"),
             rusqlite::params_from_iter(args),
@@ -739,6 +764,65 @@ mod tests {
         let sidebar = library.sidebar(0).unwrap();
         assert_eq!((sidebar.all_unread, sidebar.starred), (1, 1));
         assert_eq!(sidebar.folders[0].unread, 1);
+        library.close().unwrap();
+    }
+
+    #[test]
+    fn count_new_articles_counts_only_the_view_and_the_time_bound() {
+        let (_root, library) = library_with_feed(); // Feed 1 in Folder 1
+        library
+            .import_opml(&[OpmlFeed {
+                url: "https://y.example/feed".into(),
+                title: "Y".into(),
+                site_url: None,
+                folder: None,
+            }])
+            .unwrap(); // Feed 2 at the top level
+        let insert = |feed_id: i64, identity: &str, first_seen: i64| {
+            library
+                .conn()
+                .execute(
+                    "INSERT INTO article (feed_id, identity, title, content_text, first_seen_at, article_date)
+                     VALUES (?1, ?2, ?2, 'x', ?3, ?3)",
+                    rusqlite::params![feed_id, identity, first_seen],
+                )
+                .unwrap();
+        };
+        insert(1, "f-old", 100);
+        insert(1, "f-new", 500);
+        insert(2, "top-new", 500);
+
+        let folder = ListQuery {
+            view: View::Folder { id: 1 },
+            sort: Sort::NewestFirst,
+            search: None,
+            with_lead_image: false,
+        };
+        let all = ListQuery {
+            view: View::AllUnread,
+            ..folder.clone()
+        };
+        let feed2 = ListQuery {
+            view: View::Feed { id: 2 },
+            ..folder.clone()
+        };
+
+        // Reading the Folder: only the new Article of its own Feed counts, not the top-level one.
+        assert_eq!(library.count_new_articles(&folder, 400).unwrap(), 1);
+        assert_eq!(library.count_new_articles(&folder, 50).unwrap(), 2);
+        assert_eq!(library.count_new_articles(&folder, 600).unwrap(), 0);
+        // All Unread sees both new Articles; the other Feed's View only its own.
+        assert_eq!(library.count_new_articles(&all, 400).unwrap(), 2);
+        assert_eq!(library.count_new_articles(&feed2, 400).unwrap(), 1);
+        // A new Article that is already Read is not in All Unread.
+        library
+            .conn()
+            .execute(
+                "UPDATE article SET is_read = 1 WHERE identity = 'top-new'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(library.count_new_articles(&all, 400).unwrap(), 1);
         library.close().unwrap();
     }
 

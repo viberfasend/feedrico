@@ -315,6 +315,13 @@ export const api = {
     listen<ExportProgress>('export-progress', (e) => cb(e.payload)),
   sidebar: (todaySince: number) => invoke<Sidebar>('sidebar', { todaySince }),
   count: (query: ListQuery) => invoke<number>('count_articles', { query }),
+  /**
+   * Articles of the View first seen after `firstSeenAfter` (unix seconds). The
+   * "New Articles · show" offer asks this, so it only appears when the View being
+   * read actually contains one of the new Articles.
+   */
+  countNew: (query: ListQuery, firstSeenAfter: number) =>
+    invoke<number>('count_new_articles', { query, firstSeenAfter }),
   list: (query: ListQuery, offset: number, limit: number) =>
     invoke<ArticleRow[]>('list_articles', { query, offset, limit }),
   article: (id: number) => invoke<ArticleDetail>('get_article', { id }),
