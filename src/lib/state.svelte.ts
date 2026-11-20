@@ -101,8 +101,13 @@ export class AppState {
 
   selectedIndex = $state<number | null>(null);
   article = $state<ArticleDetail | null>(null);
-  /** Refresh brought new Articles while the user was reading; offer to show them. */
+  /**
+   * Refresh brought new Articles while the user was reading; offer to show them — but only
+   * when the View being read actually contains one (see `updateNewArticles`).
+   */
   hasNewArticles = $state(false);
+  /** Unix seconds when the current list was (re)loaded; Articles first seen later are "new". */
+  private listLoadedAt = 0;
 
   layouts = $state<Layouts>({ default: 'list', views: {} });
   /** Grid Layouts show the reader as a slide-over panel; List always shows it. */
@@ -440,7 +445,7 @@ export class AppState {
       await this.loadSidebar();
       if (outcome.newArticles > 0) {
         if (this.selectedIndex === null) void this.resetList();
-        else this.hasNewArticles = true;
+        else void this.updateNewArticles();
       }
       return outcome.error;
     } catch (e) {
@@ -672,6 +677,7 @@ export class AppState {
     // components that ask for pages while we count already load the new list.
     const query = this.query();
     const epoch = ++this.listEpoch;
+    this.listLoadedAt = Math.floor(Date.now() / 1000);
     this.pages = new Map();
     this.loading = new Map();
     this.selectedIndex = null;
@@ -921,14 +927,29 @@ export class AppState {
     await api.refresh(force);
   }
 
+  /**
+   * A refresh, a Feed retry or Pruning changed the Library while the user was reading. Offer
+   * the new Articles only when the View being read actually contains one: Articles first seen
+   * after this list was loaded. Reading a Folder must not offer Articles of Feeds outside it.
+   */
+  private async updateNewArticles() {
+    const epoch = this.listEpoch;
+    const count = await api.countNew(this.query(), this.listLoadedAt);
+    // The list changed meanwhile (view switch, search, the pill itself): resetList already
+    // cleared the offer for the new list.
+    if (epoch !== this.listEpoch) return;
+    this.hasNewArticles = count > 0;
+  }
+
   private onProgress(p: RefreshProgress) {
     this.refresh = p;
     if (p.done % 10 === 0 || p.finished) this.scheduleSidebar();
     if (p.finished) {
       if (p.newArticles > 0) {
-        // Don't yank the list away from someone reading; offer the new Articles instead.
+        // Don't yank the list away from someone reading; offer the new Articles instead —
+        // but only those in the View being read.
         if (this.selectedIndex === null) void this.resetList();
-        else this.hasNewArticles = true;
+        else void this.updateNewArticles();
       }
       setTimeout(() => {
         if (this.refresh?.finished) this.refresh = null;
@@ -940,7 +961,7 @@ export class AppState {
   private onPruned() {
     void this.loadSidebar();
     if (this.selectedIndex === null) void this.resetList();
-    else this.hasNewArticles = true;
+    else void this.updateNewArticles();
   }
 
   // ---- Toasts -----------------------------------------------------------------------------

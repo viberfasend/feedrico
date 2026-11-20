@@ -434,6 +434,18 @@ fn count_articles(query: ListQuery, state: State<'_, AppState>) -> CommandResult
     with_library(&state, |l| l.count_articles(&query))
 }
 
+/// How many Articles of the View were first seen after `first_seen_after` (unix seconds).
+/// The "New Articles · show" offer is only shown when this is > 0 for the View being read,
+/// so it never appears when the new Articles are all outside that View.
+#[tauri::command]
+fn count_new_articles(
+    query: ListQuery,
+    first_seen_after: i64,
+    state: State<'_, AppState>,
+) -> CommandResult<i64> {
+    with_library(&state, |l| l.count_new_articles(&query, first_seen_after))
+}
+
 #[tauri::command]
 fn list_articles(
     query: ListQuery,
@@ -1532,6 +1544,7 @@ pub fn run() {
             retry_feed,
             sidebar,
             count_articles,
+            count_new_articles,
             list_articles,
             get_article,
             set_read,

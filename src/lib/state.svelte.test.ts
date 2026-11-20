@@ -2,7 +2,7 @@
 // Regression tests for the app state. Each test names the bug it guards against.
 import { flushSync } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ArticleDetail, ArticleRow, ListQuery, Sidebar } from './api';
+import type { ArticleDetail, ArticleRow, ListQuery, RefreshProgress, Sidebar } from './api';
 
 /** A promise we resolve by hand, to replay exact orderings of IPC responses. */
 function deferred<T>() {
@@ -24,6 +24,7 @@ const mockApi = {
     counts.push(d);
     return d.promise;
   }),
+  countNew: vi.fn(async (_query: ListQuery, _firstSeenAfter: number) => 0),
   list: vi.fn((query: ListQuery, offset: number, _limit: number) => {
     const d = deferred<ArticleRow[]>();
     lists.push({ query, offset, d });
@@ -53,7 +54,8 @@ const mockApi = {
   autostartEnabled: vi.fn(async () => false),
   setAutostart: vi.fn(async () => {}),
   refresh: vi.fn(async () => true),
-  onRefreshProgress: vi.fn(async () => () => {}),
+  retryFeed: vi.fn(async (_id: number) => ({ error: null, newArticles: 0 })),
+  onRefreshProgress: vi.fn(async (_cb: (p: RefreshProgress) => void) => () => {}),
   openExternal: vi.fn(async () => {}),
   saveToFerrico: vi.fn(async () => ({ id: 'abc', createdAt: 1_700_000_000 })),
   appVersion: vi.fn(async () => '0.1.0'),
@@ -208,6 +210,106 @@ describe('Favicons', () => {
     expect(app.rowAt(0)?.favicon).toBe('a'.repeat(32));
     expect(app.rowAt(1)?.favicon).toBeNull();
     expect(lists, 'no list reload').toHaveLength(1);
+  });
+});
+
+describe('The "New Articles · show" offer', () => {
+  /** Starts the app with a captured refresh-progress listener and opens Folder 7 for reading. */
+  async function readingInFolder() {
+    const app = new AppState();
+    let progress!: (p: RefreshProgress) => void;
+    mockApi.onRefreshProgress.mockImplementation(async (cb) => {
+      progress = cb;
+      return () => {};
+    });
+    await app.start();
+    app.selection = { kind: 'folder', id: 7 };
+    const reset = app.resetList();
+    await vi.waitFor(() => expect(counts).toHaveLength(1));
+    counts[0]!.resolve(2);
+    await vi.waitFor(() => expect(lists).toHaveLength(1));
+    lists[0]!.d.resolve(rows(2));
+    await reset;
+    app.selectedIndex = 0; // the user is reading an Article
+    return { app, progress };
+  }
+
+  const finished = { done: 3, total: 3, newArticles: 2, failed: 0, finished: true };
+
+  // Bug ("New Articles · show" appeared while reading a Folder whose Feeds got nothing new):
+  // the pill was offered whenever a refresh found new Articles anywhere, so clicking it
+  // reloaded a View that had nothing new. It must only appear when the View being read
+  // actually contains one of the new Articles.
+  it('is not offered while reading a View without new Articles in it', async () => {
+    const { app, progress } = await readingInFolder();
+    mockApi.countNew.mockResolvedValueOnce(0); // nothing new inside Folder 7
+
+    progress(finished);
+    await settle();
+
+    expect(mockApi.countNew).toHaveBeenCalledWith(
+      expect.objectContaining({ view: { kind: 'folder', id: 7 } }),
+      expect.any(Number),
+    );
+    expect(app.hasNewArticles).toBe(false);
+  });
+
+  it('is offered while reading a View that does contain a new Article', async () => {
+    const { app, progress } = await readingInFolder();
+    mockApi.countNew.mockResolvedValueOnce(1);
+
+    progress(finished);
+    await settle();
+
+    expect(app.hasNewArticles).toBe(true);
+  });
+
+  it('reloads the list directly instead when nobody is reading', async () => {
+    const { app, progress } = await readingInFolder();
+    app.selectedIndex = null;
+
+    progress(finished);
+    await vi.waitFor(() => expect(counts).toHaveLength(2));
+
+    expect(mockApi.countNew, 'no offer check without a reader').not.toHaveBeenCalled();
+    expect(app.hasNewArticles).toBe(false);
+  });
+
+  it('is not offered after a Feed retry whose new Articles are outside the View', async () => {
+    const { app } = await readingInFolder();
+    mockApi.retryFeed.mockResolvedValueOnce({ error: null, newArticles: 3 });
+    mockApi.countNew.mockResolvedValueOnce(0);
+
+    await app.retryFeed(42);
+    await settle();
+
+    expect(mockApi.countNew).toHaveBeenCalledWith(
+      expect.objectContaining({ view: { kind: 'folder', id: 7 } }),
+      expect.any(Number),
+    );
+    expect(app.hasNewArticles).toBe(false);
+  });
+
+  it('ignores a late answer after the View changed meanwhile', async () => {
+    const { app, progress } = await readingInFolder();
+    const pending = deferred<number>();
+    mockApi.countNew.mockReturnValueOnce(pending.promise);
+
+    progress(finished);
+    await vi.waitFor(() => expect(mockApi.countNew).toHaveBeenCalled());
+    // The user switches Views while the count is in flight: the offer is cleared for the new
+    // list and the stale answer must not resurrect it.
+    const switched = app.select({ kind: 'allUnread' });
+    await vi.waitFor(() => expect(counts).toHaveLength(2));
+    counts[1]!.resolve(0);
+    await vi.waitFor(() => expect(lists).toHaveLength(2));
+    lists[1]!.d.resolve([]);
+    await switched;
+    expect(app.hasNewArticles).toBe(false);
+
+    pending.resolve(5);
+    await settle();
+    expect(app.hasNewArticles).toBe(false);
   });
 });
 
